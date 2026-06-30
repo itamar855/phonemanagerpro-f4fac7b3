@@ -128,7 +128,7 @@ const Vendas = () => {
     description: "", amount: "", payment_cash: "", payment_card: "", payment_pix: "", retro_date: "",
   });
 
-  const [pdvPayment, setPdvPayment] = useState({ cash: "", card: "", pix: "", customer: "", store_id: "" });
+  const [pdvPayment, setPdvPayment] = useState({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: "" });
 
   const [form, setForm] = useState({
     product_id: "", sale_price: "", has_trade_in: false,
@@ -359,7 +359,7 @@ const Vendas = () => {
     setForm({ product_id: "", sale_price: "", has_trade_in: false, trade_in_device_name: "", trade_in_device_brand: "iPhone", trade_in_device_model: "", trade_in_device_imei: "", trade_in_value: "", payment_cash: "", payment_card: "", payment_pix: "", notes: "", commission_percent: currentUserCommissionPercent, discount: "0", warranty_days: "90", installments: "1", destination_account_id: "", retro_date: "" });
     clearCustomer();
   };
-  const resetPdv = () => { setCart([]); setPdvPayment({ cash: "", card: "", pix: "", customer: "", store_id: activeStoreId || "" }); setAccSearch(""); };
+  const resetPdv = () => { setCart([]); setPdvPayment({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: activeStoreId || "" }); setAccSearch(""); };
 
   // ── Submit venda ──────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -540,7 +540,7 @@ const Vendas = () => {
     }
   };
 
-  const handlePdvSubmit = async () => {
+  const handlePdvSubmit = async (gerarNotinha = false) => {
     if (!user || cart.length === 0 || !activeStoreId) return;
     if (loading || isPdvSubmitting.current) return;
     isPdvSubmitting.current = true;
@@ -557,7 +557,8 @@ const Vendas = () => {
       }
 
       const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
-      await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: activeStoreId, created_by: user.id });
+      const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: activeStoreId, created_by: user.id }).select().single();
+      if (txError) throw txError;
       
       if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
         await createPendingCashEntry(activeStoreId, user.id, cartTotal, desc, "dinheiro");
@@ -571,6 +572,38 @@ const Vendas = () => {
         }
         if (pdvPix > 0) {
           await createPendingCashEntry(activeStoreId, user.id, pdvPix, desc, "pix");
+        }
+      }
+
+      if (gerarNotinha && tx) {
+        try {
+          const store = storeMap.get(activeStoreId) as any;
+          const numeroNota = `PDV-${tx.id.slice(0, 8).toUpperCase()}`;
+          const data: NotaFiscalData = {
+            numeroNota,
+            dataVenda: new Date(tx.created_at).toLocaleString("pt-BR"),
+            lojaNome: store?.name ?? "Loja",
+            lojaCnpj: store?.cnpj,
+            lojaEndereco: store?.address,
+            lojaTelefone: store?.phone,
+            lojaWhatsapp: store?.whatsapp,
+            lojaInstagram: store?.instagram,
+            lojaLogoUrl: store?.logo_url,
+            clienteNome: pdvPayment.customer || undefined,
+            clienteCpf: pdvPayment.cpfCnpj || undefined,
+            produtoNome: "Venda Rápida (Acessórios)",
+            observacoes: cart.map(i => `${i.qty}x ${i.acc.name} (${formatCurrency(i.price)})`).join("\n"),
+            valorVenda: cartTotal,
+            valorDinheiro: pdvCash > 0 ? pdvCash : undefined,
+            valorCartao: pdvCard > 0 ? pdvCard : undefined,
+            valorPix: pdvPix > 0 ? pdvPix : undefined,
+          };
+          const doc = await gerarNotaFiscalInterna(data);
+          doc.save(`notinha-${numeroNota}.pdf`);
+          toast.success("Notinha gerada com sucesso!");
+        } catch (e) {
+          console.error(e);
+          toast.error("Venda registrada, mas falha ao gerar notinha.");
         }
       }
 
@@ -1158,9 +1191,15 @@ const Vendas = () => {
                           <SelectContent>{stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Cliente (opcional)</Label>
-                        <Input value={pdvPayment.customer} onChange={e => setPdvPayment({ ...pdvPayment, customer: e.target.value })} placeholder="Nome do cliente" className="h-9" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Cliente / Empresa (Opcional)</Label>
+                          <Input value={pdvPayment.customer} onChange={e => setPdvPayment({ ...pdvPayment, customer: e.target.value })} placeholder="Nome do cliente/empresa" className="h-9" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">CPF / CNPJ (Opcional)</Label>
+                          <Input value={pdvPayment.cpfCnpj} onChange={e => setPdvPayment({ ...pdvPayment, cpfCnpj: e.target.value })} placeholder="000.000.000-00" className="h-9" />
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         {[["cash","Dinheiro"], ["card","Cartão"], ["pix","PIX"]].map(([k, l]) => (
@@ -1174,9 +1213,15 @@ const Vendas = () => {
                         <span>{pdvTroco > 0 ? "Troco" : "Restante"}</span>
                         <span>{formatCurrency(pdvTroco > 0 ? pdvTroco : pdvRemaining)}</span>
                       </div>
-                      <Button className="w-full h-10 font-semibold" onClick={handlePdvSubmit} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
-                        {loading ? "Registrando..." : `Finalizar — ${formatCurrency(cartTotal)}`}
-                      </Button>
+                      <div className="flex flex-col gap-2">
+                        <Button className="w-full h-10 font-semibold" onClick={() => handlePdvSubmit(false)} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
+                          {loading ? "Registrando..." : `Finalizar — ${formatCurrency(cartTotal)}`}
+                        </Button>
+                        <Button variant="outline" className="w-full h-10 font-semibold border-primary/50 text-primary hover:bg-primary/5" onClick={() => handlePdvSubmit(true)} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
+                          <FileText className="h-4 w-4 mr-2" />
+                          Finalizar e Gerar Notinha
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
