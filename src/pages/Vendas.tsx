@@ -592,6 +592,7 @@ const Vendas = () => {
             clienteNome: pdvPayment.customer || undefined,
             clienteCpf: pdvPayment.cpfCnpj || undefined,
             produtoNome: "Venda Rápida (Acessórios)",
+            produtoMarca: "",
             observacoes: cart.map(i => `${i.qty}x ${i.acc.name} (${formatCurrency(i.price)})`).join("\n"),
             valorVenda: cartTotal,
             valorDinheiro: pdvCash > 0 ? pdvCash : undefined,
