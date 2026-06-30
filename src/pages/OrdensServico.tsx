@@ -60,7 +60,6 @@ const paymentLabels: Record<string, string> = {
   cartao_debito: "Cartão Débito", pix: "PIX", outro: "Outro",
 };
 
-// ── Cria cash_entry pendente no caixa aberto ou solto na loja ──────────────────────────────
 const createPendingCashEntry = async (
   storeId: string, userId: string, amount: number, description: string, paymentMethod = "dinheiro",
 ) => {
@@ -74,7 +73,7 @@ const createPendingCashEntry = async (
     cash_register_id: registerId, store_id: storeId,
     type: "entrada", amount, description,
     payment_method: paymentMethod, receipt_url: null,
-    confirmed: paymentMethod !== "dinheiro", // PIX/Cartão can be auto-confirmed or marked differently
+    confirmed: false,
     created_by: userId,
   } as any);
 };
@@ -681,15 +680,100 @@ const OrdensServico = () => {
         const card = Number(o.payment_card || 0);
         const pix = Number(o.payment_pix || 0);
         const other = Number(o.payment_other || 0);
+
+        // Busca a primeira conta cadastrada para a loja
+        const { data: accounts } = await supabase
+          .from("store_bank_accounts")
+          .select("*")
+          .eq("store_id", o.store_id);
+        
+        const account = accounts && accounts.length > 0 ? accounts[0] : null;
+        const defaultAccountId = account?.id || null;
         
         if (cash === 0 && card === 0 && pix === 0 && other === 0) {
           const amount = Number(o.final_price || o.estimated_price || 0);
-          if (amount > 0) await createPendingCashEntry(o.store_id, user.id, amount, desc, "dinheiro");
+          if (amount > 0) {
+            await createPendingCashEntry(o.store_id, user.id, amount, desc, "dinheiro");
+            await supabase.from("transactions").insert({
+              type: "income",
+              category: "Manutenção",
+              amount,
+              net_amount: amount,
+              description: desc,
+              store_id: o.store_id,
+              created_by: user.id,
+              expected_settlement_date: new Date().toISOString(),
+              reconciled: false,
+            });
+          }
         } else {
-          if (cash > 0) await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
-          if (card > 0) await createPendingCashEntry(o.store_id, user.id, card, desc, "cartao_credito");
-          if (pix > 0) await createPendingCashEntry(o.store_id, user.id, pix, desc, "pix");
-          if (other > 0) await createPendingCashEntry(o.store_id, user.id, other, desc, "outro");
+          if (cash > 0) {
+            await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
+            await supabase.from("transactions").insert({
+              type: "income",
+              category: "Manutenção",
+              amount: cash,
+              net_amount: cash,
+              description: desc,
+              store_id: o.store_id,
+              created_by: user.id,
+              expected_settlement_date: new Date().toISOString(),
+              reconciled: false,
+            });
+          }
+          if (card > 0) {
+            await createPendingCashEntry(o.store_id, user.id, card, desc, "cartao_credito");
+            const fee = Number(account?.credit_fee_percent) || 0;
+            const days = Number(account?.credit_settlement_days) || 30;
+            const expectedDate = new Date();
+            expectedDate.setDate(expectedDate.getDate() + days);
+            await supabase.from("transactions").insert({
+              type: "income",
+              category: "Manutenção",
+              amount: card,
+              net_amount: card - (card * (fee / 100)),
+              description: desc,
+              store_id: o.store_id,
+              created_by: user.id,
+              destination_account_id: defaultAccountId,
+              expected_settlement_date: expectedDate.toISOString(),
+              reconciled: false,
+            });
+          }
+          if (pix > 0) {
+            await createPendingCashEntry(o.store_id, user.id, pix, desc, "pix");
+            const fee = Number(account?.pix_fee_percent) || 0;
+            const days = Number(account?.pix_settlement_days) || 0;
+            const expectedDate = new Date();
+            expectedDate.setDate(expectedDate.getDate() + days);
+            await supabase.from("transactions").insert({
+              type: "income",
+              category: "Manutenção",
+              amount: pix,
+              net_amount: pix - (pix * (fee / 100)),
+              description: desc,
+              store_id: o.store_id,
+              created_by: user.id,
+              destination_account_id: defaultAccountId,
+              expected_settlement_date: expectedDate.toISOString(),
+              reconciled: false,
+            });
+          }
+          if (other > 0) {
+            await createPendingCashEntry(o.store_id, user.id, other, desc, "outro");
+            await supabase.from("transactions").insert({
+              type: "income",
+              category: "Manutenção",
+              amount: other,
+              net_amount: other,
+              description: desc,
+              store_id: o.store_id,
+              created_by: user.id,
+              destination_account_id: defaultAccountId,
+              expected_settlement_date: new Date().toISOString(),
+              reconciled: false,
+            });
+          }
         }
         toast.info("Lançamentos financeiros registrados.");
       }
