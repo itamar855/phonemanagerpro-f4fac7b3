@@ -123,14 +123,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent infinite loop by ignoring the assistant's own confirmation replies
+    // Prevent loop from bot's own messages in groups
+    if (isGroup && key?.fromMe === true) {
+      console.log("Ignored group message sent by the bot itself.");
+      return new Response(JSON.stringify({ status: "ignored_bot_self" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Prevent infinite loop by ignoring the assistant's own confirmation/report replies
     if (
       textMessage.includes("Lançamento Confirmado") ||
       textMessage.includes("Lançamento registrado") ||
+      textMessage.includes("Resumo Financeiro") ||
       textMessage.includes("✅") ||
-      textMessage.includes("🤖")
+      textMessage.includes("🤖") ||
+      textMessage.includes("📊")
     ) {
-      console.log("Ignored self confirmation message to prevent loop.");
+      console.log("Ignored self confirmation/report message to prevent loop.");
       return new Response(JSON.stringify({ status: "ignored_loop_prevented" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
