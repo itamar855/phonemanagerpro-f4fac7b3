@@ -427,7 +427,7 @@ const WhatsAppAssistantConfig = () => {
             size="sm"
             variant="outline"
             className="gap-1.5 text-xs"
-            onClick={testEvolutionConnection}
+            onClick={() => testEvolutionConnection()}
             disabled={testStatus === "testing"}
           >
             {testStatus === "testing" ? (
@@ -494,7 +494,7 @@ const WhatsAppAssistantConfig = () => {
             size="sm"
             variant="outline"
             className="gap-1.5 text-xs"
-            onClick={testWebhook}
+            onClick={() => testWebhook()}
             disabled={webhookStatus === "testing"}
           >
             {webhookStatus === "testing" ? (
