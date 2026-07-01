@@ -233,6 +233,7 @@ Deno.serve(async (req) => {
 
     const userId = profile?.user_id;
     const defaultStoreId = profile?.store_id;
+    const activeStoreId = defaultStoreId;
 
     if (!userId || !defaultStoreId) {
       throw new Error("Could not find a valid user profile or store linkage in database.");
