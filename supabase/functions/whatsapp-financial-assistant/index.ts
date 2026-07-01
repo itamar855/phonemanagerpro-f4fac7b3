@@ -532,11 +532,11 @@ Retorne APENAS o JSON (sem markdown, sem explicação):
             for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
 
             const { data: uploadData } = await supabase.storage
-              .from("receipts")
+              .from("comprovantes")
               .upload(fileName, bytes, { contentType: mimeType, upsert: true });
 
             if (uploadData?.path) {
-              const { data: publicUrlData } = supabase.storage.from("receipts").getPublicUrl(uploadData.path);
+              const { data: publicUrlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
               receiptUrl = publicUrlData?.publicUrl || null;
               console.log("Receipt uploaded:", receiptUrl);
             }
