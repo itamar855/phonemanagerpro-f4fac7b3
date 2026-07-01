@@ -53,9 +53,18 @@ const Transacoes = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
   const [justification, setJustification] = useState("");
-  const [filterStartDate, setFilterStartDate] = useState("");
-  const [filterEndDate, setFilterEndDate] = useState("");
   const [txSearch, setTxSearch] = useState("");
+  const [periodFilter, setPeriodFilter] = useState<"day" | "week" | "month" | "year">("month");
+
+  const getPeriodDates = (period: "day" | "week" | "month" | "year") => {
+    const now = new Date();
+    let start = new Date();
+    if (period === "day") { start.setHours(0, 0, 0, 0); }
+    else if (period === "week") { start.setDate(now.getDate() - now.getDay()); start.setHours(0, 0, 0, 0); }
+    else if (period === "month") { start = new Date(now.getFullYear(), now.getMonth(), 1); }
+    else if (period === "year") { start = new Date(now.getFullYear(), 0, 1); }
+    return { start: start.toISOString(), end: new Date().toISOString() };
+  };
   
   const [reconcileDialogOpen, setReconcileDialogOpen] = useState(false);
   const [reconcilingTx, setReconcilingTx] = useState<Tables<"transactions"> | null>(null);
@@ -280,16 +289,10 @@ const Transacoes = () => {
   const accountMap = new Map(accounts.map((a) => [a.id, a.bank_name]));
   const isIncome = (type: string) => type === "sale" || type === "income";
 
-  // Filtro de transações por data e busca
+  // Filtro de transações por período e busca
   const filteredTransactions = transactions.filter(tx => {
-    if (filterStartDate) {
-      const start = new Date(filterStartDate + "T00:00:00");
-      if (new Date(tx.created_at) < start) return false;
-    }
-    if (filterEndDate) {
-      const end = new Date(filterEndDate + "T23:59:59");
-      if (new Date(tx.created_at) > end) return false;
-    }
+    const { start } = getPeriodDates(periodFilter);
+    if (new Date(tx.created_at) < new Date(start)) return false;
     if (txSearch.trim()) {
       const q = txSearch.toLowerCase();
       return (
@@ -454,7 +457,7 @@ const Transacoes = () => {
         </Dialog>
       </div>
 
-      {/* Filtros de data e busca */}
+      {/* Filtros de período e busca */}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]">
           <input
@@ -465,31 +468,20 @@ const Transacoes = () => {
             className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground shrink-0">De</Label>
-          <Input
-            type="date"
-            value={filterStartDate}
-            onChange={e => setFilterStartDate(e.target.value)}
-            className="h-10 w-[150px]"
-          />
-          <Label className="text-xs text-muted-foreground shrink-0">Até</Label>
-          <Input
-            type="date"
-            value={filterEndDate}
-            onChange={e => setFilterEndDate(e.target.value)}
-            className="h-10 w-[150px]"
-          />
-          {(filterStartDate || filterEndDate || txSearch) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-10 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => { setFilterStartDate(""); setFilterEndDate(""); setTxSearch(""); }}
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-1">
+          {(["day", "week", "month", "year"] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriodFilter(p)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                periodFilter === p
+                  ? "bg-primary text-primary-foreground shadow"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
             >
-              Limpar
-            </Button>
-          )}
+              {{ day: "Dia", week: "Semana", month: "Mês", year: "Ano" }[p]}
+            </button>
+          ))}
         </div>
       </div>
     </div>

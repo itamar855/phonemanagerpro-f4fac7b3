@@ -44,6 +44,7 @@ export default function Contas() {
   const [rawStores, setRawStores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("pj");
+  const [periodFilter, setPeriodFilter] = useState<"day" | "week" | "month" | "year" | "all">("all");
   const [bankDialogOpen, setBankDialogOpen] = useState(false);
   const [bankForm, setBankForm] = useState({
     bank_name: "",
@@ -80,11 +81,19 @@ export default function Contas() {
     const allTxs = transactionsRes.data || [];
     setTransactions(allTxs);
     setStores(new Map<string, string>(storesData.map((s) => [s.id, s.name])));
+    const now = new Date();
+    let filterStart: Date | null = null;
+    if (periodFilter === "day") { filterStart = new Date(); filterStart.setHours(0,0,0,0); }
+    else if (periodFilter === "week") { filterStart = new Date(); filterStart.setDate(now.getDate() - now.getDay()); filterStart.setHours(0,0,0,0); }
+    else if (periodFilter === "month") { filterStart = new Date(now.getFullYear(), now.getMonth(), 1); }
+    else if (periodFilter === "year") { filterStart = new Date(now.getFullYear(), 0, 1); }
+    
+    const filteredTxs = filterStart ? allTxs.filter(tx => new Date(tx.created_at) >= filterStart!) : allTxs;
     const today = new Date();
     today.setHours(23, 59, 59, 999);
     const computed: AccountBalance[] = accounts.map((acc) => {
       let overall = 0, available = 0, future = 0;
-      allTxs.forEach((tx) => {
+      filteredTxs.forEach((tx) => {
         const isDest = tx.destination_account_id === acc.id;
         const isSrc  = tx.source_account_id === acc.id;
         if (!isDest && !isSrc) return;
@@ -152,7 +161,7 @@ export default function Contas() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [activeStoreId]);
+  useEffect(() => { fetchData(); }, [activeStoreId, periodFilter]);
   const pj = balances.filter((a) => !a.owner_type || a.owner_type === "PJ");
   const pf = balances.filter((a) => a.owner_type === "PF");
   // Estatísticas PF do Mês Atual
@@ -285,6 +294,23 @@ export default function Contas() {
         >
           <PlusIcon className="h-5 w-5" /> Nova Conta
         </Button>
+      </div>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-1">
+          {(["day", "week", "month", "year", "all"] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriodFilter(p)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                periodFilter === p
+                  ? "bg-primary text-primary-foreground shadow"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {{ day: "Dia", week: "Semana", month: "Mês", year: "Ano", all: "Tudo" }[p]}
+            </button>
+          ))}
+        </div>
       </div>
       <Tabs defaultValue="pj" className="w-full" onValueChange={setActiveTab}>
         <TabsList className="bg-muted/50 p-1">
