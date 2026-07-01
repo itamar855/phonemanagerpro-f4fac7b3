@@ -175,8 +175,63 @@ Deno.serve(async (req) => {
       textMessage = messageContent.documentMessage.caption;
     }
 
-    // Allow image-only messages through (they'll be handled later for receipt extraction)
-    const hasMediaAttachment = !!(messageContent?.imageMessage || messageContent?.documentMessage);
+    const hasAudio = !!(messageContent?.audioMessage || messageContent?.documentMessage?.mimetype?.includes("audio"));
+    
+    if (hasAudio && evolutionUrl && evolutionApiKey && evolutionInstance && groqApiKey) {
+      try {
+        console.log("Audio message detected, attempting transcription...");
+        const audioResp = await fetch(
+          `${evolutionUrl.replace(/\/$/, "")}/chat/getBase64FromMediaMessage/${evolutionInstance}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", apikey: evolutionApiKey },
+            body: JSON.stringify({
+              message: { key: { id: key.id } },
+              convertToMp4: false,
+            }),
+          }
+        );
+
+        if (audioResp.ok) {
+          const audioData = await audioResp.json();
+          const base64Data = audioData?.base64 || audioData?.data;
+
+          if (base64Data) {
+            const binaryStr = atob(base64Data.replace(/^data:.*?;base64,/, ""));
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+            const blob = new Blob([bytes], { type: "audio/ogg" });
+            const formData = new FormData();
+            formData.append("file", blob, "audio.ogg");
+            formData.append("model", "whisper-large-v3");
+
+            const whisperResp = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${groqApiKey}`,
+              },
+              body: formData,
+            });
+
+            if (whisperResp.ok) {
+              const whisperData = await whisperResp.json();
+              if (whisperData?.text) {
+                textMessage = whisperData.text;
+                console.log(`Transcribed audio successfully: "${textMessage}"`);
+              }
+            } else {
+              console.error("Groq Whisper API returned error:", await whisperResp.text());
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("Error transcribing audio:", err.message);
+      }
+    }
+
+    // Allow image-only or audio messages through (they'll be handled later)
+    const hasMediaAttachment = !!(messageContent?.imageMessage || messageContent?.documentMessage || hasAudio);
     if ((!textMessage || textMessage.trim() === "") && !hasMediaAttachment) {
       return new Response(JSON.stringify({ status: "empty_text" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
