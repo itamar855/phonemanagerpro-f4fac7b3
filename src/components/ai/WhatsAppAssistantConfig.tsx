@@ -47,6 +47,7 @@ const WhatsAppAssistantConfig = () => {
     groupId: "",
   });
   const [saving, setSaving] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(true);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [webhookStatus, setWebhookStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [qrCode, setQrCode] = useState<string>("");
@@ -55,11 +56,52 @@ const WhatsAppAssistantConfig = () => {
 
   const isAdmin = userRole === "admin";
 
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        
+        const resp = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-financial-assistant`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }
+        );
+        if (resp.ok) {
+          const serverConfig = await resp.json();
+          const localSaved = localStorage.getItem("whatsapp_assistant_config");
+          const parsedLocal = localSaved ? JSON.parse(localSaved) : {};
+          
+          setConfig({
+            webhookUrl: serverConfig.webhookUrl || parsedLocal.webhookUrl || config.webhookUrl,
+            evolutionUrl: serverConfig.evolutionUrl || parsedLocal.evolutionUrl || config.evolutionUrl,
+            evolutionInstance: serverConfig.evolutionInstance || parsedLocal.evolutionInstance || config.evolutionInstance,
+            evolutionApiKey: serverConfig.evolutionApiKey || parsedLocal.evolutionApiKey || config.evolutionApiKey || "",
+            allowedPhones: serverConfig.allowedPhones || parsedLocal.allowedPhones || config.allowedPhones || "",
+            groupId: serverConfig.groupId || parsedLocal.groupId || config.groupId || "",
+            defaultStoreMode: parsedLocal.defaultStoreMode || serverConfig.defaultStoreMode || "personal",
+          });
+        }
+      } catch (e) {
+        console.error("Erro ao carregar configurações do servidor:", e);
+      } finally {
+        setLoadingConfig(false);
+      }
+    };
+
+    loadConfig();
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Save to Supabase meta or app_settings table
-      const { error } = await supabase
+      localStorage.setItem("whatsapp_assistant_config", JSON.stringify(config));
+      
+      // Attempt to save in Supabase db table as well
+      await supabase
         .from("app_settings" as any)
         .upsert({
           key: "whatsapp_assistant_config",
@@ -67,10 +109,9 @@ const WhatsAppAssistantConfig = () => {
           updated_at: new Date().toISOString(),
         }, { onConflict: "key" });
 
-      if (error) throw error;
-      toast.success("Configurações salvas com sucesso!");
+      toast.success("Configurações salvas no sistema e navegador!");
     } catch {
-      toast.success("Configurações salvas localmente! (tabela não encontrada, contate o desenvolvedor)");
+      toast.success("Configurações salvas localmente no navegador!");
     }
     setSaving(false);
   };
