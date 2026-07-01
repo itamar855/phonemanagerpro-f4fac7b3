@@ -166,18 +166,79 @@ Deno.serve(async (req) => {
     // Intercept report requests
     const isReportRequest = /relatorio|relatório|resumo|balanço|balanco|saldo|extrato/i.test(textMessage);
     if (isReportRequest) {
-      console.log(`Generating report for store: ${activeStoreId}`);
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      console.log(`Generating filtered report for store: ${activeStoreId}`);
       
-      const { data: txs, error: fetchErr } = await supabase
+      const txt = textMessage.toLowerCase();
+      let startDate = new Date();
+      let endDate = new Date();
+      let dateLabel = "Últimos 30 dias";
+      
+      // Date filters
+      if (txt.includes("hoje")) {
+        startDate.setHours(0, 0, 0, 0);
+        dateLabel = "Hoje";
+      } else if (txt.includes("ontem")) {
+        startDate.setDate(startDate.getDate() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setDate(endDate.getDate() - 1);
+        endDate.setHours(23, 59, 59, 999);
+        dateLabel = "Ontem";
+      } else if (txt.includes("semana")) {
+        startDate.setDate(startDate.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        dateLabel = "Últimos 7 dias";
+      } else if (txt.includes("este mes") || txt.includes("este mês") || txt.includes("do mês") || txt.includes("do mes")) {
+        startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        startDate.setHours(0, 0, 0, 0);
+        dateLabel = "Este Mês";
+      } else {
+        startDate.setDate(startDate.getDate() - 30);
+        startDate.setHours(0, 0, 0, 0);
+      }
+
+      // Query database
+      let dbQuery = supabase
         .from("transactions")
-        .select("type, amount, description, category, created_at")
+        .select("type, amount, description, category, created_at, source_account_id, destination_account_id")
         .eq("store_id", activeStoreId)
-        .gte("created_at", thirtyDaysAgo.toISOString())
+        .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: false });
-        
+
+      if (dateLabel === "Ontem") {
+        dbQuery = dbQuery.lte("created_at", endDate.toISOString());
+      }
+
+      const { data: txs, error: fetchErr } = await dbQuery;
       if (fetchErr) throw fetchErr;
+
+      // Extract filter criteria
+      let typeFilter = "todos"; // todos, entradas, saidas
+      if (txt.includes("despesa") || txt.includes("gasto") || txt.includes("saida") || txt.includes("saída")) {
+        typeFilter = "saidas";
+      } else if (txt.includes("receita") || txt.includes("ganho") || txt.includes("entrada")) {
+        typeFilter = "entradas";
+      }
+
+      let accountFilter = "todos"; // todos, banco, dinheiro
+      if (txt.includes("banco") || txt.includes("conta")) {
+        accountFilter = "banco";
+      } else if (txt.includes("caixa") || txt.includes("dinheiro") || txt.includes("gaveta")) {
+        accountFilter = "dinheiro";
+      }
+
+      // Filter in Memory
+      let filteredTxs = txs || [];
+      if (typeFilter === "entradas") {
+        filteredTxs = filteredTxs.filter(t => t.type === "income");
+      } else if (typeFilter === "saidas") {
+        filteredTxs = filteredTxs.filter(t => t.type !== "income");
+      }
+
+      if (accountFilter === "banco") {
+        filteredTxs = filteredTxs.filter(t => t.source_account_id || t.destination_account_id);
+      } else if (accountFilter === "dinheiro") {
+        filteredTxs = filteredTxs.filter(t => !t.source_account_id && !t.destination_account_id);
+      }
 
       let totalIncome = 0;
       let totalExpensePj = 0;
@@ -187,32 +248,33 @@ Deno.serve(async (req) => {
       const listItems: string[] = [];
       const fmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
-      if (txs && txs.length > 0) {
-        txs.forEach((t) => {
-          const amt = Number(t.amount) || 0;
-          if (t.type === "income") {
-            totalIncome += amt;
-          } else if (t.type === "expense_pj") {
-            totalExpensePj += amt;
-          } else if (t.type === "expense_pf") {
-            totalExpensePf += amt;
-          } else if (t.type === "pro_labore") {
-            totalProLabore += amt;
-          }
-          
-          if (listItems.length < 5) {
-            const dateStr = new Date(t.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-            const cleanDesc = (t.description || "").replace("[WhatsApp] ", "");
-            const prefix = t.type === "income" ? "🟢" : "🔴";
-            listItems.push(`${prefix} *${dateStr}* - ${cleanDesc}: ${fmt.format(amt)}`);
-          }
-        });
-      }
+      filteredTxs.forEach((t) => {
+        const amt = Number(t.amount) || 0;
+        if (t.type === "income") {
+          totalIncome += amt;
+        } else if (t.type === "expense_pj") {
+          totalExpensePj += amt;
+        } else if (t.type === "expense_pf") {
+          totalExpensePf += amt;
+        } else if (t.type === "pro_labore") {
+          totalProLabore += amt;
+        }
+        
+        if (listItems.length < 5) {
+          const dateStr = new Date(t.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+          const cleanDesc = (t.description || "").replace("[WhatsApp] ", "");
+          const prefix = t.type === "income" ? "🟢" : "🔴";
+          listItems.push(`${prefix} *${dateStr}* - ${cleanDesc}: ${fmt.format(amt)}`);
+        }
+      });
 
       const totalExpenses = totalExpensePj + totalExpensePf + totalProLabore;
       const netBalance = totalIncome - totalExpenses;
 
-      const reportMessage = `📊 *Resumo Financeiro (Últimos 30 dias)*
+      const typeLabel = typeFilter === "entradas" ? " (Apenas Entradas)" : typeFilter === "saidas" ? " (Apenas Saídas)" : "";
+      const acctLabel = accountFilter === "banco" ? " (Apenas Banco)" : accountFilter === "dinheiro" ? " (Apenas Dinheiro/Gaveta)" : "";
+
+      const reportMessage = `📊 *Resumo Financeiro - ${dateLabel}${typeLabel}${acctLabel}*
       
 📈 *Receitas (Entradas):* ${fmt.format(totalIncome)}
 📉 *Despesas Loja (PJ):* ${fmt.format(totalExpensePj)}
@@ -224,7 +286,7 @@ Deno.serve(async (req) => {
 ━━━━━━━━━━━━━━━━━━
 
 📝 *Últimos Lançamentos:*
-${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento nos últimos 30 dias."}`;
+${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado para os filtros solicitados."}`;
 
       if (evolutionUrl && evolutionApiKey && evolutionInstance) {
         const sendUrl = `${evolutionUrl.replace(/\/$/, "")}/message/sendText/${evolutionInstance}`;
