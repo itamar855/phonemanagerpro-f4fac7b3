@@ -154,11 +154,91 @@ Deno.serve(async (req) => {
       profile = firstProfile;
     }
 
-    const userId = profile?.user_id;
+       const userId = profile?.user_id;
     const activeStoreId = profile?.store_id;
 
     if (!userId || !activeStoreId) {
       throw new Error("Could not find a valid user profile or store linkage in database.");
+    }
+
+    // Intercept report requests
+    const isReportRequest = /relatorio|relatório|resumo|balanço|balanco|saldo|extrato/i.test(textMessage);
+    if (isReportRequest) {
+      console.log(`Generating report for store: ${activeStoreId}`);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const { data: txs, error: fetchErr } = await supabase
+        .from("transactions")
+        .select("type, amount, description, category, created_at")
+        .eq("store_id", activeStoreId)
+        .gte("created_at", thirtyDaysAgo.toISOString())
+        .order("created_at", { ascending: false });
+        
+      if (fetchErr) throw fetchErr;
+
+      let totalIncome = 0;
+      let totalExpensePj = 0;
+      let totalExpensePf = 0;
+      let totalProLabore = 0;
+      
+      const listItems: string[] = [];
+      const fmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+      if (txs && txs.length > 0) {
+        txs.forEach((t) => {
+          const amt = Number(t.amount) || 0;
+          if (t.type === "income") {
+            totalIncome += amt;
+          } else if (t.type === "expense_pj") {
+            totalExpensePj += amt;
+          } else if (t.type === "expense_pf") {
+            totalExpensePf += amt;
+          } else if (t.type === "pro_labore") {
+            totalProLabore += amt;
+          }
+          
+          if (listItems.length < 5) {
+            const dateStr = new Date(t.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+            const cleanDesc = (t.description || "").replace("[WhatsApp] ", "");
+            const prefix = t.type === "income" ? "🟢" : "🔴";
+            listItems.push(`${prefix} *${dateStr}* - ${cleanDesc}: ${fmt.format(amt)}`);
+          }
+        });
+      }
+
+      const totalExpenses = totalExpensePj + totalExpensePf + totalProLabore;
+      const netBalance = totalIncome - totalExpenses;
+
+      const reportMessage = `📊 *Resumo Financeiro (Últimos 30 dias)*
+      
+📈 *Receitas (Entradas):* ${fmt.format(totalIncome)}
+📉 *Despesas Loja (PJ):* ${fmt.format(totalExpensePj)}
+👤 *Despesas Pessoais (PF):* ${fmt.format(totalExpensePf)}
+💸 *Retiradas (Pró-labore):* ${fmt.format(totalProLabore)}
+
+━━━━━━━━━━━━━━━━━━
+💰 *Saldo Líquido:* ${fmt.format(netBalance)}
+━━━━━━━━━━━━━━━━━━
+
+📝 *Últimos Lançamentos:*
+${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento nos últimos 30 dias."}`;
+
+      if (evolutionUrl && evolutionApiKey && evolutionInstance) {
+        const sendUrl = `${evolutionUrl.replace(/\/$/, "")}/message/sendText/${evolutionInstance}`;
+        await fetch(sendUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": evolutionApiKey },
+          body: JSON.stringify({
+            number: replyTo,
+            text: reportMessage
+          })
+        });
+      }
+
+      return new Response(JSON.stringify({ status: "success", type: "report" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const { data: bankAccounts } = await supabase
