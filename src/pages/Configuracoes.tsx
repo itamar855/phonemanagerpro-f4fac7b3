@@ -145,8 +145,8 @@ const Configuracoes = () => {
        store_id: activeStoreId || (stores.length > 0 ? stores[0].id : null)
      };
      const { error } = instagramConfig.id
-       ? await supabase.from("instagram_config").update(payload).eq("id", instagramConfig.id)
-       : await supabase.from("instagram_config").insert(payload);
+       ? await supabase.from("instagram_config").update(payload as any).eq("id", instagramConfig.id)
+       : await supabase.from("instagram_config").insert(payload as any);
      if (error) toast.error("Erro Instagram: " + error.message);
      else { toast.success("Configuração do Instagram salva!"); fetchData(); }
      setLoading(false);
