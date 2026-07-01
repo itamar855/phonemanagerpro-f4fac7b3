@@ -67,7 +67,6 @@ Deno.serve(async (req) => {
     }
 
     const cleanSender = senderJid.split("@")[0].replace(/\D/g, "");
-    const cleanAllowed = allowedPhone.replace(/\D/g, "");
     
     // Normalize both numbers to 12 digits (removing the 9th digit) to avoid formatting mismatches
     const normalizePhone = (num: string) => {
@@ -79,15 +78,14 @@ Deno.serve(async (req) => {
     };
 
     const normSender = normalizePhone(cleanSender);
-    const normAllowed = normalizePhone(cleanAllowed);
-
-    const isAuthorized = normAllowed && (
-      normSender === normAllowed ||
-      key?.fromMe === true
-    );
+    
+    // Check if the sender is in the list of allowed numbers (comma separated)
+    const allowedList = allowedPhone.split(",").map(n => normalizePhone(n.trim())).filter(n => n);
+    
+    const isAuthorized = (allowedList.length > 0 && allowedList.includes(normSender)) || key?.fromMe === true;
 
     if (!isAuthorized) {
-      console.warn(`Unauthorized sender: ${cleanSender} (normalized: ${normSender}) in chat ${remoteJid}. Allowed: ${normAllowed}`);
+      console.warn(`Unauthorized sender: ${cleanSender} (normalized: ${normSender}) in chat ${remoteJid}. Allowed: ${allowedList.join(", ")}`);
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
