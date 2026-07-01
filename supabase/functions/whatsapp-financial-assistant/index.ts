@@ -477,15 +477,21 @@ ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado p
     }
 
     // Build accounts context grouped by type
-    const pjAccounts = bankAccounts.filter(a => a.owner_type === "PJ");
+    // PJ accounts are SHARED across all stores — deduplicate by bank name, keep first occurrence
+    const seenPjBanks = new Set<string>();
+    const pjAccountsDeduped: typeof bankAccounts = [];
+    for (const a of bankAccounts.filter(a => a.owner_type === "PJ")) {
+      const key = a.bank_name.toLowerCase().trim();
+      if (!seenPjBanks.has(key)) {
+        seenPjBanks.add(key);
+        pjAccountsDeduped.push(a);
+      }
+    }
     const pfAccounts = bankAccounts.filter(a => a.owner_type === "PF");
     
     const accountsContext = [
-      "== CONTAS PJ (Empresa) ==",
-      ...pjAccounts.map(a => {
-        const storeName = allStores.find(s => s.id === a.store_id)?.name || "Loja desconhecida";
-        return `ID: ${a.id} | Banco: ${a.bank_name} | Tipo: PJ | Loja: ${storeName}`;
-      }),
+      "== CONTAS PJ (Empresa — únicas, compartilhadas entre todas as lojas) ==",
+      ...pjAccountsDeduped.map(a => `ID: ${a.id} | Banco: ${a.bank_name} | Tipo: PJ`),
       "",
       "== CONTAS PF (Pessoal do Itamar — única, independente de loja) ==",
       ...pfAccounts.map(a => `ID: ${a.id} | Banco: ${a.bank_name} | Tipo: PF`),
@@ -503,40 +509,45 @@ ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado p
     const systemPrompt = `Você é o Assistente Financeiro pessoal do Itamar, integrado via WhatsApp.
 
 CONCEITOS FUNDAMENTAIS:
-1. A conta PF (Pessoal) do Itamar é ÚNICA e universal — não pertence a nenhuma loja específica. É o dinheiro pessoal dele.
-2. As contas PJ (Empresa) são vinculadas a lojas específicas.
-3. Cada lançamento tem DOIS aspectos independentes:
-   a) CONTA-FONTE: De onde o dinheiro saiu/entrou (PF ou PJ). É definido pela menção de "pj", "conta da loja", "mercado pago pj" etc.
-   b) TIPO DE DESPESA: Se é gasto pessoal ou da empresa. É definido pelo contexto do gasto (aluguel da loja = PJ, marmita pessoal = PF).
+1. Conta PF (Pessoal) do Itamar: ÚNICA e universal. Não pertence a nenhuma loja. Não tem store_id.
+2. Contas PJ (Empresa): ÚNICAS por banco — a mesma conta Itaú PJ serve para TODAS as lojas. NÃO existe "Itaú da Vila Eulalia" separado do "Itaú da Santa Luzia". A loja é definida separadamente.
+3. Conta Cora (futura): será a conta dos colaboradores, para pagamentos autorizados pelo Itamar com comprovante.
+4. Cada lançamento tem DOIS aspectos independentes:
+   a) CONTA-FONTE: De onde saiu o dinheiro (Itaú PJ, Mercado Pago PJ, Mercado Pago PF, Cora).
+   b) LOJA-ALVO: A qual loja pertence esse gasto (Vila Eulalia, Santa Luzia) — independente da conta usada.
 
-REGRAS DE CLASSIFICAÇÃO:
-- PADRÃO: Se não especificar de onde saiu o dinheiro, assume que saiu da conta PF (pessoal).
-- Se mencionar "conta pj", "pj", "da loja", "empresa" como FONTE do pagamento → source_account_id deve ser a conta PJ.
-- Se mencionar "conta pf", "pessoal", "minha conta" como FONTE → source_account_id deve ser a conta PF.
+REGRAS DE CONTA-FONTE (source_account_id):
+- Padrão se não especificar: conta PF (Mercado Pago PF).
+- "pj", "itaú", "itau", "conta da empresa", "conta pj" → Itaú PJ.
+- "mercado pago pj", "mp pj" → Mercado Pago PJ.
+- "mercado pago pf", "mp pf", "pessoal", "minha conta" → Mercado Pago PF.
+- "cora", "funcionário", "colaborador" → conta Cora (se existir).
+- Se mencionar "dinheiro", "gaveta", "espécie" → source_account_id = null.
 
 TIPO DA TRANSAÇÃO:
-- "expense_pf": Gastos pessoais do Itamar (alimentação, transporte pessoal, lazer etc.)
-- "expense_pj": Gastos da empresa/loja (aluguel loja, internet loja, peças, impostos etc.)
-- "income": Receita/entrada de dinheiro
-- "pro_labore": Retirada pessoal da empresa
+- "expense_pf": Gastos pessoais do Itamar. SEMPRE store_id = null (não tem loja).
+- "expense_pj": Gastos da empresa/loja (aluguel, internet, peças, impostos etc.).
+- "income": Receita/entrada de dinheiro.
+- "pro_labore": Retirada pessoal da empresa.
 
-DETECÇÃO DA LOJA:
-- Se a mensagem mencionar "vila eulalia", "eulalia" → store_id = "${allStores.find(s => s.name.toLowerCase().includes("eulalia"))?.id || ""}"
-- Se a mensagem mencionar "santa luzia", "luzia" → store_id = "${allStores.find(s => s.name.toLowerCase().includes("luzia"))?.id || ""}"
-- Se for despesa pessoal (expense_pf), use a loja padrão: "${activeStoreId}"
-- Se for despesa da empresa mas não especificar loja → use: "${activeStoreId}"
+DETECÇÃO DA LOJA (apenas para expense_pj, income e pro_labore):
+- "vila eulalia", "eulalia", "vila" → store_id = "${allStores.find(s => s.name.toLowerCase().includes("eulalia"))?.id || ""}"
+- "santa luzia", "luzia", "luzia" → store_id = "${allStores.find(s => s.name.toLowerCase().includes("luzia"))?.id || ""}"
+- Sem mencionar loja → store_id = "${activeStoreId}" (loja padrão)
 
 EXEMPLOS PRÁTICOS:
-- "compra de marmita pj" → expense_pf (é gasto pessoal de marmita), mas PAGO da conta PJ. source_account_id = conta PJ.
-- "pagamento de internet da loja" → expense_pj, source_account_id = conta PJ da loja padrão.
-- "pagamento aluguel da vila eulalia" → expense_pj, store_id = loja Vila Eulalia, source_account_id = conta PJ Vila Eulalia.
-- "gasolina 50 reais" → expense_pf, source_account_id = conta PF.
-- "paguei aluguel pj 2000" → expense_pj, source_account_id = conta PJ.
+- "marmita pf 15" → expense_pf, Alimentação, source = Mercado Pago PF, store_id = null
+- "marmita pj 15" → expense_pf (marmita é gasto pessoal), source = Itaú PJ, store_id = null
+- "gasolina 80" → expense_pf, Transporte, source = Mercado Pago PF, store_id = null
+- "aluguel da loja 2000 pj" → expense_pj, source = Itaú PJ, store_id = loja padrão
+- "aluguel vila eulalia 2000" → expense_pj, source = Itaú PJ, store_id = Vila Eulalia
+- "internet santa luzia 150" → expense_pj, source = Itaú PJ, store_id = Santa Luzia
+- "funcionário comprou peça cora 150" → expense_pj, source = Cora, store_id = loja padrão
 
 Lojas cadastradas:
 ${storesContext}
 
-Contas bancárias:
+Contas bancárias disponíveis:
 ${accountsContext}
 
 Categorias disponíveis:
@@ -548,9 +559,9 @@ Retorne APENAS o JSON (sem markdown, sem explicação):
   "amount": number,
   "description": "string curta descritiva",
   "category": "string",
-  "source_account_id": "uuid_or_null (conta DE ONDE saiu o dinheiro)",
-  "destination_account_id": "uuid_or_null (conta PARA ONDE foi, se transferência)",
-  "store_id": "uuid_da_loja_alvo_ou_null"
+  "source_account_id": "uuid_or_null",
+  "destination_account_id": "uuid_or_null",
+  "store_id": "uuid_or_null (null se expense_pf)"
 }`;
 
     // Check if message has an image/media attached
