@@ -47,15 +47,6 @@ Deno.serve(async (req) => {
     const isLidFormat = remoteJid.endsWith("@lid");
     const isGroup = remoteJid.endsWith("@g.us");
 
-    // Restrict group messages ONLY to the Gastos Pessoais group ID
-    const allowedGroupJid = "120363425514605912@g.us";
-    if (isGroup && remoteJid !== allowedGroupJid) {
-      console.log(`Ignored message from unrelated group: ${remoteJid}`);
-      return new Response(JSON.stringify({ status: "ignored_group" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // Extract sender JID (handles groups vs direct messages)
     let senderJid = "";
     if (isGroup) {
