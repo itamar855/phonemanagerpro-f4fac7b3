@@ -68,7 +68,9 @@ Deno.serve(async (req) => {
     // Extract sender JID (handles groups vs direct messages)
     let senderJid = "";
     if (isGroup) {
-      senderJid = messageData.participant || key?.participant || "";
+      const part = messageData.participant || key?.participant || "";
+      const partAlt = messageData.participantAlt || key?.participantAlt || "";
+      senderJid = part.endsWith("@lid") && partAlt ? partAlt : part;
     } else if (isLidFormat && remoteJidAlt) {
       senderJid = remoteJidAlt;
     } else {
