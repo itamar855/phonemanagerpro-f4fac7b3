@@ -22,6 +22,7 @@ import {
   Sparkles,
   Store,
   Bot,
+  LogOut,
 } from "lucide-react";
 
 interface WhatsAppConfig {
@@ -48,6 +49,9 @@ const WhatsAppAssistantConfig = () => {
   const [saving, setSaving] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [webhookStatus, setWebhookStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [qrCode, setQrCode] = useState<string>("");
+  const [loadingQr, setLoadingQr] = useState(false);
+  const [loadingLogout, setLoadingLogout] = useState(false);
 
   const isAdmin = userRole === "admin";
 
@@ -128,6 +132,66 @@ const WhatsAppAssistantConfig = () => {
     }
   };
 
+  const generateQrCode = async () => {
+    if (!config.evolutionUrl || !config.evolutionInstance || !config.evolutionApiKey) {
+      toast.error("Preencha as configurações da Evolution API antes de conectar!");
+      return;
+    }
+    setLoadingQr(true);
+    setQrCode("");
+    try {
+      const resp = await fetch(
+        `${config.evolutionUrl}/instance/connect/${config.evolutionInstance}`,
+        { headers: { apikey: config.evolutionApiKey } }
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.qrcode?.base64) {
+          setQrCode(data.qrcode.base64);
+          toast.success("QR Code gerado! Abra o WhatsApp no celular e escaneie.");
+        } else if (data?.instance?.status === "connected" || data?.status === "connected" || data?.instance?.state === "open" || data?.state === "open") {
+          toast.success("O WhatsApp já está conectado!");
+          setTestStatus("ok");
+        } else {
+          toast.error("Resposta inesperada ao gerar QR Code");
+        }
+      } else {
+        toast.error("Erro ao solicitar QR Code");
+      }
+    } catch {
+      toast.error("Erro de rede ao conectar ao servidor da Evolution");
+    }
+    setLoadingQr(false);
+  };
+
+  const disconnectWhatsapp = async () => {
+    if (!config.evolutionUrl || !config.evolutionInstance || !config.evolutionApiKey) {
+      toast.error("Preencha as configurações da Evolution API antes de desconectar!");
+      return;
+    }
+    if (!confirm("Tem certeza que deseja desconectar o WhatsApp desta instância?")) return;
+    setLoadingLogout(true);
+    try {
+      const resp = await fetch(
+        `${config.evolutionUrl}/instance/logout/${config.evolutionInstance}`,
+        { 
+          method: "DELETE",
+          headers: { apikey: config.evolutionApiKey } 
+        }
+      );
+      if (resp.ok) {
+        toast.success("WhatsApp desconectado com sucesso!");
+        setQrCode("");
+        setTestStatus("error");
+      } else {
+        toast.error("Erro ao desconectar");
+      }
+    } catch {
+      toast.error("Erro de conexão ao tentar desconectar");
+    }
+    setLoadingLogout(false);
+  };
+
   if (!isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -179,6 +243,81 @@ const WhatsAppAssistantConfig = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* WhatsApp Connection Card */}
+      <Card className="border-border/50 shadow-lg shadow-black/10">
+        <CardHeader className="pb-3">
+          <CardTitle className="font-display text-sm flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            Conexão do WhatsApp (Evolution API)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 flex flex-col items-center justify-center p-6">
+          <div className="text-center space-y-1">
+            <p className="text-xs font-semibold">Status de Pareamento</p>
+            <p className="text-[11px] text-muted-foreground">
+              Conecte ou desconecte a instância do WhatsApp associada à loja.
+            </p>
+          </div>
+
+          {qrCode ? (
+            <div className="flex flex-col items-center justify-center space-y-3 bg-white p-4 rounded-xl border">
+              <img src={qrCode} alt="WhatsApp QR Code" className="h-48 w-48" />
+              <p className="text-[10px] text-black text-center max-w-[200px] leading-tight">
+                Escaneie esse código usando o leitor de QR Code do seu aplicativo WhatsApp.
+              </p>
+            </div>
+          ) : testStatus === "ok" ? (
+            <div className="flex flex-col items-center justify-center p-4 space-y-2 text-emerald-500 bg-emerald-500/5 rounded-xl border border-emerald-500/20 w-full max-w-[280px]">
+              <CheckCircle2 className="h-10 w-10" />
+              <p className="text-xs font-bold">WhatsApp Conectado</p>
+              <p className="text-[10px] text-muted-foreground text-center">
+                Sua instância está ativa e pronta para registrar gastos.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center p-4 space-y-2 text-muted-foreground bg-muted/10 rounded-xl border w-full max-w-[280px]">
+              <XCircle className="h-10 w-10" />
+              <p className="text-xs font-bold">WhatsApp Desconectado</p>
+              <p className="text-[10px] text-center">
+                Instância offline. Gere um QR Code abaixo para parear.
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-2 w-full max-w-[280px]">
+            <Button
+              className="flex-1 text-xs gap-1"
+              size="sm"
+              onClick={generateQrCode}
+              disabled={loadingQr || loadingLogout}
+            >
+              {loadingQr ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" />
+              )}
+              {qrCode ? "Atualizar QR" : "Gerar QR Code"}
+            </Button>
+            {testStatus === "ok" && (
+              <Button
+                variant="destructive"
+                className="flex-1 text-xs gap-1 bg-red-600 hover:bg-red-700 text-white"
+                size="sm"
+                onClick={disconnectWhatsapp}
+                disabled={loadingQr || loadingLogout}
+              >
+                {loadingLogout ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="h-3.5 w-3.5" />
+                )}
+                Desconectar
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Evolution API Config */}
       <Card className="border-border/50 shadow-lg shadow-black/10">
