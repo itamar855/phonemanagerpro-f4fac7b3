@@ -142,7 +142,7 @@ const Transacoes = () => {
       amount: parseFloat(form.amount),
       description: form.description || null, 
       category: form.category || null,
-      store_id: activeStoreId, 
+      store_id: form.type === "expense_pf" ? null : activeStoreId, 
       source_account_id: form.source_account_id || null,
       destination_account_id: form.destination_account_id || null,
       net_amount: parseFloat(form.amount),
