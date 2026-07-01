@@ -47,6 +47,12 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
         if (userRole !== "admin" && userStoreIds && userStoreIds.length > 0) {
           allowedStores = data.filter(s => userStoreIds.includes(s.id));
         }
+        
+        // Add "Todas as lojas" if user is admin
+        if (userRole === "admin") {
+          allowedStores = [{ id: "all", name: "Todas as lojas" }, ...allowedStores];
+        }
+        
         setStores(allowedStores);
         
         const storedActive = localStorage.getItem("cellmanager-active-store-id");
@@ -97,7 +103,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     <div className="flex h-[100dvh] overflow-hidden text-foreground bg-background">
       {/* Sidebar - Desktop */}
       <aside className="hidden md:flex w-64 flex-col bg-sidebar-background border-r border-sidebar-border">
-        <div className="p-6">
+        <div className="p-6 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="rounded-lg bg-primary/15 p-1.5">
               <Smartphone className="h-5 w-5 text-primary" />
@@ -106,6 +112,39 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
               Cell Pro 360
             </h1>
           </div>
+        </div>
+
+        {/* Desktop Store Switcher */}
+        <div className="px-4 pb-4">
+          {stores.length > 1 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="w-full justify-between h-9 px-3 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold gap-1.5 rounded-lg border border-primary/20">
+                  <span className="flex items-center gap-2 truncate">
+                    <Store className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{activeStoreName || "Selecionar Loja"}</span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-[224px]">
+                {stores.map(s => (
+                  <DropdownMenuItem
+                    key={s.id}
+                    onClick={() => handleStoreChange(s)}
+                    className={cn(activeStoreId === s.id && "font-bold text-primary")}
+                  >
+                    {s.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : stores.length === 1 ? (
+            <div className="flex items-center px-3 h-9 bg-primary/10 text-primary rounded-lg text-xs font-semibold gap-2 border border-primary/20">
+              <Store className="h-4 w-4 shrink-0" />
+              <span className="truncate">{activeStoreName || stores[0].name}</span>
+            </div>
+          ) : null}
         </div>
 
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
