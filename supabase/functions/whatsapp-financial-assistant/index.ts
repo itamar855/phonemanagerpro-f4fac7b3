@@ -646,7 +646,8 @@ Retorne APENAS o JSON (sem markdown, sem explicação):
     const parsedTransaction = JSON.parse(modelOutputText.trim());
     
     // Determine the correct store_id for the transaction
-    const txStoreId = parsedTransaction.store_id || activeStoreId;
+    // Personal expenses (expense_pf) do NOT belong to any store (store_id remains null)
+    const txStoreId = parsedTransaction.type === "expense_pf" ? null : (parsedTransaction.store_id || activeStoreId);
 
     const { data: newTx, error: txError } = await supabase
       .from("transactions")
