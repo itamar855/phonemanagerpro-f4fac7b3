@@ -20,15 +20,15 @@ Deno.serve(async (req) => {
     const evolutionUrl = Deno.env.get("EVOLUTION_API_URL") || "";
     const evolutionApiKey = Deno.env.get("EVOLUTION_API_KEY") || "";
     const evolutionInstance = Deno.env.get("EVOLUTION_INSTANCE_NAME") || "";
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || "";
+    const groqApiKey = Deno.env.get("GROQ_API_KEY") || "";
 
-    // Parse incoming request
     const body = await req.json();
     console.log("Evolution API Webhook received:", JSON.stringify(body, null, 2));
 
-    // We only care about messages.upsert
-    if (body.event !== "messages.upsert") {
-      return new Response(JSON.stringify({ status: "ignored_event" }), {
+    // Accept both MESSAGES_UPSERT and SEND_MESSAGE events
+    const validEvents = ["messages.upsert", "send.message", "MESSAGES_UPSERT", "SEND_MESSAGE"];
+    if (!validEvents.includes(body.event)) {
+      return new Response(JSON.stringify({ status: "ignored_event", event: body.event }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -43,19 +43,63 @@ Deno.serve(async (req) => {
 
     const key = messageData.key;
     const remoteJid = key?.remoteJid || "";
-    const cleanSender = remoteJid.split("@")[0].replace(/\D/g, "");
+    const remoteJidAlt = key?.remoteJidAlt || "";
+    const isLidFormat = remoteJid.endsWith("@lid");
+    const isGroup = remoteJid.endsWith("@g.us");
 
-    // Safety validation
+    // Restrict group messages ONLY to the Gastos Pessoais group ID
+    const allowedGroupJid = "120363425514605912@g.us";
+    if (isGroup && remoteJid !== allowedGroupJid) {
+      console.log(`Ignored message from unrelated group: ${remoteJid}`);
+      return new Response(JSON.stringify({ status: "ignored_group" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Extract sender JID (handles groups vs direct messages)
+    let senderJid = "";
+    if (isGroup) {
+      senderJid = messageData.participant || key?.participant || "";
+    } else if (isLidFormat && remoteJidAlt) {
+      senderJid = remoteJidAlt;
+    } else {
+      senderJid = remoteJid;
+    }
+
+    const cleanSender = senderJid.split("@")[0].replace(/\D/g, "");
     const cleanAllowed = allowedPhone.replace(/\D/g, "");
-    if (!cleanAllowed || cleanSender !== cleanAllowed) {
-      console.warn(`Unauthorized message sender: ${cleanSender}. Allowed: ${cleanAllowed}`);
+    
+    // Normalize both numbers to 12 digits (removing the 9th digit) to avoid formatting mismatches
+    const normalizePhone = (num: string) => {
+      const parsed = num.replace(/\D/g, "");
+      if (parsed.length === 13 && parsed.startsWith("55")) {
+        return parsed.slice(0, 4) + parsed.slice(5); // remove the 9th digit (55 + DDD + 9 + Number)
+      }
+      return parsed;
+    };
+
+    const normSender = normalizePhone(cleanSender);
+    const normAllowed = normalizePhone(cleanAllowed);
+
+    const isAuthorized = normAllowed && (
+      normSender === normAllowed ||
+      key?.fromMe === true
+    );
+
+    if (!isAuthorized) {
+      console.warn(`Unauthorized sender: ${cleanSender} (normalized: ${normSender}) in chat ${remoteJid}. Allowed: ${normAllowed}`);
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Extract text conversation
+    // Reply to the source chat (could be the group or private chat)
+    const replyTo = remoteJid;
+
+
+
+
     const messageContent = messageData.message;
     let textMessage = "";
     if (messageContent?.conversation) {
@@ -65,15 +109,27 @@ Deno.serve(async (req) => {
     }
 
     if (!textMessage || textMessage.trim() === "") {
-      console.log("Empty text message. Ignored.");
       return new Response(JSON.stringify({ status: "empty_text" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // Prevent infinite loop by ignoring the assistant's own confirmation replies
+    if (
+      textMessage.includes("Lançamento Confirmado") ||
+      textMessage.includes("Lançamento registrado") ||
+      textMessage.includes("✅") ||
+      textMessage.includes("🤖")
+    ) {
+      console.log("Ignored self confirmation message to prevent loop.");
+      return new Response(JSON.stringify({ status: "ignored_loop_prevented" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+
     console.log(`Processing message from ${cleanSender}: "${textMessage}"`);
 
-    // Fetch user details for creator uuid
     let { data: profile } = await supabase
       .from("profiles")
       .select("user_id, store_id, display_name")
@@ -96,7 +152,6 @@ Deno.serve(async (req) => {
       throw new Error("Could not find a valid user profile or store linkage in database.");
     }
 
-    // Fetch store bank accounts for context mapping
     const { data: bankAccounts } = await supabase
       .from("store_bank_accounts")
       .select("id, bank_name, owner_type")
@@ -107,83 +162,71 @@ Deno.serve(async (req) => {
     ).join("\n");
 
     const categories = [
-      "Alimentação", "Moradia (Aluguel/Luz)", "Transporte/Combustível", "Lazer/Viagens", 
-      "Saúde", "Educação", "Vestuário", "Investimentos", "Pro-labore", 
-      "Software/Ferramentas", "Marketing", "Estoque/Peças", "Manutenção", 
+      "Alimentação", "Moradia (Aluguel/Luz)", "Transporte/Combustível", "Lazer/Viagens",
+      "Saúde", "Educação", "Vestuário", "Investimentos", "Pro-labore",
+      "Software/Ferramentas", "Marketing", "Estoque/Peças", "Manutenção",
       "Impostos/Taxas", "Tarifas Bancárias", "Outros"
     ];
 
     const systemPrompt = `Você é um Assistente Financeiro integrado por WhatsApp para um lojista e reparador de celulares. 
 Sua tarefa é analisar a mensagem do usuário sobre um gasto, receita ou retirada e convertê-la em um JSON estruturado.
 
-Aqui estão as contas bancárias atuais cadastradas no sistema:
+Contas bancárias cadastradas no sistema:
 ${accountsContext || "Nenhuma conta cadastrada"}
 
-Aqui estão as categorias de transações suportadas:
+Categorias suportadas:
 ${categories.join(", ")}
 
-Tipos de movimentações válidos:
-- "expense_pf": Despesas pessoais do proprietário (ex: almoço, luz da casa dele, lazer pessoal).
-- "expense_pj": Despesas comerciais da loja (ex: compra de peças, ferramentas, aluguel da loja, marketing).
-- "pro_labore": Retirada de pró-labore do proprietário da conta PJ da loja para uso pessoal.
-- "income": Receita extra ou vendas gerais não registradas pelo PDV convencional.
+Tipos válidos:
+- "expense_pf": Despesas pessoais do proprietário.
+- "expense_pj": Despesas comerciais da loja.
+- "pro_labore": Retirada de pró-labore do proprietário.
+- "income": Receita extra.
 
-Regras de Classificação:
-1. Sempre tente associar a conta mencionada na mensagem (ex: "nubank", "inter", "caixa", "banco do brasil") ao ID da conta fornecido no contexto de contas. Se nenhuma conta corresponder, deixe "source_account_id" ou "destination_account_id" como null.
-2. Identifique o valor numérico. Remova símbolos de moeda.
-3. Classifique a categoria estritamente em uma das categorias permitidas listadas acima.
-4. Gere uma descrição curta e limpa (ex: "Almoço de hoje", "Compra de telas para estoque").
-5. Para despesas (expense_pf, expense_pj, pro_labore), preencha o "source_account_id" com o ID da conta de onde saiu o dinheiro. O "destination_account_id" deve ser null.
-6. Para receitas (income), preencha o "destination_account_id" com o ID da conta onde entrou o dinheiro. O "source_account_id" deve ser null.
+Regras:
+1. Associe o banco mencionado ao ID correspondente. Se não encontrar, use null.
+2. Para despesas, preencha "source_account_id". Para receitas, preencha "destination_account_id".
+3. Classifique em uma das categorias listadas.
+4. Gere uma descrição curta e limpa.
 
-Retorne estritamente um JSON no seguinte formato (sem caracteres markdown de bloco de código):
+Retorne apenas o JSON (sem markdown):
 {
   "type": "expense_pf" | "expense_pj" | "pro_labore" | "income",
   "amount": number,
   "description": "string",
   "category": "string",
-  "source_account_id": "string_uuid_or_null",
-  "destination_account_id": "string_uuid_or_null"
+  "source_account_id": "uuid_or_null",
+  "destination_account_id": "uuid_or_null"
 }`;
 
-    // Call Gemini API
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
-    const geminiResponse = await fetch(geminiUrl, {
+    // Call Groq API (free tier, OpenAI-compatible)
+    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${groqApiKey}`
       },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: systemPrompt },
-              { text: `Mensagem do usuário: "${textMessage}"` }
-            ]
-          }
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Mensagem: "${textMessage}"` }
         ],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
+        temperature: 0.1,
+        response_format: { type: "json_object" }
       })
     });
 
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
-      throw new Error(`Gemini API Error: ${errText}`);
+    if (!groqResponse.ok) {
+      throw new Error(`Groq API Error: ${await groqResponse.text()}`);
     }
 
-    const geminiData = await geminiResponse.json();
-    const modelOutputText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-    console.log("Gemini parsed output:", modelOutputText);
-
-    if (!modelOutputText) {
-      throw new Error("Gemini returned an empty classification.");
-    }
+    const groqData = await groqResponse.json();
+    const modelOutputText = groqData.choices?.[0]?.message?.content;
+    if (!modelOutputText) throw new Error("Groq returned empty classification.");
 
     const parsedTransaction = JSON.parse(modelOutputText.trim());
 
-    // Insert into supabase transactions table
     const { data: newTx, error: txError } = await supabase
       .from("transactions")
       .insert({
@@ -202,22 +245,14 @@ Retorne estritamente um JSON no seguinte formato (sem caracteres markdown de blo
       .select()
       .single();
 
-    if (txError) {
-      throw txError;
-    }
+    if (txError) throw txError;
+    console.log("Transaction created:", newTx.id);
 
-    console.log("Transaction created successfully:", newTx.id);
-
-    // If it's cash (no account associated) and is a PJ expense/income, let's create a pending cash entry in the open drawer
     const isCash = !parsedTransaction.source_account_id && !parsedTransaction.destination_account_id;
     if (isCash && (parsedTransaction.type === "expense_pj" || parsedTransaction.type === "income")) {
-      // Find open cash register
       const { data: register } = await supabase
-        .from("cash_registers" as any)
-        .select("id")
-        .eq("store_id", activeStoreId)
-        .eq("status", "open")
-        .maybeSingle();
+        .from("cash_registers" as any).select("id")
+        .eq("store_id", activeStoreId).eq("status", "open").maybeSingle();
 
       if (register) {
         await supabase.from("cash_entries" as any).insert({
@@ -230,15 +265,13 @@ Retorne estritamente um JSON no seguinte formato (sem caracteres markdown de blo
           confirmed: false,
           created_by: userId,
         } as any);
-        console.log("Pending cash entry registered.");
       }
     }
 
-    // Format positive reply message
     const formattedVal = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(parsedTransaction.amount);
     const typeLabel = parsedTransaction.type === "expense_pf" ? "Despesa Pessoal (PF)" :
-                      parsedTransaction.type === "expense_pj" ? "Despesa da Loja (PJ)" :
-                      parsedTransaction.type === "pro_labore" ? "Retirada (Pró-labore)" : "Receita (DRE)";
+      parsedTransaction.type === "expense_pj" ? "Despesa da Loja (PJ)" :
+      parsedTransaction.type === "pro_labore" ? "Retirada (Pró-labore)" : "Receita";
 
     const replyMessage = `✅ *Lançamento Confirmado!*
 
@@ -246,36 +279,23 @@ Retorne estritamente um JSON no seguinte formato (sem caracteres markdown de blo
 🏷️ *Categoria:* ${parsedTransaction.category || "Outros"}
 📌 *Tipo:* ${typeLabel}
 📝 *Descrição:* ${parsedTransaction.description}
-🏦 *Banco/Destino:* ${parsedTransaction.source_account_id ? "Conta Origem" : parsedTransaction.destination_account_id ? "Conta Destino" : "Dinheiro (Gaveta)"}
+🏦 *Conta:* ${parsedTransaction.source_account_id || parsedTransaction.destination_account_id ? "Conta Bancária" : "Dinheiro (Gaveta)"}
 
-O lançamento já consta no seu fluxo financeiro! 🚀`;
+Lançamento registrado no sistema! 🚀`;
 
-    // Reply via Evolution API
     if (evolutionUrl && evolutionApiKey && evolutionInstance) {
       const sendUrl = `${evolutionUrl.replace(/\/$/, "")}/message/sendText/${evolutionInstance}`;
+      console.log(`Sending reply to ${cleanSender} via ${sendUrl}`);
       const sendRes = await fetch(sendUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": evolutionApiKey
-        },
+        headers: { "Content-Type": "application/json", "apikey": evolutionApiKey },
         body: JSON.stringify({
-          number: cleanSender,
-          options: {
-            delay: 1000,
-            presence: "composing"
-          },
-          textMessage: {
-            text: replyMessage
-          }
+          number: replyTo,
+          text: replyMessage
         })
       });
-
-      if (!sendRes.ok) {
-        console.error("Failed to send WhatsApp message via Evolution API:", await sendRes.text());
-      } else {
-        console.log("Confirmation WhatsApp message sent successfully!");
-      }
+      const sendBody = await sendRes.text();
+      console.log(`Evolution send status: ${sendRes.status} | Body: ${sendBody}`);
     }
 
     return new Response(JSON.stringify({ status: "success", transactionId: newTx.id }), {
@@ -283,7 +303,7 @@ O lançamento já consta no seu fluxo financeiro! 🚀`;
     });
 
   } catch (error: any) {
-    console.error("Fatal error in whatsapp-financial-assistant Edge Function:", error);
+    console.error("Error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
