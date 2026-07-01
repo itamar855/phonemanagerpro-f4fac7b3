@@ -75,15 +75,27 @@ const WhatsAppAssistantConfig = () => {
           const localSaved = localStorage.getItem("whatsapp_assistant_config");
           const parsedLocal = localSaved ? JSON.parse(localSaved) : {};
           
+          const finalUrl = serverConfig.evolutionUrl || parsedLocal.evolutionUrl || config.evolutionUrl;
+          const finalInstance = serverConfig.evolutionInstance || parsedLocal.evolutionInstance || config.evolutionInstance;
+          const finalApiKey = serverConfig.evolutionApiKey || parsedLocal.evolutionApiKey || config.evolutionApiKey || "";
+          const finalWebhookUrl = serverConfig.webhookUrl || parsedLocal.webhookUrl || config.webhookUrl;
+          const finalAllowedPhones = serverConfig.allowedPhones || parsedLocal.allowedPhones || config.allowedPhones || "";
+          const finalGroupId = serverConfig.groupId || parsedLocal.groupId || config.groupId || "";
+          const finalMode = parsedLocal.defaultStoreMode || serverConfig.defaultStoreMode || "personal";
+
           setConfig({
-            webhookUrl: serverConfig.webhookUrl || parsedLocal.webhookUrl || config.webhookUrl,
-            evolutionUrl: serverConfig.evolutionUrl || parsedLocal.evolutionUrl || config.evolutionUrl,
-            evolutionInstance: serverConfig.evolutionInstance || parsedLocal.evolutionInstance || config.evolutionInstance,
-            evolutionApiKey: serverConfig.evolutionApiKey || parsedLocal.evolutionApiKey || config.evolutionApiKey || "",
-            allowedPhones: serverConfig.allowedPhones || parsedLocal.allowedPhones || config.allowedPhones || "",
-            groupId: serverConfig.groupId || parsedLocal.groupId || config.groupId || "",
-            defaultStoreMode: parsedLocal.defaultStoreMode || serverConfig.defaultStoreMode || "personal",
+            webhookUrl: finalWebhookUrl,
+            evolutionUrl: finalUrl,
+            evolutionInstance: finalInstance,
+            evolutionApiKey: finalApiKey,
+            allowedPhones: finalAllowedPhones,
+            groupId: finalGroupId,
+            defaultStoreMode: finalMode,
           });
+
+          // Run connection tests automatically on mount
+          testEvolutionConnection(finalUrl, finalInstance, finalApiKey);
+          testWebhook(finalWebhookUrl, finalInstance);
         }
       } catch (e) {
         console.error("Erro ao carregar configurações do servidor:", e);
@@ -116,38 +128,49 @@ const WhatsAppAssistantConfig = () => {
     setSaving(false);
   };
 
-  const testEvolutionConnection = async () => {
+  const testEvolutionConnection = async (customUrl?: string, customInstance?: string, customKey?: string) => {
+    const url = customUrl || config.evolutionUrl;
+    const inst = customInstance || config.evolutionInstance;
+    const key = customKey || config.evolutionApiKey;
+
+    if (!url || !inst || !key) return;
+
     setTestStatus("testing");
     try {
       const resp = await fetch(
-        `${config.evolutionUrl}/instance/connectionState/${config.evolutionInstance}`,
-        { headers: { apikey: config.evolutionApiKey } }
+        `${url.replace(/\/$/, "")}/instance/connectionState/${inst}`,
+        { headers: { apikey: key } }
       );
       if (resp.ok) {
         const data = await resp.json();
         if (data?.instance?.state === "open" || data?.state === "open") {
           setTestStatus("ok");
-          toast.success("✅ Evolution API conectada e instância online!");
+          if (!customUrl) toast.success("✅ Evolution API conectada e instância online!");
         } else {
           setTestStatus("error");
-          toast.error("⚠️ Instância offline ou desconectada do WhatsApp");
+          if (!customUrl) toast.error("⚠️ Instância offline ou desconectada do WhatsApp");
         }
       } else {
         setTestStatus("error");
-        toast.error("❌ Erro ao conectar com a Evolution API");
+        if (!customUrl) toast.error("❌ Erro ao conectar com a Evolution API");
       }
     } catch {
       setTestStatus("error");
-      toast.error("❌ Não foi possível alcançar a Evolution API");
+      if (!customUrl) toast.error("❌ Não foi possível alcançar a Evolution API");
     }
   };
 
-  const testWebhook = async () => {
+  const testWebhook = async (customUrl?: string, customInstance?: string) => {
+    const hookUrl = customUrl || config.webhookUrl;
+    const inst = customInstance || config.evolutionInstance;
+
+    if (!hookUrl || !inst) return;
+
     setWebhookStatus("testing");
     try {
       const testPayload = {
         event: "messages.upsert",
-        instance: config.evolutionInstance,
+        instance: inst,
         data: {
           key: { remoteJid: "120363427821554348@g.us", fromMe: false, id: "TESTUI001", participant: "5587992439015@s.whatsapp.net" },
           message: { conversation: "teste de conexão do painel" },
@@ -155,21 +178,21 @@ const WhatsAppAssistantConfig = () => {
           pushName: "Teste UI",
         },
       };
-      const resp = await fetch(config.webhookUrl, {
+      const resp = await fetch(hookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(testPayload),
       });
       if (resp.ok) {
         setWebhookStatus("ok");
-        toast.success("✅ Webhook respondeu corretamente!");
+        if (!customUrl) toast.success("✅ Webhook respondeu corretamente!");
       } else {
         setWebhookStatus("error");
-        toast.error(`❌ Webhook retornou erro ${resp.status}`);
+        if (!customUrl) toast.error(`❌ Webhook retornou erro ${resp.status}`);
       }
     } catch {
       setWebhookStatus("error");
-      toast.error("❌ Não foi possível alcançar o Webhook");
+      if (!customUrl) toast.error("❌ Não foi possível alcançar o Webhook");
     }
   };
 
