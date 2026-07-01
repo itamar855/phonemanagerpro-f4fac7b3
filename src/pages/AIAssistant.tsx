@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Brain, TrendingUp, Package, FileText, Loader2, Sparkles, Download } from "lucide-react";
+import { Brain, TrendingUp, Package, FileText, Loader2, Sparkles, Download, MessageSquare, Settings } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import WhatsAppAssistantConfig from "@/components/ai/WhatsAppAssistantConfig";
 
 const AGENTS = [
   {
@@ -37,6 +38,7 @@ const AGENTS = [
 
 const AIAssistant = () => {
   const { user, userRole, userPermissions } = useAuth();
+  const [activeTab, setActiveTab] = useState<"agents" | "whatsapp">("agents");
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
@@ -201,36 +203,61 @@ const AIAssistant = () => {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
-          <Brain className="h-6 w-6 text-primary" /> Assistente IA
-        </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Agentes inteligentes para análise e otimização</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Brain className="h-6 w-6 text-primary" /> Assistente IA
+          </h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Agentes inteligentes para análise e otimização</p>
+        </div>
       </div>
 
-      {/* Agent cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {AGENTS.map((agent) => (
-          <Card
-            key={agent.id}
-            className={`border-border/50 shadow-lg shadow-black/10 cursor-pointer transition-all hover:border-primary/30 ${
-              activeAgent === agent.id ? "ring-2 ring-primary/40" : ""
-            }`}
-            onClick={() => !loading && runAgent(agent.id)}
-          >
-            <CardContent className="p-4">
-              <div className={`rounded-lg ${agent.bgColor} p-2 w-fit mb-3`}>
-                <agent.icon className={`h-5 w-5 ${agent.color}`} />
-              </div>
-              <p className="font-medium text-sm">{agent.label}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{agent.description}</p>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Tab switcher */}
+      <div className="flex gap-1 p-1 rounded-lg bg-muted/50 w-fit border border-border/50">
+        <button
+          onClick={() => setActiveTab("agents")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+            activeTab === "agents" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Sparkles className="h-3.5 w-3.5" /> Agentes IA
+        </button>
+        <button
+          onClick={() => setActiveTab("whatsapp")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+            activeTab === "whatsapp" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <MessageSquare className="h-3.5 w-3.5" /> WhatsApp Financeiro
+        </button>
       </div>
+
+      {activeTab === "whatsapp" && <WhatsAppAssistantConfig />}
+
+      {activeTab === "agents" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {AGENTS.map((agent) => (
+            <Card
+              key={agent.id}
+              className={`border-border/50 shadow-lg shadow-black/10 cursor-pointer transition-all hover:border-primary/30 ${
+                activeAgent === agent.id ? "ring-2 ring-primary/40" : ""
+              }`}
+              onClick={() => !loading && runAgent(agent.id)}
+            >
+              <CardContent className="p-4">
+                <div className={`rounded-lg ${agent.bgColor} p-2 w-fit mb-3`}>
+                  <agent.icon className={`h-5 w-5 ${agent.color}`} />
+                </div>
+                <p className="font-medium text-sm">{agent.label}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{agent.description}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Custom request for legal agent */}
-      {activeAgent === "legal" && (
+      {activeTab === "agents" && activeAgent === "legal" && (
         <div className="space-y-2">
           <Textarea
             value={customRequest}
@@ -245,7 +272,7 @@ const AIAssistant = () => {
       )}
 
       {/* Result */}
-      {(result || loading) && (
+      {activeTab === "agents" && (result || loading) && (
         <Card className="border-border/50 shadow-lg shadow-black/10">
           <CardHeader className="pb-2">
             <CardTitle className="font-display text-sm flex items-center gap-2">
@@ -262,7 +289,7 @@ const AIAssistant = () => {
       )}
 
       {/* Database export - admin only */}
-      {isAdmin && (
+      {activeTab === "agents" && isAdmin && (
         <Card className="border-border/50 shadow-lg shadow-black/10">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
