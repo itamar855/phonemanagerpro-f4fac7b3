@@ -123,14 +123,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent loop from bot's own messages in groups
-    if (isGroup && key?.fromMe === true) {
-      console.log("Ignored group message sent by the bot itself.");
-      return new Response(JSON.stringify({ status: "ignored_bot_self" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     // Prevent infinite loop by ignoring the assistant's own confirmation/report replies
     if (
       textMessage.includes("Lançamento Confirmado") ||
