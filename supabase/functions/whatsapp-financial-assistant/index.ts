@@ -169,9 +169,15 @@ Deno.serve(async (req) => {
       textMessage = messageContent.conversation;
     } else if (messageContent?.extendedTextMessage?.text) {
       textMessage = messageContent.extendedTextMessage.text;
+    } else if (messageContent?.imageMessage?.caption) {
+      textMessage = messageContent.imageMessage.caption;
+    } else if (messageContent?.documentMessage?.caption) {
+      textMessage = messageContent.documentMessage.caption;
     }
 
-    if (!textMessage || textMessage.trim() === "") {
+    // Allow image-only messages through (they'll be handled later for receipt extraction)
+    const hasMediaAttachment = !!(messageContent?.imageMessage || messageContent?.documentMessage);
+    if ((!textMessage || textMessage.trim() === "") && !hasMediaAttachment) {
       return new Response(JSON.stringify({ status: "empty_text" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -404,14 +410,32 @@ ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado p
       });
     }
 
-    const { data: bankAccounts } = await supabase
-      .from("store_bank_accounts")
-      .select("id, bank_name, owner_type")
-      .eq("store_id", activeStoreId);
+    // Fetch ALL bank accounts for admin (across all stores)
+    let bankAccounts: any[] = [];
+    if (isAdmin) {
+      const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id");
+      bankAccounts = data || [];
+    } else {
+      const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id").eq("store_id", activeStoreId);
+      bankAccounts = data || [];
+    }
 
-    const accountsContext = (bankAccounts || []).map(
-      (a) => `ID: ${a.id} | Nome: ${a.bank_name} | Tipo: ${a.owner_type || "PJ"}`
-    ).join("\n");
+    // Build accounts context grouped by type
+    const pjAccounts = bankAccounts.filter(a => a.owner_type === "PJ");
+    const pfAccounts = bankAccounts.filter(a => a.owner_type === "PF");
+    
+    const accountsContext = [
+      "== CONTAS PJ (Empresa) ==",
+      ...pjAccounts.map(a => {
+        const storeName = allStores.find(s => s.id === a.store_id)?.name || "Loja desconhecida";
+        return `ID: ${a.id} | Banco: ${a.bank_name} | Tipo: PJ | Loja: ${storeName}`;
+      }),
+      "",
+      "== CONTAS PF (Pessoal do Itamar — única, independente de loja) ==",
+      ...pfAccounts.map(a => `ID: ${a.id} | Banco: ${a.bank_name} | Tipo: PF`),
+    ].join("\n");
+
+    const storesContext = allStores.map(s => `ID: ${s.id} | Nome: ${s.name}`).join("\n");
 
     const categories = [
       "Alimentação", "Moradia (Aluguel/Luz)", "Transporte/Combustível", "Lazer/Viagens",
@@ -420,36 +444,122 @@ ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado p
       "Impostos/Taxas", "Tarifas Bancárias", "Outros"
     ];
 
-    const systemPrompt = `Você é um Assistente Financeiro pessoal do Itamar, integrado via WhatsApp.
+    const systemPrompt = `Você é o Assistente Financeiro pessoal do Itamar, integrado via WhatsApp.
 
-REGRA PRINCIPAL: Por padrão, TODOS os gastos e lançamentos são PESSOAIS do Itamar (tipo expense_pf).
-Somente use expense_pj se a mensagem mencionar explicitamente: "loja", "empresa", "PJ", "CNPJ", "restaura phone", nome da loja, ou termos empresariais claros.
-Use "income" somente se mencionar recebimento, ganho, receita ou entrada de dinheiro.
-Use "pro_labore" somente se mencionar retirada, pró-labore ou transferência para si mesmo da empresa.
+CONCEITOS FUNDAMENTAIS:
+1. A conta PF (Pessoal) do Itamar é ÚNICA e universal — não pertence a nenhuma loja específica. É o dinheiro pessoal dele.
+2. As contas PJ (Empresa) são vinculadas a lojas específicas.
+3. Cada lançamento tem DOIS aspectos independentes:
+   a) CONTA-FONTE: De onde o dinheiro saiu/entrou (PF ou PJ). É definido pela menção de "pj", "conta da loja", "mercado pago pj" etc.
+   b) TIPO DE DESPESA: Se é gasto pessoal ou da empresa. É definido pelo contexto do gasto (aluguel da loja = PJ, marmita pessoal = PF).
 
-Contas bancárias cadastradas:
-${accountsContext || "Nenhuma conta cadastrada"}
+REGRAS DE CLASSIFICAÇÃO:
+- PADRÃO: Se não especificar de onde saiu o dinheiro, assume que saiu da conta PF (pessoal).
+- Se mencionar "conta pj", "pj", "da loja", "empresa" como FONTE do pagamento → source_account_id deve ser a conta PJ.
+- Se mencionar "conta pf", "pessoal", "minha conta" como FONTE → source_account_id deve ser a conta PF.
+
+TIPO DA TRANSAÇÃO:
+- "expense_pf": Gastos pessoais do Itamar (alimentação, transporte pessoal, lazer etc.)
+- "expense_pj": Gastos da empresa/loja (aluguel loja, internet loja, peças, impostos etc.)
+- "income": Receita/entrada de dinheiro
+- "pro_labore": Retirada pessoal da empresa
+
+DETECÇÃO DA LOJA:
+- Se a mensagem mencionar "vila eulalia", "eulalia" → store_id = "${allStores.find(s => s.name.toLowerCase().includes("eulalia"))?.id || ""}"
+- Se a mensagem mencionar "santa luzia", "luzia" → store_id = "${allStores.find(s => s.name.toLowerCase().includes("luzia"))?.id || ""}"
+- Se for despesa pessoal (expense_pf), use a loja padrão: "${activeStoreId}"
+- Se for despesa da empresa mas não especificar loja → use: "${activeStoreId}"
+
+EXEMPLOS PRÁTICOS:
+- "compra de marmita pj" → expense_pf (é gasto pessoal de marmita), mas PAGO da conta PJ. source_account_id = conta PJ.
+- "pagamento de internet da loja" → expense_pj, source_account_id = conta PJ da loja padrão.
+- "pagamento aluguel da vila eulalia" → expense_pj, store_id = loja Vila Eulalia, source_account_id = conta PJ Vila Eulalia.
+- "gasolina 50 reais" → expense_pf, source_account_id = conta PF.
+- "paguei aluguel pj 2000" → expense_pj, source_account_id = conta PJ.
+
+Lojas cadastradas:
+${storesContext}
+
+Contas bancárias:
+${accountsContext}
 
 Categorias disponíveis:
 ${categories.join(", ")}
 
-Exemplos de como classificar:
-- "paguei 10 reais de almoço" → expense_pf, Alimentação
-- "gastei no mercado pago" → expense_pf, verifique o banco
-- "comprei peça para consertar um celular da loja" → expense_pj, Estoque/Peças
-- "recebi 200 de serviço" → income
-- "paguei conta de luz da loja" → expense_pj, Moradia (Aluguel/Luz)
-- "paguei conta de luz" (sem mencionar loja) → expense_pf, Moradia (Aluguel/Luz)
-
-Retorne apenas o JSON (sem markdown):
+Retorne APENAS o JSON (sem markdown, sem explicação):
 {
   "type": "expense_pf" | "expense_pj" | "pro_labore" | "income",
   "amount": number,
-  "description": "string",
+  "description": "string curta descritiva",
   "category": "string",
-  "source_account_id": "uuid_or_null",
-  "destination_account_id": "uuid_or_null"
+  "source_account_id": "uuid_or_null (conta DE ONDE saiu o dinheiro)",
+  "destination_account_id": "uuid_or_null (conta PARA ONDE foi, se transferência)",
+  "store_id": "uuid_da_loja_alvo_ou_null"
 }`;
+
+    // Check if message has an image/media attached
+    let receiptUrl: string | null = null;
+    const hasImage = messageContent?.imageMessage || messageContent?.documentMessage;
+    
+    if (hasImage && evolutionUrl && evolutionApiKey && evolutionInstance) {
+      try {
+        // Fetch the base64 of the media using Evolution API
+        const mediaResp = await fetch(
+          `${evolutionUrl.replace(/\/$/, "")}/chat/getBase64FromMediaMessage/${evolutionInstance}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", apikey: evolutionApiKey },
+            body: JSON.stringify({
+              message: { key: { id: key.id } },
+              convertToMp4: false,
+            }),
+          }
+        );
+
+        if (mediaResp.ok) {
+          const mediaData = await mediaResp.json();
+          const base64Data = mediaData?.base64 || mediaData?.data;
+          
+          if (base64Data) {
+            // Upload to Supabase Storage
+            const mimeType = mediaData?.mimetype || messageContent?.imageMessage?.mimetype || "image/jpeg";
+            const ext = mimeType.includes("pdf") ? "pdf" : mimeType.includes("png") ? "png" : "jpg";
+            const fileName = `whatsapp-receipts/${userId}/${Date.now()}.${ext}`;
+            
+            // Decode base64 and upload
+            const binaryStr = atob(base64Data.replace(/^data:.*?;base64,/, ""));
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+            const { data: uploadData } = await supabase.storage
+              .from("receipts")
+              .upload(fileName, bytes, { contentType: mimeType, upsert: true });
+
+            if (uploadData?.path) {
+              const { data: publicUrlData } = supabase.storage.from("receipts").getPublicUrl(uploadData.path);
+              receiptUrl = publicUrlData?.publicUrl || null;
+              console.log("Receipt uploaded:", receiptUrl);
+            }
+          }
+        }
+      } catch (imgErr: any) {
+        console.warn("Could not process image attachment:", imgErr.message);
+      }
+    }
+
+    // Also read caption from image messages as text
+    if (!textMessage && hasImage) {
+      textMessage = messageContent?.imageMessage?.caption || messageContent?.documentMessage?.caption || "";
+    }
+    if (!textMessage || textMessage.trim() === "") {
+      if (receiptUrl) {
+        textMessage = "comprovante enviado";
+      } else {
+        return new Response(JSON.stringify({ status: "empty_text" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Call Groq API (free tier, OpenAI-compatible)
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -478,6 +588,9 @@ Retorne apenas o JSON (sem markdown):
     if (!modelOutputText) throw new Error("Groq returned empty classification.");
 
     const parsedTransaction = JSON.parse(modelOutputText.trim());
+    
+    // Determine the correct store_id for the transaction
+    const txStoreId = parsedTransaction.store_id || activeStoreId;
 
     const { data: newTx, error: txError } = await supabase
       .from("transactions")
@@ -487,12 +600,13 @@ Retorne apenas o JSON (sem markdown):
         net_amount: parsedTransaction.amount,
         description: `[WhatsApp] ${parsedTransaction.description}`,
         category: parsedTransaction.category || "Outros",
-        store_id: activeStoreId,
+        store_id: txStoreId,
         source_account_id: parsedTransaction.source_account_id || null,
         destination_account_id: parsedTransaction.destination_account_id || null,
         created_by: userId,
         expected_settlement_date: new Date().toISOString(),
         reconciled: false,
+        receipt_url: receiptUrl,
       })
       .select()
       .single();
@@ -504,12 +618,12 @@ Retorne apenas o JSON (sem markdown):
     if (isCash && (parsedTransaction.type === "expense_pj" || parsedTransaction.type === "income")) {
       const { data: register } = await supabase
         .from("cash_registers" as any).select("id")
-        .eq("store_id", activeStoreId).eq("status", "open").maybeSingle();
+        .eq("store_id", txStoreId).eq("status", "open").maybeSingle();
 
       if (register) {
         await supabase.from("cash_entries" as any).insert({
           cash_register_id: (register as any).id,
-          store_id: activeStoreId,
+          store_id: txStoreId,
           type: parsedTransaction.type === "income" ? "entrada" : "saida",
           amount: parsedTransaction.amount,
           description: `[WhatsApp] ${parsedTransaction.description}`,
@@ -524,6 +638,14 @@ Retorne apenas o JSON (sem markdown):
     const typeLabel = parsedTransaction.type === "expense_pf" ? "Despesa Pessoal (PF)" :
       parsedTransaction.type === "expense_pj" ? "Despesa da Loja (PJ)" :
       parsedTransaction.type === "pro_labore" ? "Retirada (Pró-labore)" : "Receita";
+    
+    // Determine source account label
+    const sourceAcct = bankAccounts.find(a => a.id === parsedTransaction.source_account_id);
+    const sourceLabel = sourceAcct ? `${sourceAcct.bank_name} (${sourceAcct.owner_type})` : "Dinheiro (Gaveta)";
+    
+    // Determine target store label
+    const targetStore = allStores.find(s => s.id === txStoreId);
+    const storeLabel2 = targetStore ? targetStore.name : "—";
 
     const replyMessage = `✅ *Lançamento Confirmado!*
 
@@ -531,7 +653,8 @@ Retorne apenas o JSON (sem markdown):
 🏷️ *Categoria:* ${parsedTransaction.category || "Outros"}
 📌 *Tipo:* ${typeLabel}
 📝 *Descrição:* ${parsedTransaction.description}
-🏦 *Conta:* ${parsedTransaction.source_account_id || parsedTransaction.destination_account_id ? "Conta Bancária" : "Dinheiro (Gaveta)"}
+🏦 *Conta Fonte:* ${sourceLabel}
+🏪 *Loja:* ${storeLabel2}${receiptUrl ? "\n📎 *Comprovante:* Anexado automaticamente!" : ""}
 
 Lançamento registrado no sistema! 🚀`;
 
