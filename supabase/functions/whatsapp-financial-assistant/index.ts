@@ -141,11 +141,26 @@ Deno.serve(async (req) => {
 
     console.log(`Processing message from ${cleanSender}: "${textMessage}"`);
 
+    // Admin phone numbers (all numbers belonging to the owner/admin)
+    const adminPhonesEnv = Deno.env.get("ADMIN_PHONES") || allowedPhone;
+    const adminPhones = adminPhonesEnv.split(",").map(n => normalizePhone(n.trim())).filter(n => n);
+    const isAdmin = adminPhones.includes(normSender);
+
     let { data: profile } = await supabase
       .from("profiles")
-      .select("user_id, store_id, display_name")
+      .select("user_id, store_id, display_name, phone")
       .or(`phone.ilike.%${cleanSender.slice(-8)}%,phone.ilike.%${cleanSender}%`)
       .maybeSingle();
+
+    // If no profile found by phone, and sender is admin, use the admin profile
+    if (!profile && isAdmin) {
+      const { data: adminProfile } = await supabase
+        .from("profiles")
+        .select("user_id, store_id, display_name")
+        .eq("user_id", Deno.env.get("ADMIN_USER_ID") || "62ea227e-d122-4709-b7cc-4a345092e7f3")
+        .maybeSingle();
+      profile = adminProfile;
+    }
 
     if (!profile) {
       const { data: firstProfile } = await supabase
@@ -156,19 +171,48 @@ Deno.serve(async (req) => {
       profile = firstProfile;
     }
 
-       const userId = profile?.user_id;
-    const activeStoreId = profile?.store_id;
+    const userId = profile?.user_id;
+    const defaultStoreId = profile?.store_id;
 
-    if (!userId || !activeStoreId) {
+    if (!userId || !defaultStoreId) {
       throw new Error("Could not find a valid user profile or store linkage in database.");
+    }
+
+    // Fetch all stores the user has access to
+    let allStores: { id: string; name: string }[] = [];
+    if (isAdmin) {
+      const { data: storesData } = await supabase.from("stores").select("id, name");
+      allStores = storesData || [];
+    } else {
+      const { data: storesData } = await supabase.from("stores").select("id, name").eq("id", defaultStoreId);
+      allStores = storesData || [];
     }
 
     // Intercept report requests
     const isReportRequest = /relatorio|relatório|resumo|balanço|balanco|saldo|extrato/i.test(textMessage);
     if (isReportRequest) {
-      console.log(`Generating filtered report for store: ${activeStoreId}`);
-      
       const txt = textMessage.toLowerCase();
+
+      // Detect which store(s) to report on
+      let reportStoreIds: string[] = [];
+      let storeLabel = "Todas as Lojas";
+      // Check if user mentioned a specific store by partial name
+      const matchedStore = allStores.find(s =>
+        txt.includes(s.name.toLowerCase()) ||
+        txt.includes("vila eulalia") && s.name.toLowerCase().includes("vila eulalia") ||
+        txt.includes("santa luzia") && s.name.toLowerCase().includes("santa luzia") ||
+        txt.includes("vila") && s.name.toLowerCase().includes("vila") ||
+        txt.includes("luzia") && s.name.toLowerCase().includes("luzia")
+      );
+      if (matchedStore) {
+        reportStoreIds = [matchedStore.id];
+        storeLabel = matchedStore.name;
+      } else {
+        reportStoreIds = allStores.map(s => s.id);
+      }
+
+      console.log(`Generating report for stores: ${reportStoreIds.join(", ")}`);
+      
       let startDate = new Date();
       let endDate = new Date();
       let dateLabel = "Últimos 30 dias";
@@ -196,11 +240,11 @@ Deno.serve(async (req) => {
         startDate.setHours(0, 0, 0, 0);
       }
 
-      // Query database
+      // Query database - filter by multiple stores if admin
       let dbQuery = supabase
         .from("transactions")
         .select("type, amount, description, category, created_at, source_account_id, destination_account_id")
-        .eq("store_id", activeStoreId)
+        .in("store_id", reportStoreIds)
         .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: false });
 
@@ -275,6 +319,7 @@ Deno.serve(async (req) => {
       const acctLabel = accountFilter === "banco" ? " (Apenas Banco)" : accountFilter === "dinheiro" ? " (Apenas Dinheiro/Gaveta)" : "";
 
       const reportMessage = `📊 *Resumo Financeiro - ${dateLabel}${typeLabel}${acctLabel}*
+🏪 *Loja:* ${storeLabel}
       
 📈 *Receitas (Entradas):* ${fmt.format(totalIncome)}
 📉 *Despesas Loja (PJ):* ${fmt.format(totalExpensePj)}
