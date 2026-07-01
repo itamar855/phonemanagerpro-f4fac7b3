@@ -187,8 +187,9 @@ const WhatsAppAssistantConfig = () => {
       );
       if (resp.ok) {
         const data = await resp.json();
-        if (data?.qrcode?.base64) {
-          setQrCode(data.qrcode.base64);
+        const qrImage = data?.base64 || data?.qrcode?.base64;
+        if (qrImage) {
+          setQrCode(qrImage);
           toast.success("QR Code gerado! Abra o WhatsApp no celular e escaneie.");
         } else if (data?.instance?.status === "connected" || data?.status === "connected" || data?.instance?.state === "open" || data?.state === "open") {
           toast.success("O WhatsApp já está conectado!");
