@@ -70,15 +70,32 @@ export default function Contas() {
       setLoading(false);
       return;
     }
-    const [accountsRes, storesRes, transactionsRes] = await Promise.all([
+    const [accountsRes, allAccountsRes, storesRes, transactionsRes, pfTxRes] = await Promise.all([
       supabase.from("store_bank_accounts").select("*").eq("store_id", activeStoreId),
+      supabase.from("store_bank_accounts").select("*").eq("owner_type", "PF"),
       supabase.from("stores").select("id, name"),
       supabase.from("transactions").select("*").eq("store_id", activeStoreId).order('created_at', { ascending: false }),
+      supabase.from("transactions").select("*").is("store_id", null).order('created_at', { ascending: false }),
     ]);
-    const accounts = accountsRes.data || [];
+    
+    // Merge PJ accounts (from active store) + PF accounts (global, any store) — deduplicate by id
+    const pjAccounts = accountsRes.data || [];
+    const pfAccountsAll = allAccountsRes.data || [];
+    const seenIds = new Set(pjAccounts.map((a: any) => a.id));
+    const uniquePfAccounts = pfAccountsAll.filter((a: any) => !seenIds.has(a.id));
+    const accounts = [...pjAccounts, ...uniquePfAccounts];
+    
+    // Merge store transactions + PF transactions (store_id null) — deduplicate by id
+    const storeTxs = transactionsRes.data || [];
+    const pfTxs = pfTxRes.data || [];
+    const seenTxIds = new Set(storeTxs.map((t: any) => t.id));
+    const uniquePfTxs = pfTxs.filter((t: any) => !seenTxIds.has(t.id));
+    const allTxs = [...storeTxs, ...uniquePfTxs].sort(
+      (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    
     const storesData = storesRes.data || [];
     setRawStores(storesData);
-    const allTxs = transactionsRes.data || [];
     setTransactions(allTxs);
     setStores(new Map<string, string>(storesData.map((s) => [s.id, s.name])));
     const now = new Date();
