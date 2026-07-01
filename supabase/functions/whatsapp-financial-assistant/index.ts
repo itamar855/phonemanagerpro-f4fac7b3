@@ -47,6 +47,24 @@ Deno.serve(async (req) => {
     const isLidFormat = remoteJid.endsWith("@lid");
     const isGroup = remoteJid.endsWith("@g.us");
 
+    // Restrict processing to ONLY specific expense groups
+    // Group 1: Original Gastos Pessoais | Group 2: The new one you tested
+    const allowedGroupJids = ["120363425514605912@g.us", "120363427821554348@g.us"];
+    
+    if (!isGroup) {
+      console.log(`Ignored private message from: ${remoteJid}`);
+      return new Response(JSON.stringify({ status: "ignored_private" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (isGroup && !allowedGroupJids.includes(remoteJid)) {
+      console.log(`Ignored message from unrelated group: ${remoteJid}`);
+      return new Response(JSON.stringify({ status: "ignored_group" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Extract sender JID (handles groups vs direct messages)
     let senderJid = "";
     if (isGroup) {
