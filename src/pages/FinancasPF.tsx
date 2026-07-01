@@ -105,10 +105,18 @@ const FinancasPF = () => {
         .from("transactions")
         .select("*")
         .in("type", ["expense_pf", "pro_labore"])
-        .eq("store_id", activeStoreId)
+        .or(`store_id.eq.${activeStoreId},store_id.is.null`)
         .order("created_at", { ascending: false }),
-      supabase.from("store_bank_accounts").select("*").eq("store_id", activeStoreId),
-      supabase.from("fixed_expenses").select("*").eq("is_pf", true).eq("store_id", activeStoreId).order("due_day"),
+      supabase
+        .from("store_bank_accounts")
+        .select("*")
+        .or(`store_id.eq.${activeStoreId},owner_type.eq.PF`),
+      supabase
+        .from("fixed_expenses")
+        .select("*")
+        .eq("is_pf", true)
+        .or(`store_id.eq.${activeStoreId},store_id.is.null`)
+        .order("due_day"),
     ]);
     setTransactions(txRes.data ?? []);
     setAccounts(accRes.data ?? []);
