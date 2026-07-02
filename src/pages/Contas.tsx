@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Landmark, Clock, Building, User, Briefcase, ArrowUpRight, TrendingUp, PieChart, History, Plus, PlusCircle, CreditCard, PiggyBank, PlusCircle as PlusIcon } from "lucide-react";
+import { Landmark, Clock, Building, User, Briefcase, ArrowUpRight, TrendingUp, PieChart, History, Plus, PlusCircle, CreditCard, PiggyBank, PlusCircle as PlusIcon, Banknote, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { 
@@ -35,6 +35,7 @@ type AccountBalance = {
   overall_balance: number;
   available_balance: number;
   future_balance: number;
+  is_cashbox: boolean;
 };
 export default function Contas() {
   const { user, activeStoreId, userRole } = useAuth();
@@ -131,6 +132,7 @@ export default function Contas() {
         overall_balance: overall,
         available_balance: available,
         future_balance: future,
+        is_cashbox: acc.is_cashbox || false
       };
     });
     setBalances(computed);
@@ -181,6 +183,14 @@ export default function Contas() {
   useEffect(() => { fetchData(); }, [activeStoreId, periodFilter]);
   const pj = balances.filter((a) => !a.owner_type || a.owner_type === "PJ");
   const pf = balances.filter((a) => a.owner_type === "PF");
+
+  // Saldo em Espécie na Loja (Caixas Locais / is_cashbox)
+  const cashboxAccounts = pj.filter(a => a.is_cashbox === true);
+  const totalPhysicalCash = cashboxAccounts.reduce((sum, a) => sum + a.available_balance, 0);
+
+  // Valores a entrar no próximo dia útil (Settlement de PIX/Cartão com expected_settlement_date futura)
+  const totalFutureSettlements = pj.filter(a => !a.is_cashbox).reduce((sum, a) => sum + a.future_balance, 0);
+
   // Estatísticas PF do Mês Atual
   const now = new Date();
   const pfTransactions = transactions.filter(t => 
@@ -209,38 +219,52 @@ export default function Contas() {
     .slice(0, 5);
   const AccountCard = ({ acc }: { acc: AccountBalance }) => (
     <Card className="border-primary/10 bg-card overflow-hidden shadow-sm hover:border-primary transition-all">
-      <div className={`h-1.5 w-full bg-gradient-to-r ${acc.owner_type === "PF" ? "from-violet-600 to-fuchsia-500" : "from-emerald-500 to-primary"}`} />
+      <div className={`h-1.5 w-full bg-gradient-to-r ${acc.owner_type === "PF" ? "from-violet-600 to-fuchsia-500" : (acc.is_cashbox ? "from-amber-500 to-yellow-400" : "from-emerald-500 to-primary")}`} />
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <div>
             <CardTitle className="text-lg flex items-center gap-2 font-bold tracking-tight">
-              <Landmark className={`h-4 w-4 ${acc.owner_type === "PF" ? "text-violet-500" : "text-emerald-500"}`} />
+              {acc.is_cashbox ? (
+                <Banknote className="h-4 w-4 text-amber-500" />
+              ) : (
+                <Landmark className={`h-4 w-4 ${acc.owner_type === "PF" ? "text-violet-500" : "text-emerald-500"}`} />
+              )}
               {acc.bank_name}
             </CardTitle>
             <CardDescription className="text-xs mt-1 flex items-center gap-1 font-medium italic">
-              {acc.owner_type === "PF" ? <><User className="h-3 w-3" /> Pessoal</> : <><Building className="h-3 w-3" /> {stores.get(acc.store_id) || "Empresa"}</>}
+              {acc.owner_type === "PF" ? (
+                <><User className="h-3 w-3" /> Pessoal</>
+              ) : acc.is_cashbox ? (
+                <><Wallet className="h-3 w-3 text-amber-500" /> Caixa Local (Espécie) - {stores.get(acc.store_id) || "Empresa"}</>
+              ) : (
+                <><Building className="h-3 w-3" /> {stores.get(acc.store_id) || "Empresa"}</>
+              )}
             </CardDescription>
           </div>
-          <Badge className="text-[10px] capitalize bg-muted/50 border-border shrink-0">{acc.account_type}</Badge>
+          <Badge className="text-[10px] capitalize bg-muted/50 border-border shrink-0">
+            {acc.is_cashbox ? "Caixa Físico" : acc.account_type}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className={`rounded-xl p-4 border border-border/50 ${acc.owner_type === "PF" ? "bg-violet-500/5" : "bg-emerald-500/5"}`}>
+        <div className={`rounded-xl p-4 border border-border/50 ${acc.owner_type === "PF" ? "bg-violet-500/5" : (acc.is_cashbox ? "bg-amber-500/5" : "bg-emerald-500/5")}`}>
           <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Saldo Disponível</p>
-          <p className={`text-3xl font-black font-display tracking-tight ${acc.available_balance >= 0 ? (acc.owner_type === "PF" ? "text-violet-600" : "text-emerald-600") : "text-destructive"}`}>
+          <p className={`text-3xl font-black font-display tracking-tight ${acc.available_balance >= 0 ? (acc.owner_type === "PF" ? "text-violet-600" : (acc.is_cashbox ? "text-amber-600" : "text-emerald-600")) : "text-destructive"}`}>
             {fmt(acc.available_balance)}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-2 border rounded-lg bg-muted/20">
-            <p className="text-[9px] text-muted-foreground font-bold uppercase">A Receber</p>
-            <p className="text-sm font-bold">{fmt(acc.future_balance)}</p>
+        {!acc.is_cashbox && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-2 border rounded-lg bg-muted/20">
+              <p className="text-[9px] text-muted-foreground font-bold uppercase">A Receber</p>
+              <p className="text-sm font-bold">{fmt(acc.future_balance)}</p>
+            </div>
+            <div className="p-2 border rounded-lg bg-muted/20">
+              <p className="text-[9px] text-muted-foreground font-bold uppercase">Total Geral</p>
+              <p className="text-sm font-bold">{fmt(acc.overall_balance)}</p>
+            </div>
           </div>
-          <div className="p-2 border rounded-lg bg-muted/20">
-            <p className="text-[9px] text-muted-foreground font-bold uppercase">Total Geral</p>
-            <p className="text-sm font-bold">{fmt(acc.overall_balance)}</p>
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -339,6 +363,36 @@ export default function Contas() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="pj" className="mt-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="border-amber-500/20 bg-amber-500/5 overflow-hidden shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-bold text-amber-600 uppercase flex items-center gap-2 font-display tracking-widest">
+                  <Banknote className="h-4 w-4" /> Saldo em Espécie na Loja
+                </CardTitle>
+                <CardDescription className="text-xs mt-0.5">Dinheiro físico em caixa (gaveta)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-black font-display text-amber-600 tracking-tight">
+                  {fmt(totalPhysicalCash)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-primary/20 bg-primary/5 overflow-hidden shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xs font-bold text-primary uppercase flex items-center gap-2 font-display tracking-widest">
+                  <Clock className="h-4 w-4" /> A Receber (Próximo Dia Útil)
+                </CardTitle>
+                <CardDescription className="text-xs mt-0.5">Vendas PIX/Cartão a serem compensadas nas contas PJ</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-black font-display text-primary tracking-tight">
+                  {fmt(totalFutureSettlements)}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {pj.length === 0 ? <EmptyState isPF={false} /> : pj.map((acc) => (
               <div key={acc.account_id}>
