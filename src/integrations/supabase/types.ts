@@ -1978,6 +1978,7 @@ export type Database = {
           holder_name: string | null
           id: string | null
           is_primary: boolean | null
+          is_cashbox: boolean | null
           notes: string | null
           owner_type: string | null
           pix_fee_percent: number | null
@@ -2001,6 +2002,7 @@ export type Database = {
           holder_name?: string | null
           id?: string | null
           is_primary?: boolean | null
+          is_cashbox?: boolean | null
           notes?: string | null
           owner_type?: string | null
           pix_fee_percent?: number | null
@@ -2024,6 +2026,7 @@ export type Database = {
           holder_name?: string | null
           id?: string | null
           is_primary?: boolean | null
+          is_cashbox?: boolean | null
           notes?: string | null
           owner_type?: string | null
           pix_fee_percent?: number | null
