@@ -398,6 +398,17 @@ const FinancasPF = () => {
   const years = Array.from(new Set(transactions.map((t) => new Date(t.created_at).getFullYear())));
   if (!years.includes(now.getFullYear())) years.push(now.getFullYear());
   years.sort((a, b) => b - a);
+  if (userRole !== "admin") {
+    return (
+      <div className="flex flex-col items-center justify-center p-24 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <h2 className="text-xl font-bold">Acesso Negado</h2>
+        <p className="text-muted-foreground mt-2 max-w-sm">
+          Apenas o administrador do sistema tem permissão para visualizar e gerenciar as Finanças Pessoais (PF).
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

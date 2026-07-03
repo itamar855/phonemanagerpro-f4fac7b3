@@ -88,12 +88,14 @@ export default function Contas() {
     
     // Deduplicate PF accounts by bank_name (PF accounts are global/personal, only 1 per bank)
     const seenPfNames = new Set<string>();
-    const pfAccounts = allAccounts.filter((a: any) => a.owner_type === "PF").filter((a: any) => {
-      const key = (a.bank_name || "").toLowerCase().trim();
-      if (seenPfNames.has(key)) return false;
-      seenPfNames.add(key);
-      return true;
-    });
+    const pfAccounts = userRole === "admin"
+      ? allAccounts.filter((a: any) => a.owner_type === "PF").filter((a: any) => {
+          const key = (a.bank_name || "").toLowerCase().trim();
+          if (seenPfNames.has(key)) return false;
+          seenPfNames.add(key);
+          return true;
+        })
+      : [];
 
     const accounts = [...pjAccounts, ...pfAccounts];
 
@@ -361,9 +363,11 @@ export default function Contas() {
           <TabsTrigger value="pj" className="data-[state=active]:bg-background data-[state=active]:shadow-sm px-6">
             <Briefcase className="h-4 w-4 mr-2" /> Comercial (PJ)
           </TabsTrigger>
-          <TabsTrigger value="pf" className="data-[state=active]:bg-background data-[state=active]:shadow-sm px-6">
-            <User className="h-4 w-4 mr-2" /> Pessoal (PF)
-          </TabsTrigger>
+          {userRole === "admin" && (
+            <TabsTrigger value="pf" className="data-[state=active]:bg-background data-[state=active]:shadow-sm px-6">
+              <User className="h-4 w-4 mr-2" /> Pessoal (PF)
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="pj" className="mt-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
