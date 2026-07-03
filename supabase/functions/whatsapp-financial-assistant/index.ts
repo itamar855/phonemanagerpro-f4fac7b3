@@ -304,107 +304,144 @@ Deno.serve(async (req) => {
       allStores = storesData || [];
     }
 
+    // Fetch ALL bank accounts for admin (across all stores) or user's active store
+    let bankAccounts: any[] = [];
+    if (isAdmin) {
+      const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id");
+      bankAccounts = data || [];
+    } else {
+      const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id").eq("store_id", activeStoreId);
+      bankAccounts = data || [];
+    }
+
     // Intercept report requests
     const isReportRequest = /relatorio|relatório|resumo|balanço|balanco|saldo|extrato/i.test(textMessage);
     if (isReportRequest) {
-      const txt = textMessage.toLowerCase();
+      // Let's call the LLM to parse the report request parameters
+      let parsed = {
+        startDate: null as string | null,
+        endDate: null as string | null,
+        typeFilter: "todos",
+        storeId: "all",
+        accountFilter: "todos",
+        dateLabel: "Últimos 30 dias"
+      };
 
-      // Detect which store(s) to report on
-      let reportStoreIds: string[] = [];
-      let storeLabel = "Todas as Lojas";
-      // Check if user mentioned a specific store by partial name
-      const matchedStore = allStores.find(s =>
-        txt.includes(s.name.toLowerCase()) ||
-        txt.includes("vila eulalia") && s.name.toLowerCase().includes("vila eulalia") ||
-        txt.includes("santa luzia") && s.name.toLowerCase().includes("santa luzia") ||
-        txt.includes("vila") && s.name.toLowerCase().includes("vila") ||
-        txt.includes("luzia") && s.name.toLowerCase().includes("luzia")
-      );
-      if (matchedStore) {
-        reportStoreIds = [matchedStore.id];
-        storeLabel = matchedStore.name;
-      } else {
-        reportStoreIds = allStores.map(s => s.id);
+      if (groqApiKey) {
+        try {
+          const reportParserPrompt = `Você é um assistente financeiro inteligente. Analise a solicitação de relatório do usuário e extraia os filtros de data, tipo de transação, loja e conta em formato JSON.
+          
+Data atual de referência: ${new Date().toISOString()} (Hoje é ${new Date().toLocaleDateString("pt-BR", { weekday: 'long' })})
+
+Lojas disponíveis:
+${allStores.map(s => `- ID: "${s.id}" | Nome: "${s.name}"`).join("\n")}
+- Todas as Lojas / Sem especificar uma específica → retornar "all" para storeId.
+
+Contas bancárias disponíveis:
+${bankAccounts.map(a => `- ID: "${a.id}" | Banco: "${a.bank_name}" | Proprietário/Tipo: "${a.owner_type}"`).join("\n")}
+
+Instruções para typeFilter:
+- se o usuário pedir gastos pessoais, despesa pessoal, "PF", "pessoais", "meus gastos", retornar "pf".
+- se o usuário pedir gastos/despesas da loja, despesas da empresa, "PJ", "lojas", retornar "pj".
+- se o usuário pedir receitas, ganhos, faturamento, entradas, retornar "entradas".
+- se o usuário pedir despesas gerais, saídas, gastos (sem especificar PF ou PJ especificamente), retornar "saidas".
+- se o usuário pedir retiradas, pró-labore, pro-labore, retornar "pro_labore".
+- caso contrário, retornar "todos".
+
+Instruções para datas:
+- se pedir "hoje": startDate deve ser o início de hoje e endDate o fim de hoje.
+- se pedir "ontem": startDate deve ser o início de ontem e endDate o fim de ontem.
+- se pedir "semana" (últimos 7 dias): startDate deve ser 7 dias atrás e endDate o momento atual.
+- se pedir "este mês" ou "mês atual": startDate deve ser o início do mês atual e endDate o momento atual.
+- se não especificar período, use o padrão de últimos 30 dias: startDate deve ser 30 dias atrás e endDate o momento atual.
+
+Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou tags adicionais.
+{
+  "startDate": "string_iso_ou_null",
+  "endDate": "string_iso_ou_null",
+  "typeFilter": "todos" | "pf" | "pj" | "entradas" | "saidas" | "pro_labore",
+  "storeId": "uuid_ou_all",
+  "accountFilter": "todos" | "banco" | "dinheiro",
+  "dateLabel": "string descrevendo o período amigavelmente em português (ex: 'Hoje', 'Ontem', 'Últimos 7 dias', 'Este Mês', 'Últimos 30 dias')"
+}`;
+
+          const groqReportParser = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${groqApiKey}`
+            },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: [
+                { role: "system", content: reportParserPrompt },
+                { role: "user", content: `Solicitação: "${textMessage}"` }
+              ],
+              temperature: 0.1,
+              response_format: { type: "json_object" }
+            })
+          });
+
+          if (groqReportParser.ok) {
+            const parserData = await groqReportParser.json();
+            const content = parserData.choices?.[0]?.message?.content;
+            if (content) {
+              parsed = JSON.parse(content.trim());
+              console.log("Parsed report request parameters:", JSON.stringify(parsed));
+            }
+          }
+        } catch (err: any) {
+          console.error("Failed to parse report request with LLM, falling back to manual parsing:", err.message);
+        }
       }
 
-      console.log(`Generating report for stores: ${reportStoreIds.join(", ")}`);
-      
-      let startDate = new Date();
-      let endDate = new Date();
-      let dateLabel = "Últimos 30 dias";
-      
-      // Date filters
-      if (txt.includes("hoje")) {
-        startDate.setHours(0, 0, 0, 0);
-        dateLabel = "Hoje";
-      } else if (txt.includes("ontem")) {
-        startDate.setDate(startDate.getDate() - 1);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setDate(endDate.getDate() - 1);
-        endDate.setHours(23, 59, 59, 999);
-        dateLabel = "Ontem";
-      } else if (txt.includes("semana")) {
-        startDate.setDate(startDate.getDate() - 7);
-        startDate.setHours(0, 0, 0, 0);
-        dateLabel = "Últimos 7 dias";
-      } else if (txt.includes("este mes") || txt.includes("este mês") || txt.includes("do mês") || txt.includes("do mes")) {
-        startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-        startDate.setHours(0, 0, 0, 0);
-        dateLabel = "Este Mês";
-      } else {
-        startDate.setDate(startDate.getDate() - 30);
-        startDate.setHours(0, 0, 0, 0);
-      }
+      // If dates are null/missing in parsed response, fall back to last 30 days
+      let startDate = parsed.startDate ? new Date(parsed.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      let endDate = parsed.endDate ? new Date(parsed.endDate) : new Date();
+      let dateLabel = parsed.dateLabel || "Últimos 30 dias";
 
       // Query database for all transactions in the time range
       let dbQuery = supabase
         .from("transactions")
         .select("type, amount, description, category, created_at, source_account_id, destination_account_id, store_id")
         .gte("created_at", startDate.toISOString())
+        .lte("created_at", endDate.toISOString())
         .order("created_at", { ascending: false });
-
-      if (dateLabel === "Ontem") {
-        dbQuery = dbQuery.lte("created_at", endDate.toISOString());
-      }
 
       const { data: txs, error: fetchErr } = await dbQuery;
       if (fetchErr) throw fetchErr;
 
-      // Filter in Memory by store:
-      // If a specific store was matched, only show that store.
-      // Otherwise, show stores the user has access to, plus personal expenses (store_id === null)
+      // Filter in Memory by store
       let filteredTxs = txs || [];
-      if (matchedStore) {
-        filteredTxs = filteredTxs.filter(t => t.store_id === matchedStore.id);
+      let storeLabel = "Todas as Lojas";
+      if (parsed.storeId && parsed.storeId !== "all") {
+        filteredTxs = filteredTxs.filter(t => t.store_id === parsed.storeId);
+        const storeObj = allStores.find(s => s.id === parsed.storeId);
+        if (storeObj) {
+          storeLabel = storeObj.name;
+        }
       } else {
         const allowedStoreIds = new Set(allStores.map(s => s.id));
         filteredTxs = filteredTxs.filter(t => t.store_id === null || allowedStoreIds.has(t.store_id));
       }
 
-      // Extract filter criteria
-      let typeFilter = "todos"; // todos, entradas, saidas
-      if (txt.includes("despesa") || txt.includes("gasto") || txt.includes("saida") || txt.includes("saída")) {
-        typeFilter = "saidas";
-      } else if (txt.includes("receita") || txt.includes("ganho") || txt.includes("entrada")) {
-        typeFilter = "entradas";
-      }
-
-      let accountFilter = "todos"; // todos, banco, dinheiro
-      if (txt.includes("banco") || txt.includes("conta")) {
-        accountFilter = "banco";
-      } else if (txt.includes("caixa") || txt.includes("dinheiro") || txt.includes("gaveta")) {
-        accountFilter = "dinheiro";
-      }
-
-      if (typeFilter === "entradas") {
+      // Filter by Type
+      if (parsed.typeFilter === "pf") {
+        filteredTxs = filteredTxs.filter(t => t.type === "expense_pf");
+      } else if (parsed.typeFilter === "pj") {
+        filteredTxs = filteredTxs.filter(t => t.type === "expense_pj" || t.type === "income" || t.type === "pro_labore");
+      } else if (parsed.typeFilter === "entradas") {
         filteredTxs = filteredTxs.filter(t => t.type === "income");
-      } else if (typeFilter === "saidas") {
+      } else if (parsed.typeFilter === "saidas") {
         filteredTxs = filteredTxs.filter(t => t.type !== "income");
+      } else if (parsed.typeFilter === "pro_labore") {
+        filteredTxs = filteredTxs.filter(t => t.type === "pro_labore");
       }
 
-      if (accountFilter === "banco") {
+      // Filter by Account
+      if (parsed.accountFilter === "banco") {
         filteredTxs = filteredTxs.filter(t => t.source_account_id || t.destination_account_id);
-      } else if (accountFilter === "dinheiro") {
+      } else if (parsed.accountFilter === "dinheiro") {
         filteredTxs = filteredTxs.filter(t => !t.source_account_id && !t.destination_account_id);
       }
 
@@ -439,8 +476,16 @@ Deno.serve(async (req) => {
       const totalExpenses = totalExpensePj + totalExpensePf + totalProLabore;
       const netBalance = totalIncome - totalExpenses;
 
-      const typeLabel = typeFilter === "entradas" ? " (Apenas Entradas)" : typeFilter === "saidas" ? " (Apenas Saídas)" : "";
-      const acctLabel = accountFilter === "banco" ? " (Apenas Banco)" : accountFilter === "dinheiro" ? " (Apenas Dinheiro/Gaveta)" : "";
+      let typeLabel = "";
+      if (parsed.typeFilter === "pf") typeLabel = " (Apenas Pessoais/PF)";
+      else if (parsed.typeFilter === "pj") typeLabel = " (Apenas Empresa/PJ)";
+      else if (parsed.typeFilter === "entradas") typeLabel = " (Apenas Entradas)";
+      else if (parsed.typeFilter === "saidas") typeLabel = " (Apenas Saídas)";
+      else if (parsed.typeFilter === "pro_labore") typeLabel = " (Apenas Retiradas/Pró-labore)";
+
+      let acctLabel = "";
+      if (parsed.accountFilter === "banco") acctLabel = " (Apenas Banco)";
+      else if (parsed.accountFilter === "dinheiro") acctLabel = " (Apenas Dinheiro/Gaveta)";
 
       const reportMessage = `📊 *Resumo Financeiro - ${dateLabel}${typeLabel}${acctLabel}*
 🏪 *Loja:* ${storeLabel}
@@ -472,16 +517,6 @@ ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado p
       return new Response(JSON.stringify({ status: "success", type: "report" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-    }
-
-    // Fetch ALL bank accounts for admin (across all stores)
-    let bankAccounts: any[] = [];
-    if (isAdmin) {
-      const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id");
-      bankAccounts = data || [];
-    } else {
-      const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id").eq("store_id", activeStoreId);
-      bankAccounts = data || [];
     }
 
     // Build accounts context grouped by type
