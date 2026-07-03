@@ -487,6 +487,55 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
       if (parsed.accountFilter === "banco") acctLabel = " (Apenas Banco)";
       else if (parsed.accountFilter === "dinheiro") acctLabel = " (Apenas Dinheiro/Gaveta)";
 
+      // Calculate current bank account balances dynamically
+      let balancesSection = "";
+      try {
+        const accountIds = bankAccounts.map(a => a.id);
+        if (accountIds.length > 0) {
+          const { data: balanceTxs } = await supabase
+            .from("transactions")
+            .select("amount, net_amount, source_account_id, destination_account_id, expected_settlement_date")
+            .or(`source_account_id.in.(${accountIds.join(",")}),destination_account_id.in.(${accountIds.join(",")})`);
+
+          const todayEnd = new Date();
+          todayEnd.setHours(23, 59, 59, 999);
+
+          const computedBalances = bankAccounts.map((acc) => {
+            let balance = 0;
+            (balanceTxs || []).forEach((tx) => {
+              const isDest = tx.destination_account_id === acc.id;
+              const isSrc = tx.source_account_id === acc.id;
+              if (!isDest && !isSrc) return;
+              const value = Number(tx.net_amount ?? tx.amount) || 0;
+              const effect = isDest ? value : -value;
+              
+              const settled = tx.expected_settlement_date ? new Date(tx.expected_settlement_date) : new Date(0);
+              if (settled <= todayEnd) {
+                balance += effect;
+              }
+            });
+            return {
+              bank_name: acc.bank_name,
+              owner_type: acc.owner_type,
+              balance: balance
+            };
+          });
+
+          const pjBalances = computedBalances.filter(b => b.owner_type === "PJ");
+          const pfBalances = computedBalances.filter(b => b.owner_type === "PF");
+
+          balancesSection = "\n\n🏦 *Saldo Conciliado das Contas:*";
+          if (pjBalances.length > 0) {
+            balancesSection += `\n*Empresa (PJ):*\n${pjBalances.map(b => `  - ${b.bank_name}: ${fmt.format(b.balance)}`).join("\n")}`;
+          }
+          if (pfBalances.length > 0) {
+            balancesSection += `\n*Pessoal (PF):*\n${pfBalances.map(b => `  - ${b.bank_name}: ${fmt.format(b.balance)}`).join("\n")}`;
+          }
+        }
+      } catch (err: any) {
+        console.error("Error computing bank balances for report:", err.message);
+      }
+
       const reportMessage = `📊 *Resumo Financeiro - ${dateLabel}${typeLabel}${acctLabel}*
 🏪 *Loja:* ${storeLabel}
       
@@ -497,7 +546,7 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
 
 ━━━━━━━━━━━━━━━━━━
 💰 *Saldo Líquido:* ${fmt.format(netBalance)}
-━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━${balancesSection}
 
 📝 *Últimos Lançamentos:*
 ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado para os filtros solicitados."}`;
