@@ -490,6 +490,25 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
       // Calculate current bank account balances dynamically
       let balancesSection = "";
       try {
+        // Deduplicate bankAccounts — PF by bank_name, PJ by bank_name (per-store)
+        // For PF: merge all duplicate records into one virtual account
+        const pfRaw = bankAccounts.filter(a => a.owner_type === "PF");
+        const seenPfReport = new Set<string>();
+        const pfDeduped = pfRaw.filter(a => {
+          const k = a.bank_name.toLowerCase().trim();
+          if (seenPfReport.has(k)) return false;
+          seenPfReport.add(k);
+          return true;
+        });
+        // Build a map from bank_name → all account IDs (to sum balances across duplicates)
+        const pfNameToIds: Record<string, string[]> = {};
+        pfRaw.forEach(a => {
+          const k = a.bank_name.toLowerCase().trim();
+          if (!pfNameToIds[k]) pfNameToIds[k] = [];
+          pfNameToIds[k].push(a.id);
+        });
+        const pjAccsReport = bankAccounts.filter(a => a.owner_type !== "PF");
+        const allAccountsForReport = [...pjAccsReport, ...pfDeduped];
         const accountIds = bankAccounts.map(a => a.id);
         if (accountIds.length > 0) {
           const { data: balanceTxs } = await supabase
@@ -500,15 +519,18 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
           const todayEnd = new Date();
           todayEnd.setHours(23, 59, 59, 999);
 
-          const computedBalances = bankAccounts.map((acc) => {
+          const computedBalances = allAccountsForReport.map((acc) => {
             let balance = 0;
+            // For PF accounts, get ALL IDs that share the same bank_name (from duplicates)
+            const idsToMatch = acc.owner_type === "PF"
+              ? (pfNameToIds[acc.bank_name.toLowerCase().trim()] || [acc.id])
+              : [acc.id];
             (balanceTxs || []).forEach((tx) => {
-              const isDest = tx.destination_account_id === acc.id;
-              const isSrc = tx.source_account_id === acc.id;
+              const isDest = idsToMatch.includes(tx.destination_account_id);
+              const isSrc  = idsToMatch.includes(tx.source_account_id);
               if (!isDest && !isSrc) return;
               const value = Number(tx.net_amount ?? tx.amount) || 0;
               const effect = isDest ? value : -value;
-              
               const settled = tx.expected_settlement_date ? new Date(tx.expected_settlement_date) : new Date(0);
               if (settled <= todayEnd) {
                 balance += effect;
@@ -532,6 +554,7 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
             balancesSection += `\n*Pessoal (PF):*\n${pfBalances.map(b => `  - ${b.bank_name}: ${fmt.format(b.balance)}`).join("\n")}`;
           }
         }
+
       } catch (err: any) {
         console.error("Error computing bank balances for report:", err.message);
       }
@@ -579,7 +602,15 @@ ${listItems.length > 0 ? listItems.join("\n") : "Nenhum lançamento encontrado p
         pjAccountsDeduped.push(a);
       }
     }
-    const pfAccounts = bankAccounts.filter(a => a.owner_type === "PF");
+    const pfAccountsRaw = bankAccounts.filter(a => a.owner_type === "PF");
+    // Deduplicate PF accounts by bank_name — PF is one person, not per-store
+    const seenPfBanks = new Set<string>();
+    const pfAccounts = pfAccountsRaw.filter(a => {
+      const key = a.bank_name.toLowerCase().trim();
+      if (seenPfBanks.has(key)) return false;
+      seenPfBanks.add(key);
+      return true;
+    });
     
     const accountsContext = [
       "== CONTAS PJ (Empresa — únicas, compartilhadas entre todas as lojas) ==",

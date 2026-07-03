@@ -79,11 +79,17 @@ export default function Contas() {
       supabase.from("transactions").select("*").is("store_id", null).order('created_at', { ascending: false }),
     ]);
     
-    // Merge PJ accounts (from active store) + PF accounts (global, any store) — deduplicate by id
+    // Merge PJ accounts (from active store) + PF accounts (global, any store) — deduplicate
     const pjAccounts = accountsRes.data || [];
     const pfAccountsAll = allAccountsRes.data || [];
-    const seenIds = new Set(pjAccounts.map((a: any) => a.id));
-    const uniquePfAccounts = pfAccountsAll.filter((a: any) => !seenIds.has(a.id));
+    // Deduplicate PF accounts by bank_name (PF is a single person, not per-store)
+    const seenPfBankNames = new Set<string>();
+    const uniquePfAccounts = pfAccountsAll.filter((a: any) => {
+      const key = (a.bank_name || "").toLowerCase().trim();
+      if (seenPfBankNames.has(key)) return false;
+      seenPfBankNames.add(key);
+      return true;
+    });
     const accounts = [...pjAccounts, ...uniquePfAccounts];
     
     // Merge store transactions + PF transactions (store_id null) — deduplicate by id

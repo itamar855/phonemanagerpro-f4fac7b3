@@ -119,7 +119,16 @@ const FinancasPF = () => {
         .order("due_day"),
     ]);
     setTransactions(txRes.data ?? []);
-    setAccounts(accRes.data ?? []);
+    // Deduplicate PF accounts by bank_name — PF is one person, not per-store
+    const rawAccounts = accRes.data ?? [];
+    const seenPfNames = new Set<string>();
+    const dedupedAccounts = rawAccounts.filter((a: any) => {
+      const key = (a.bank_name || "").toLowerCase().trim();
+      if (seenPfNames.has(key)) return false;
+      seenPfNames.add(key);
+      return true;
+    });
+    setAccounts(dedupedAccounts);
     setFixedExpenses(fixedRes.data ?? []);
   };
 

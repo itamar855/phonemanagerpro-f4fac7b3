@@ -292,6 +292,48 @@ function exportComissoesPDF(comissoes: any[], periodo: string, loja: string) {
   toast.success("PDF de Comissoes gerado!");
 }
 
+function exportFinanceiroPDF(rows: any[], stats: any, period: string, loja: string) {
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
+  const pg = { n: 1 };
+  let y = pdfHeader(doc, "Relatorio Financeiro Detalhado", loja, period);
+  
+  y = pdfKpiRow(doc, y, [
+    { label: "Total Entradas", value: formatCurrency(stats.totalEntradas), color: PDF_GREEN },
+    { label: "Total Saidas", value: formatCurrency(stats.totalSaidas), color: PDF_RED },
+    { label: "Saldo Liquido", value: formatCurrency(stats.saldoLiquido), color: stats.saldoLiquido >= 0 ? PDF_GREEN : PDF_RED },
+    { label: "Movimentacoes", value: String(rows.length) },
+  ]);
+  
+  y += 4;
+  
+  const cols = [
+    { label: "DATA", w: 25 },
+    { label: "DESCRICAO", w: 85 },
+    { label: "CATEGORIA", w: 45 },
+    { label: "CONTA", w: 55 },
+    { label: "TIPO", w: 25 },
+    { label: "VALOR", w: 35 },
+  ];
+  
+  y = pdfTableHead(doc, y, cols);
+  
+  rows.forEach((r: any, i: number) => {
+    y = pdfCheckPage(doc, y, pg);
+    y = pdfTableRow(doc, y, cols, [
+      r.data,
+      r.descricao,
+      r.categoria,
+      r.conta,
+      r.tipo,
+      formatCurrency(r.valor),
+    ], i % 2 === 0);
+  });
+  
+  pdfFooter(doc, pg.n);
+  doc.save("Financeiro-Detalhado-" + period.replace(/\//g, "-") + ".pdf");
+  toast.success("PDF Financeiro gerado!");
+}
+
 // ─── PERIOD UTILS ────────────────────────────────────────────────────────────
 
 const getPeriodDates = (period: string, customStart: string, customEnd: string, specificDay?: string) => {
@@ -354,10 +396,10 @@ const PeriodSelect = ({ value, onChange, includeCustom = true }: { value: string
   <Select value={value} onValueChange={onChange}>
     <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
     <SelectContent>
-      <SelectItem value="today">Hoje</SelectItem>
-      <SelectItem value="day">Dia Especifico</SelectItem>
+      <SelectItem value="today">Diário (Hoje)</SelectItem>
+      <SelectItem value="day">Diário (Outro Dia)</SelectItem>
       <SelectItem value="week">Esta Semana</SelectItem>
-      <SelectItem value="month">Este Mes</SelectItem>
+      <SelectItem value="month">Este Mês</SelectItem>
       <SelectItem value="quarter">Trimestre</SelectItem>
       <SelectItem value="year">Este Ano</SelectItem>
       {includeCustom && <SelectItem value="custom">Personalizado</SelectItem>}
@@ -444,6 +486,8 @@ const Relatorios = () => {
   const [comissoes, setComissoes] = useState<any[]>([]);
   const [leadsData, setLeadsData] = useState<any>({ total: 0, bySource: [], conversion: 0 });
   const [customerMap, setCustomerMap] = useState<Map<string, any>>(new Map());
+  const [financeiroData, setFinanceiroData] = useState<any[]>([]);
+  const [financeiroStats, setFinanceiroStats] = useState<any>({ totalEntradas: 0, totalSaidas: 0, saldoLiquido: 0 });
 
   useEffect(() => {
     supabase.from("stores").select("*").then(r => setStores(r.data ?? []));
@@ -590,12 +634,79 @@ const Relatorios = () => {
     setLeadsData({ total, bySource, conversion: total > 0 ? (converted / total) * 100 : 0 });
   }, [period, storeId, customStart, customEnd, specificDay]);
 
+  const fetchFinanceiro = useCallback(async () => {
+    const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
+    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    
+    let q = supabase
+      .from("transactions")
+      .select("*")
+      .gte("created_at", start)
+      .lte("created_at", end)
+      .order("created_at", { ascending: false });
+      
+    if (effectiveStoreId && effectiveStoreId !== "all") {
+      q = q.eq("store_id", effectiveStoreId);
+    }
+    
+    const { data: txs, error } = await q;
+    if (error) {
+      console.error("Error fetching transactions for financeiro:", error);
+      return;
+    }
+    
+    const { data: accounts } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type");
+    const accountMap = new Map((accounts ?? []).map(a => [a.id, a]));
+    
+    let totalEntradas = 0;
+    let totalSaidas = 0;
+    
+    const mapped = (txs ?? []).map((t: any) => {
+      const amt = Number(t.amount) || 0;
+      const isEntrada = t.type === "income";
+      if (isEntrada) {
+        totalEntradas += amt;
+      } else {
+        totalSaidas += amt;
+      }
+      
+      const srcAcc = t.source_account_id ? accountMap.get(t.source_account_id) : null;
+      const destAcc = t.destination_account_id ? accountMap.get(t.destination_account_id) : null;
+      const contaText = srcAcc 
+        ? `${srcAcc.bank_name} (${srcAcc.owner_type})` 
+        : destAcc 
+          ? `${destAcc.bank_name} (${destAcc.owner_type})` 
+          : "Dinheiro (Gaveta)";
+          
+      const tipoLabel = isEntrada ? "Entrada" : "Saída";
+      
+      return {
+        _raw: t,
+        data: new Date(t.created_at).toLocaleDateString("pt-BR"),
+        descricao: t.description || t.category || "Sem descrição",
+        categoria: t.category || "Outros",
+        tipo: tipoLabel,
+        isEntrada,
+        conta: contaText,
+        valor: amt
+      };
+    });
+    
+    setFinanceiroData(mapped);
+    setFinanceiroStats({
+      totalEntradas,
+      totalSaidas,
+      saldoLiquido: totalEntradas - totalSaidas
+    });
+  }, [period, storeId, customStart, customEnd, specificDay, activeStoreId, userRole]);
+
   useEffect(() => { if (tab === "dre") fetchDRE(); }, [tab, fetchDRE]);
   useEffect(() => { if (tab === "vendas") fetchVendas(); }, [tab, fetchVendas]);
   useEffect(() => { if (tab === "os") fetchOS(); }, [tab, fetchOS]);
   useEffect(() => { if (tab === "caixa") fetchCaixa(); }, [tab, fetchCaixa]);
   useEffect(() => { if (tab === "ranking" || tab === "comissoes") fetchRanking(); }, [tab, fetchRanking]);
   useEffect(() => { if (tab === "leads") fetchLeads(); }, [tab, fetchLeads]);
+  useEffect(() => { if (tab === "financeiro") fetchFinanceiro(); }, [tab, fetchFinanceiro]);
 
   const handleGerarNota = async (row: any, enviarWhatsApp = false) => {
     const sale = row._raw; const product = row._product;
@@ -664,13 +775,30 @@ const Relatorios = () => {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex flex-wrap h-auto gap-1 w-full">
           <TabsTrigger value="dre" className="text-xs gap-1.5"><FileText className="h-3.5 w-3.5" /> DRE</TabsTrigger>
+          <TabsTrigger value="financeiro" className="text-xs gap-1.5"><Wallet className="h-3.5 w-3.5" /> Financeiro</TabsTrigger>
           <TabsTrigger value="vendas" className="text-xs gap-1.5"><ShoppingBag className="h-3.5 w-3.5" /> Vendas</TabsTrigger>
           <TabsTrigger value="os" className="text-xs gap-1.5"><Wrench className="h-3.5 w-3.5" /> OS</TabsTrigger>
           <TabsTrigger value="caixa" className="text-xs gap-1.5"><Wallet className="h-3.5 w-3.5" /> Caixa</TabsTrigger>
           <TabsTrigger value="ranking" className="text-xs gap-1.5"><Trophy className="h-3.5 w-3.5" /> Ranking</TabsTrigger>
           <TabsTrigger value="comissoes" className="text-xs gap-1.5"><Star className="h-3.5 w-3.5" /> Comissoes</TabsTrigger>
           <TabsTrigger value="leads" className="text-xs gap-1.5"><Users className="h-3.5 w-3.5" /> Leads</TabsTrigger>
-          <TabsContent value="leads" className="space-y-4 mt-4">
+        </TabsList>
+
+        <TabsContent value="financeiro" className="space-y-4 mt-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <Filters {...filterProps} />
+            <ExportBtns onCSV={() => exportCSV(financeiroData.map((t: any) => ({ data: t.data, descricao: t.descricao, categoria: t.categoria, tipo: t.tipo, conta: t.conta, valor: t.valor })), "financeiro.csv")} onPDF={() => exportFinanceiroPDF(financeiroData, financeiroStats, currentPeriodLabel, currentStoreName)} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total Entradas</p><p className="font-display text-xl font-bold mt-1 text-primary">{formatCurrency(financeiroStats.totalEntradas)}</p></CardContent></Card>
+            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total Saidas</p><p className="font-display text-xl font-bold mt-1 text-destructive">{formatCurrency(financeiroStats.totalSaidas)}</p></CardContent></Card>
+            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo Liquido</p><p className="font-display text-xl font-bold mt-1">{formatCurrency(financeiroStats.saldoLiquido)}</p></CardContent></Card>
+          </div>
+          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Transacoes ({financeiroData.length})</CardTitle></CardHeader>
+            <CardContent><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b border-border text-muted-foreground">{["Data", "Descricao", "Categoria", "Conta", "Tipo", "Valor"].map(h => (<th key={h} className="text-left py-2 px-2 font-medium">{h}</th>))}</tr></thead><tbody>{financeiroData.map((t: any, i: number) => (<tr key={i} className="border-b border-border/30 hover:bg-muted/30"><td className="py-2 px-2">{t.data}</td><td className="py-2 px-2 font-medium">{t.descricao}</td><td className="py-2 px-2">{t.categoria}</td><td className="py-2 px-2">{t.conta}</td><td className="py-2 px-2"><Badge variant="outline" className={t.isEntrada ? "text-primary border-primary/30" : "text-destructive border-destructive/30"}>{t.tipo}</Badge></td><td className={"py-2 px-2 font-bold " + (t.isEntrada ? "text-primary" : "text-destructive")}>{formatCurrency(t.valor)}</td></tr>))}</tbody></table></div></CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="leads" className="space-y-4 mt-4">
             <div className="flex flex-wrap items-end justify-between gap-3"><Filters {...filterProps} /></div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="text-sm font-display">Conversao de Leads</CardTitle></CardHeader>
@@ -686,7 +814,6 @@ const Relatorios = () => {
               <p className="text-xs text-pink-800/80">Leads vindos do Instagram costumam ter uma taxa de conversao 20% maior quando respondidos em menos de 5 minutos.</p>
             </div>
           </TabsContent>
-        </TabsList>
 
         <TabsContent value="dre" className="space-y-4 mt-4">
           <div className="flex flex-wrap items-end justify-between gap-3">

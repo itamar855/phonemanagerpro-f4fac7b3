@@ -135,7 +135,9 @@ const Lojas = () => {
     if (!selectedStoreId) return;
     setLoading(true);
     const { error } = await supabase.from("store_bank_accounts").insert({
-      store_id: selectedStoreId, bank_name: bankForm.bank_name,
+      // PF accounts must NOT be tied to any store — store_id is null
+      store_id: bankForm.owner_type === "PF" ? null : selectedStoreId,
+      bank_name: bankForm.bank_name,
       account_type: bankForm.account_type, agency: bankForm.agency || null,
       account_number: bankForm.account_number || null, pix_key: bankForm.pix_key || null,
       holder_name: bankForm.holder_name || null, holder_cpf_cnpj: bankForm.holder_cpf_cnpj || null,
