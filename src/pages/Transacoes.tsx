@@ -103,7 +103,8 @@ const Transacoes = () => {
     
     let accountsQuery = supabase.from("store_bank_accounts").select("*");
     if (selectedStoreId && selectedStoreId !== "all") {
-      accountsQuery = accountsQuery.eq("store_id", selectedStoreId);
+      // Fetch accounts belonging to this store OR global accounts/PF accounts (store_id is null)
+      accountsQuery = accountsQuery.or(`store_id.eq.${selectedStoreId},store_id.is.null`);
     }
 
     const [txRes, storesRes, accountsRes] = await Promise.all([
@@ -119,7 +120,19 @@ const Transacoes = () => {
     
     setTransactions(txRes.data ?? []);
     setStores(storesRes.data ?? []);
-    setAccounts(accountsRes.data ?? []);
+    
+    const rawAccounts = accountsRes.data ?? [];
+    // Deduplicate PF accounts by bank_name
+    const seenPfNames = new Set<string>();
+    const dedupedAccounts = rawAccounts.filter((a: any) => {
+      if (a.owner_type === "PF") {
+        const key = (a.bank_name || "").toLowerCase().trim();
+        if (seenPfNames.has(key)) return false;
+        seenPfNames.add(key);
+      }
+      return true;
+    });
+    setAccounts(dedupedAccounts);
   };
 
   useEffect(() => {

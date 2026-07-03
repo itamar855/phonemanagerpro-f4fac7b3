@@ -105,21 +105,19 @@ const FinancasPF = () => {
         .from("transactions")
         .select("*")
         .in("type", ["expense_pf", "pro_labore"])
-        .or(`store_id.eq.${activeStoreId},store_id.is.null`)
         .order("created_at", { ascending: false }),
       supabase
         .from("store_bank_accounts")
         .select("*")
-        .or(`store_id.eq.${activeStoreId},owner_type.eq.PF`),
+        .eq("owner_type", "PF"),
       supabase
         .from("fixed_expenses")
         .select("*")
         .eq("is_pf", true)
-        .or(`store_id.eq.${activeStoreId},store_id.is.null`)
         .order("due_day"),
     ]);
+
     setTransactions(txRes.data ?? []);
-    // Deduplicate PF accounts by bank_name — PF is one person, not per-store
     const rawAccounts = accRes.data ?? [];
     const seenPfNames = new Set<string>();
     const dedupedAccounts = rawAccounts.filter((a: any) => {

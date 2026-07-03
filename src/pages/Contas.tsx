@@ -71,47 +71,43 @@ export default function Contas() {
       setLoading(false);
       return;
     }
-    const [accountsRes, allAccountsRes, storesRes, transactionsRes, pfTxRes] = await Promise.all([
-      supabase.from("store_bank_accounts").select("*").eq("store_id", activeStoreId),
-      supabase.from("store_bank_accounts").select("*").eq("owner_type", "PF"),
+    const [accountsRes, storesRes, transactionsRes] = await Promise.all([
+      supabase.from("store_bank_accounts").select("*"),
       supabase.from("stores").select("id, name"),
-      supabase.from("transactions").select("*").eq("store_id", activeStoreId).order('created_at', { ascending: false }),
-      supabase.from("transactions").select("*").is("store_id", null).order('created_at', { ascending: false }),
+      supabase.from("transactions").select("*").order("created_at", { ascending: false }),
     ]);
+
+    const allAccounts = accountsRes.data || [];
+    const allTxs = transactionsRes.data || [];
+    const storesData = storesRes.data || [];
+
+    // Filter accounts:
+    // PJ accounts: loaded if they are linked to the active store OR if they are global (store_id is null)
+    // PF accounts: loaded globally (all PF accounts)
+    const pjAccounts = allAccounts.filter((a: any) => a.owner_type !== "PF" && (!a.store_id || a.store_id === activeStoreId));
     
-    // Merge PJ accounts (from active store) + PF accounts (global, any store) — deduplicate
-    const pjAccounts = accountsRes.data || [];
-    const pfAccountsAll = allAccountsRes.data || [];
-    // Deduplicate PF accounts by bank_name (PF is a single person, not per-store)
-    const seenPfBankNames = new Set<string>();
-    const uniquePfAccounts = pfAccountsAll.filter((a: any) => {
+    // Deduplicate PF accounts by bank_name (PF accounts are global/personal, only 1 per bank)
+    const seenPfNames = new Set<string>();
+    const pfAccounts = allAccounts.filter((a: any) => a.owner_type === "PF").filter((a: any) => {
       const key = (a.bank_name || "").toLowerCase().trim();
-      if (seenPfBankNames.has(key)) return false;
-      seenPfBankNames.add(key);
+      if (seenPfNames.has(key)) return false;
+      seenPfNames.add(key);
       return true;
     });
-    const accounts = [...pjAccounts, ...uniquePfAccounts];
-    
-    // Merge store transactions + PF transactions (store_id null) — deduplicate by id
-    const storeTxs = transactionsRes.data || [];
-    const pfTxs = pfTxRes.data || [];
-    const seenTxIds = new Set(storeTxs.map((t: any) => t.id));
-    const uniquePfTxs = pfTxs.filter((t: any) => !seenTxIds.has(t.id));
-    const allTxs = [...storeTxs, ...uniquePfTxs].sort(
-      (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-    
-    const storesData = storesRes.data || [];
+
+    const accounts = [...pjAccounts, ...pfAccounts];
+
     setRawStores(storesData);
     setTransactions(allTxs);
     setStores(new Map<string, string>(storesData.map((s) => [s.id, s.name])));
+
     const now = new Date();
     let filterStart: Date | null = null;
     if (periodFilter === "day") { filterStart = new Date(); filterStart.setHours(0,0,0,0); }
     else if (periodFilter === "week") { filterStart = new Date(); filterStart.setDate(now.getDate() - now.getDay()); filterStart.setHours(0,0,0,0); }
     else if (periodFilter === "month") { filterStart = new Date(now.getFullYear(), now.getMonth(), 1); }
     else if (periodFilter === "year") { filterStart = new Date(now.getFullYear(), 0, 1); }
-    
+
     const filteredTxs = filterStart ? allTxs.filter(tx => new Date(tx.created_at) >= filterStart!) : allTxs;
     const today = new Date();
     today.setHours(23, 59, 59, 999);
