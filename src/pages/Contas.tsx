@@ -153,7 +153,8 @@ export default function Contas() {
     }
     setLoading(true);
     const { error } = await supabase.from("store_bank_accounts").insert({
-      store_id: activeStoreId || (bankForm.owner_type === "PJ" ? bankForm.store_id : rawStores[0]?.id), 
+      // PF accounts are global (no store link); PJ accounts need a store
+      store_id: bankForm.owner_type === "PF" ? null : (activeStoreId || bankForm.store_id),
       bank_name: bankForm.bank_name,
       account_type: bankForm.account_type,
       agency: bankForm.agency || null,
