@@ -356,11 +356,10 @@ Deno.serve(async (req) => {
         startDate.setHours(0, 0, 0, 0);
       }
 
-      // Query database - filter by multiple stores if admin
+      // Query database for all transactions in the time range
       let dbQuery = supabase
         .from("transactions")
-        .select("type, amount, description, category, created_at, source_account_id, destination_account_id")
-        .in("store_id", reportStoreIds)
+        .select("type, amount, description, category, created_at, source_account_id, destination_account_id, store_id")
         .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: false });
 
@@ -370,6 +369,17 @@ Deno.serve(async (req) => {
 
       const { data: txs, error: fetchErr } = await dbQuery;
       if (fetchErr) throw fetchErr;
+
+      // Filter in Memory by store:
+      // If a specific store was matched, only show that store.
+      // Otherwise, show stores the user has access to, plus personal expenses (store_id === null)
+      let filteredTxs = txs || [];
+      if (matchedStore) {
+        filteredTxs = filteredTxs.filter(t => t.store_id === matchedStore.id);
+      } else {
+        const allowedStoreIds = new Set(allStores.map(s => s.id));
+        filteredTxs = filteredTxs.filter(t => t.store_id === null || allowedStoreIds.has(t.store_id));
+      }
 
       // Extract filter criteria
       let typeFilter = "todos"; // todos, entradas, saidas
@@ -386,8 +396,6 @@ Deno.serve(async (req) => {
         accountFilter = "dinheiro";
       }
 
-      // Filter in Memory
-      let filteredTxs = txs || [];
       if (typeFilter === "entradas") {
         filteredTxs = filteredTxs.filter(t => t.type === "income");
       } else if (typeFilter === "saidas") {
