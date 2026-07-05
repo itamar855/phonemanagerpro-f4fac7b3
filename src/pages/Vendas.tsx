@@ -508,27 +508,56 @@ const Vendas = () => {
         }
       }
 
-      await supabase.from("transactions").insert({
-        type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
-        description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
-        created_by: user.id, destination_account_id: form.destination_account_id || null,
-        expected_settlement_date: expectedDate.toISOString(),
-        ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-      });
+      // Registra transação principal se for apenas um método, ou se quiser agregar. 
+      // Mas para aparecer no Financeiro, vamos inserir por método!
       
       if (cashVal === 0 && cardVal === 0 && pixVal === 0) {
+        await supabase.from("transactions").insert({
+          type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
+          description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
+          created_by: user.id, destination_account_id: form.destination_account_id || null,
+          expected_settlement_date: expectedDate.toISOString(),
+          ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+        });
         await createPendingCashEntry(selectedProduct.store_id, user.id, salePriceAfterDiscount, desc, "dinheiro", form.retro_date);
       } else {
         if (cashVal > 0) {
+          await supabase.from("transactions").insert({
+            type: "sale", amount: cashVal, net_amount: cashVal,
+            description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+            created_by: user.id, destination_account_id: form.destination_account_id || null,
+            expected_settlement_date: expectedDate.toISOString(),
+            ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+          });
           await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date);
         }
         if (cardVal > 0) {
+          const fee = (acc && Number(acc.credit_fee_percent)) || 0;
+          const net = cardVal - (cardVal * (fee / 100));
+          await supabase.from("transactions").insert({
+            type: "sale", amount: cardVal, net_amount: net,
+            description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+            created_by: user.id, destination_account_id: form.destination_account_id || null,
+            expected_settlement_date: expectedDate.toISOString(),
+            ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+          });
           await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date);
         }
         if (pixVal > 0) {
+          const fee = (acc && Number(acc.pix_fee_percent)) || 0;
+          const net = pixVal - (pixVal * (fee / 100));
+          await supabase.from("transactions").insert({
+            type: "sale", amount: pixVal, net_amount: net,
+            description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+            created_by: user.id, destination_account_id: form.destination_account_id || null,
+            expected_settlement_date: expectedDate.toISOString(),
+            ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+          });
           await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date);
         }
       }
+      
+
 
       toast.success("Venda registrada! Confirme o recebimento no caixa.");
       setDialogOpen(false); resetForm(); fetchData();
@@ -557,31 +586,41 @@ const Vendas = () => {
       }
 
       const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
-      const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: activeStoreId, created_by: user.id }).select().single();
-      if (txError) throw txError;
-      
+      let txIdForNote: string | undefined = undefined;
+
       if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
+        const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: activeStoreId, created_by: user.id }).select().single();
+        if (txError) throw txError;
+        txIdForNote = tx?.id;
         await createPendingCashEntry(activeStoreId, user.id, cartTotal, desc, "dinheiro");
       } else {
         if (pdvCash > 0) {
           const cashAmount = pdvCash - pdvTroco;
-          if (cashAmount > 0) await createPendingCashEntry(activeStoreId, user.id, cashAmount, desc, "dinheiro");
+          if (cashAmount > 0) {
+            const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: activeStoreId, created_by: user.id }).select().single();
+            if (!txIdForNote && tx) txIdForNote = tx.id;
+            await createPendingCashEntry(activeStoreId, user.id, cashAmount, desc, "dinheiro");
+          }
         }
         if (pdvCard > 0) {
+          const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: activeStoreId, created_by: user.id }).select().single();
+          if (!txIdForNote && tx) txIdForNote = tx.id;
           await createPendingCashEntry(activeStoreId, user.id, pdvCard, desc, "cartao_credito");
         }
         if (pdvPix > 0) {
+          const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: activeStoreId, created_by: user.id }).select().single();
+          if (!txIdForNote && tx) txIdForNote = tx.id;
           await createPendingCashEntry(activeStoreId, user.id, pdvPix, desc, "pix");
         }
       }
 
-      if (gerarNotinha && tx) {
+      if (gerarNotinha && txIdForNote) {
         try {
           const store = storeMap.get(activeStoreId) as any;
-          const numeroNota = `PDV-${tx.id.slice(0, 8).toUpperCase()}`;
+          const numeroNota = `PDV-${txIdForNote.slice(0, 8).toUpperCase()}`;
           const data: NotaFiscalData = {
             numeroNota,
-            dataVenda: new Date(tx.created_at).toLocaleString("pt-BR"),
+            dataVenda: new Date().toLocaleString("pt-BR"),
             lojaNome: store?.name ?? "Loja",
             lojaCnpj: store?.cnpj,
             lojaEndereco: store?.address,
