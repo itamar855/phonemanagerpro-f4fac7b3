@@ -555,8 +555,8 @@ const OrdensServico = () => {
     try {
       const storeIdToUse = activeStoreId === "all" ? form.store_id || stores[0]?.id : activeStoreId;
 
-      // Duplication check (e.g. within 15 seconds)
-      const fifteenSecondsAgo = new Date(Date.now() - 15000).toISOString();
+      // Duplication check — 60 second window for same user + customer + device
+      const sixtySecondsAgo = new Date(Date.now() - 60000).toISOString();
       const { data: recentOS } = await supabase
         .from("service_orders")
         .select("id")
@@ -564,11 +564,11 @@ const OrdensServico = () => {
         .eq("customer_name", form.customer_name)
         .eq("device_brand", form.device_brand)
         .eq("device_model", form.device_model)
-        .gt("created_at", fifteenSecondsAgo)
+        .gt("created_at", sixtySecondsAgo)
         .limit(1);
 
       if (recentOS && recentOS.length > 0) {
-        toast.error("Uma OS semelhante foi criada recentemente. Evitando duplicação.");
+        toast.error("OS duplicada bloqueada! Uma OS idêntica foi criada há menos de 60 segundos.");
         isSubmitting.current = false;
         setLoading(false);
         return;
@@ -1213,8 +1213,8 @@ const OrdensServico = () => {
                 <Textarea value={form.internal_notes} onChange={(e) => setForm(prev => ({ ...prev, internal_notes: e.target.value }))} placeholder="Notas internas (não aparecem para o cliente)..." className="min-h-[50px]" />
               </div>
 
-              <Button type="submit" className="w-full h-11 font-semibold" disabled={loading || !form.requested_service}>
-                {loading ? "Criando..." : "Abrir Ordem de Serviço"}
+              <Button type="submit" className="w-full h-11 font-semibold" disabled={loading || isSubmitting.current || !form.requested_service}>
+                {loading || isSubmitting.current ? "Criando OS... aguarde" : "Abrir Ordem de Serviço"}
               </Button>
             </form>
           </DialogContent>
