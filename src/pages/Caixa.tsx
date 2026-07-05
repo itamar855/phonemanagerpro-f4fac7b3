@@ -269,6 +269,19 @@ const Caixa = () => {
 
     if (entryErr) { toast.error("Erro ao lançar saída: " + entryErr.message); return; }
 
+    await supabase.from("transactions").insert({
+      type: "expense_pj",
+      amount,
+      net_amount: amount,
+      description: payForm.description || `Pagamento fornecedor: ${selectedSupplier.name}`,
+      category: "Fornecedores",
+      store_id: currentRegister.store_id,
+      created_by: user.id,
+      expected_settlement_date: new Date().toISOString(),
+      reconciled: true,
+      receipt_url: receiptUrl
+    });
+
     // 2. Update supplier credit balance
     const newBalance = Number(selectedSupplier.credit_balance) - amount + creditAdjust;
     await supabase.from("suppliers" as any)
@@ -390,6 +403,18 @@ const Caixa = () => {
       description: entryForm.description, payment_method: entryForm.payment_method,
       confirmed: false, created_by: user.id,
     });
+    
+    await supabase.from("transactions").insert({
+      type: entryForm.type === "entrada" ? "income" : "expense_pj",
+      amount: parseFloat(entryForm.amount) || 0,
+      net_amount: parseFloat(entryForm.amount) || 0,
+      description: entryForm.description,
+      category: entryForm.type === "entrada" ? "Suprimento" : "Despesa Caixa",
+      store_id: currentRegister.store_id,
+      created_by: user.id,
+      expected_settlement_date: new Date().toISOString(),
+      reconciled: false
+    });
     setEntryDialog(false);
     toast.success("Lançamento registrado!");
     fetchRegister(activeStoreId);
@@ -404,6 +429,20 @@ const Caixa = () => {
       description: "Sangria: " + sangriaForm.description, payment_method: "dinheiro",
       confirmed: true, created_by: user.id,
     } as any);
+
+    if (!error) {
+      await supabase.from("transactions").insert({
+        type: "sangria",
+        amount: parseFloat(sangriaForm.amount) || 0,
+        net_amount: parseFloat(sangriaForm.amount) || 0,
+        description: "Sangria: " + sangriaForm.description,
+        category: "Sangria",
+        store_id: currentRegister.store_id,
+        created_by: user.id,
+        expected_settlement_date: new Date().toISOString(),
+        reconciled: true
+      });
+    }
 
     if (error) {
       toast.error("Erro na sangria: " + error.message);
