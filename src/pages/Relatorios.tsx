@@ -668,7 +668,7 @@ const Relatorios = () => {
     
     const mapped = (txs ?? []).map((t: any) => {
       const amt = Number(t.amount) || 0;
-      const isEntrada = t.type === "income";
+      const isEntrada = ["income", "sale", "entrada"].includes(t.type);
       if (isEntrada) {
         totalEntradas += amt;
       } else {
@@ -736,7 +736,7 @@ const Relatorios = () => {
 
     const receitaVendas = sales.reduce((s: number, x: any) => s + Number(x.sale_price), 0);
     const receitaOS = (os as any[]).filter((o: any) => o.status === "delivered").reduce((s: number, o: any) => s + Number(o.final_price || o.estimated_price || 0), 0);
-    const despesas = (txs as any[]).filter((t: any) => t.type !== "income").reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const despesas = (txs as any[]).filter((t: any) => ["expense", "expense_pj", "expense_pf", "saida"].includes(t.type)).reduce((s: number, t: any) => s + Number(t.amount), 0);
     const totalCaixa = caixas.filter(c => c.status === "closed").reduce((s, c) => s + Number(c.closing_amount || 0), 0);
 
     // Cash entries totals (confirmed only)
