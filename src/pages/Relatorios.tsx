@@ -321,7 +321,7 @@ function exportFinanceiroPDF(rows: any[], stats: any, period: string, loja: stri
     y = pdfCheckPage(doc, y, pg);
     y = pdfTableRow(doc, y, cols, [
       r.data,
-      r.descricao,
+      String(r.descricao || "").replace(/→/g, "-").replace(/—/g, "-"),
       r.categoria,
       r.conta,
       r.tipo,

@@ -638,6 +638,8 @@ const OrdensServico = () => {
 
   const updateStatus = async (orderId: string, newStatus: string, oldStatus: string, reason?: string) => {
     if (!user) return;
+    if (isSubmitting.current) return;
+
     if ((newStatus === "delivered" || newStatus === "cancelled") && !reason) {
       setPendingUpdate({ orderId, newStatus, oldStatus });
       setActionType("status");
@@ -645,12 +647,18 @@ const OrdensServico = () => {
       setJustDialogOpened(true);
       return;
     }
+    
+    isSubmitting.current = true;
     const updates: any = { status: newStatus };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "ready") updates.completed_at = new Date().toISOString();
 
     const { error } = await supabase.from("service_orders").update(updates).eq("id", orderId);
-    if (error) { toast.error("Erro ao atualizar status"); return; }
+    if (error) { 
+      toast.error("Erro ao atualizar status"); 
+      isSubmitting.current = false;
+      return; 
+    }
 
     const order = orders.find(o => o.id === orderId);
     if (order && (order as any).store_id) {
@@ -782,6 +790,11 @@ const OrdensServico = () => {
     toast.success(`Status: ${statusConfig[newStatus]?.label}`);
     fetchData();
     if (detailOrder?.id === orderId) setDetailOrder({ ...detailOrder, status: newStatus });
+    
+    // Pequeno atraso para liberar o botão, evitando multi-clicks
+    setTimeout(() => {
+      isSubmitting.current = false;
+    }, 1000);
   };
 
   const handleUpdateService = async () => {
