@@ -484,11 +484,10 @@ const Vendas = () => {
       // Calcula taxas e liquidez se conta destino informada
       let netAmount = salePriceAfterDiscount;
       let expectedDate = new Date();
+      const acc = form.destination_account_id ? bankAccounts.find(a => a.id === form.destination_account_id) : null;
       
-      if (form.destination_account_id && (cardVal > 0 || pixVal > 0)) {
-        const acc = bankAccounts.find(a => a.id === form.destination_account_id);
-        if (acc) {
-          if (cardVal > 0) {
+      if (acc && (cardVal > 0 || pixVal > 0)) {
+        if (cardVal > 0) {
             const fee = Number(acc.credit_fee_percent) || 0;
             const days = Number(acc.credit_settlement_days) || 30;
             netAmount -= (cardVal * (fee / 100));
@@ -506,7 +505,6 @@ const Vendas = () => {
             }
           }
         }
-      }
 
       // Registra transação principal se for apenas um método, ou se quiser agregar. 
       // Mas para aparecer no Financeiro, vamos inserir por método!
