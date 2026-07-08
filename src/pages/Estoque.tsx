@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Search, Package, ArrowRightLeft, AlertTriangle, Zap, Pencil, Trash2, Store, Wrench } from "lucide-react";
+import { Plus, Search, Package, ArrowRightLeft, AlertTriangle, Zap, Pencil, Trash2, Store, Wrench, Cpu } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { logAction } from "@/utils/auditLogger";
 import DeviceRepairModal from "@/components/DeviceRepairModal";
@@ -101,6 +101,13 @@ const Estoque = () => {
   const [defectsProduct, setDefectsProduct] = useState<Tables<"products"> | null>(null);
   const [defectsList, setDefectsList] = useState<string[]>([]);
   const [customDefect, setCustomDefect] = useState("");
+  const [parts, setParts] = useState<any[]>([]);
+  const [partsSearch, setPartsSearch] = useState("");
+  const [addPartOpen, setAddPartOpen] = useState(false);
+  const [partForm, setPartForm] = useState({
+    name: "", brand: "", model: "", cost_price: "", sale_price: "",
+  });
+  const [suppliers, setSuppliers] = useState<any[]>([]);
 
   const [form, setForm] = useState({
     name: "", brand: "iPhone" as string, model: "", imei: "",
@@ -129,10 +136,15 @@ const Estoque = () => {
       accQuery = accQuery.eq("store_id", activeStoreId);
     }
 
-    const [productsRes, storesRes, accRes] = await Promise.all([
+    const [productsRes, storesRes, accRes, partsRes, suppRes] = await Promise.all([
       productsQuery.order("created_at", { ascending: false }),
       supabase.from("stores").select("*"),
       accQuery.order("created_at", { ascending: false }),
+      (activeStoreId !== "all"
+        ? supabase.from("products").select("*").eq("store_id", activeStoreId).in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
+        : supabase.from("products").select("*").in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
+      ).order("created_at", { ascending: false }),
+      (supabase.from("suppliers" as any).select("id, name").order("name") as any),
     ]);
 
     const pErr = productsRes.error;
@@ -144,6 +156,8 @@ const Estoque = () => {
     setProducts(productsRes.data ?? []);
     setStores(storesRes.data ?? []);
     setAccessories((accRes.data ?? []) as unknown as Accessory[]);
+    setParts(partsRes.data ?? []);
+    setSuppliers(suppRes.data ?? []);
     setLoading(false);
   };
 
@@ -335,6 +349,39 @@ const Estoque = () => {
   };
 
   const storeMap = new Map(stores.map((s) => [s.id, s.name]));
+  const supplierMap = new Map(suppliers.map((s: any) => [s.id, s.name]));
+
+  const filteredParts = parts.filter((p) => {
+    const q = partsSearch.toLowerCase();
+    return p.name.toLowerCase().includes(q) || (p.brand && p.brand.toLowerCase().includes(q)) || (p.model && p.model.toLowerCase().includes(q));
+  });
+
+  const handleAddPart = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !activeStoreId || activeStoreId === "all") { toast.error("Selecione uma loja específica."); return; }
+    if (!partForm.name || !partForm.cost_price) { toast.error("Nome e custo são obrigatórios."); return; }
+    setLoading(true);
+    const { error } = await supabase.from("products").insert({
+      store_id: activeStoreId,
+      name: partForm.name,
+      brand: partForm.brand || "Genérico",
+      model: partForm.model || partForm.name,
+      cost_price: parseFloat(partForm.cost_price),
+      sale_price: partForm.sale_price ? parseFloat(partForm.sale_price) : null,
+      status: "in_stock",
+      product_type: "peca",
+      condition: "new",
+      created_by: user.id,
+    } as any);
+    if (error) { toast.error(error.message); }
+    else {
+      toast.success("Peça adicionada ao estoque!");
+      setAddPartOpen(false);
+      setPartForm({ name: "", brand: "", model: "", cost_price: "", sale_price: "" });
+      fetchData();
+    }
+    setLoading(false);
+  };
 
   const filteredProducts = products.filter((p) => {
     const q = search.toLowerCase();
@@ -550,12 +597,15 @@ const Estoque = () => {
       </div>
 
       <Tabs defaultValue="aparelhos">
-        <TabsList className="w-full sm:w-auto">
+        <TabsList className="w-full sm:w-auto flex-wrap">
           <TabsTrigger value="aparelhos" className="flex-1 sm:flex-none gap-2">
             <Package className="h-4 w-4" /> Aparelhos ({inStock.length})
           </TabsTrigger>
           <TabsTrigger value="acessorios" className="flex-1 sm:flex-none gap-2">
             <Zap className="h-4 w-4" /> Acessórios ({filteredAccessories.length})
+          </TabsTrigger>
+          <TabsTrigger value="pecas" className="flex-1 sm:flex-none gap-2">
+            <Cpu className="h-4 w-4" /> Peças ({parts.length})
           </TabsTrigger>
           <TabsTrigger value="vendidos" className="flex-1 sm:flex-none gap-2">
             <Package className="h-4 w-4" /> Vendidos ({filteredProducts.filter(p => p.status === 'sold').length})
@@ -824,6 +874,120 @@ const Estoque = () => {
               <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Package className="h-10 w-10 mb-3 opacity-30" />
                 <p className="font-medium text-sm">Nenhum aparelho encontrado</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* ABA PEÇAS */}
+        <TabsContent value="pecas" className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                value={partsSearch}
+                onChange={e => setPartsSearch(e.target.value)}
+                placeholder="Buscar peça por nome, marca..."
+                className="w-full pl-9 pr-3 h-9 rounded-md border border-input bg-background text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+            <Dialog open={addPartOpen} onOpenChange={setAddPartOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2 h-9" disabled={activeStoreId === "all"}>
+                  <Plus className="h-4 w-4" /> Nova Peça
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="font-display flex items-center gap-2">
+                    <Cpu className="h-5 w-5" /> Cadastrar Peça no Estoque
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddPart} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">Nome da Peça *</Label>
+                      <Input value={partForm.name} onChange={e => setPartForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Tela iPhone 13" required className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Marca / Fabricante</Label>
+                      <Input value={partForm.brand} onChange={e => setPartForm(f => ({ ...f, brand: e.target.value }))} placeholder="Apple, Samsung..." className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Modelo</Label>
+                      <Input value={partForm.model} onChange={e => setPartForm(f => ({ ...f, model: e.target.value }))} placeholder="iPhone 13 Pro" className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Custo (R$) *</Label>
+                      <Input type="number" step="0.01" value={partForm.cost_price} onChange={e => setPartForm(f => ({ ...f, cost_price: e.target.value }))} placeholder="0.00" required className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Preço de Venda (R$)</Label>
+                      <Input type="number" step="0.01" value={partForm.sale_price} onChange={e => setPartForm(f => ({ ...f, sale_price: e.target.value }))} placeholder="0.00 (auto)" className="h-10" />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">A peça ficará disponível em estoque para ser vinculada a OS e Reparos.</p>
+                  <Button type="submit" className="w-full h-10" disabled={loading}>
+                    {loading ? "Salvando..." : "Adicionar ao Estoque"}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {filteredParts.length > 0 ? (
+            <div className="space-y-2">
+              {filteredParts.map(p => {
+                const supplierName = (p as any).supplier_name || (p as any).supplier_id ? supplierMap.get((p as any).supplier_id) : null;
+                const margin = p.sale_price ? Number(p.sale_price) - Number(p.cost_price) : null;
+                return (
+                  <Card key={p.id} className="border-border/50 shadow-sm">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-sm">{p.name}</p>
+                            <Badge className="text-[10px] bg-blue-500/10 text-blue-500 border-blue-500/20">
+                              <Cpu className="h-2.5 w-2.5 mr-0.5" /> Peça
+                            </Badge>
+                            {activeStoreId === "all" && (
+                              <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
+                                {storeMap.get(p.store_id) || "—"}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {p.brand && `${p.brand} · `}{p.model && p.model !== p.name && `${p.model}`}
+                          </p>
+                          {supplierName && (
+                            <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 {supplierName}</p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs text-muted-foreground">Custo</p>
+                          <p className="font-display font-bold text-base">{formatCurrency(Number(p.cost_price))}</p>
+                          {p.sale_price && (
+                            <p className="text-xs text-muted-foreground">Venda: {formatCurrency(Number(p.sale_price))}</p>
+                          )}
+                          {margin !== null && margin > 0 && (
+                            <p className="text-[10px] text-primary font-medium">+{formatCurrency(margin)}</p>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              <div className="text-xs text-center text-muted-foreground pt-1">
+                Total investido em peças: <span className="font-semibold text-foreground">{formatCurrency(filteredParts.reduce((s, p) => s + Number(p.cost_price), 0))}</span>
+              </div>
+            </div>
+          ) : (
+            <Card className="border-border/50">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <Cpu className="h-10 w-10 mb-3 opacity-30" />
+                <p className="font-medium text-sm">Nenhuma peça em estoque</p>
+                <p className="text-xs mt-1">Cadastre peças compradas de fornecedores aqui</p>
               </CardContent>
             </Card>
           )}
