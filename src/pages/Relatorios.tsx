@@ -43,7 +43,7 @@ function pdfHeader(doc: jsPDF, titulo: string, subtitulo: string, periodo: strin
   doc.setFillColor(...PDF_PRIMARY); doc.rect(0,0,W,32,"F");
   doc.setFillColor(...PDF_ACCENT); doc.rect(0,32,W,2,"F");
   doc.setFont("helvetica","bold"); doc.setFontSize(17); doc.setTextColor(...PDF_WHITE);
-  doc.text("CELLMANAGER PRO", M, 13);
+  doc.text("CELL PRO 360", M, 13);
   doc.setFont("helvetica","normal"); doc.setFontSize(9);
   doc.text("Sistema de Gestao Comercial", M, 20);
   doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(...PDF_ACCENT);
@@ -60,7 +60,7 @@ function pdfFooter(doc: jsPDF, pg: number) {
   const y = 290;
   doc.setDrawColor(...PDF_BORDER); doc.setLineWidth(0.2); doc.line(12,y-4,198,y-4);
   doc.setFont("helvetica","italic"); doc.setFontSize(7); doc.setTextColor(...PDF_LIGHT);
-  doc.text("CellManager Pro - Relatorio gerado automaticamente - Uso interno", 12, y);
+  doc.text("Cell Pro 360 - Relatorio gerado automaticamente - Uso interno", 12, y);
   doc.text("Pagina " + pg, 198, y, { align:"right" });
 }
 

@@ -59,7 +59,7 @@ const ResetPassword = () => {
           <div className="rounded-lg bg-primary/15 p-2">
             <Smartphone className="h-6 w-6 text-primary" />
           </div>
-          <h1 className="font-display text-xl font-bold tracking-tight">CellManager</h1>
+          <h1 className="font-display text-xl font-bold tracking-tight">Cell Pro 360</h1>
         </div>
         <Card className="border-border/50 shadow-2xl shadow-black/20">
           <CardHeader className="text-center pb-4">
