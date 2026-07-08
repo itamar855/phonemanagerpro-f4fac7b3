@@ -12,6 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Wrench, Plus, Trash2, Loader2, Camera, Upload, Receipt, CheckCircle, Cpu, FileText, Smartphone } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
+import { Building2 } from "lucide-react";
+
+interface Supplier {
+  id: string;
+  name: string;
+}
 
 const REPAIR_OPTIONS = [
   "Troca de Tela",
@@ -58,6 +64,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const [addMode, setAddMode] = useState<'stock' | 'manual'>('stock');
   const [manualPartName, setManualPartName] = useState("");
   const [manualPartCost, setManualPartCost] = useState("");
+  const [manualPartSupplierId, setManualPartSupplierId] = useState("");
+  const [stockPartSupplierId, setStockPartSupplierId] = useState("");
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   
   // Voucher upload states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,7 +84,10 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       setSelectedPartId("");
       setManualPartName("");
       setManualPartCost("");
+      setManualPartSupplierId("");
+      setStockPartSupplierId("");
       setAddMode('stock');
+      setSuppliers([]);
     }
   }, [isOpen, product]);
 
@@ -115,6 +127,13 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (partsError) throw partsError;
       setAvailableParts(partsData || []);
+
+      // Fetch suppliers
+      const { data: suppData } = await (supabase
+        .from("suppliers" as any)
+        .select("id, name")
+        .order("name") as any);
+      setSuppliers(suppData || []);
     } catch (err: any) {
       console.error("Error fetching repair details:", err);
       toast.error("Erro ao carregar dados do reparo: " + err.message);
@@ -182,6 +201,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
     setLoading(true);
     try {
+      const resolvedSupplierId = stockPartSupplierId && stockPartSupplierId !== 'none' ? stockPartSupplierId : null;
+      const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
+
       // 1. Add item to repair list
       const { error: itemError } = await supabase
         .from("product_repair_items" as any)
@@ -190,7 +212,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           part_product_id: selectedPartId,
           part_name: part.name,
           quantity: 1,
-          unit_cost: part.cost_price
+          unit_cost: part.cost_price,
+          supplier_id: resolvedSupplierId,
+          supplier_name: supplierName,
         });
 
       if (itemError) throw itemError;
@@ -205,6 +229,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       toast.success("Peça vinculada e dada baixa do estoque.");
       setSelectedPartId("");
+      setStockPartSupplierId("");
       fetchRepairData();
       onSuccess();
     } catch (err: any) {
@@ -219,6 +244,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     const cost = parseFloat(manualPartCost);
     if (isNaN(cost) || cost < 0) { toast.error("Informe um custo válido."); return; }
 
+    const resolvedSupplierId = manualPartSupplierId && manualPartSupplierId !== 'none' ? manualPartSupplierId : null;
+    const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
+
     setLoading(true);
     try {
       const { error: itemError } = await supabase
@@ -228,7 +256,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           part_product_id: null,
           part_name: manualPartName.trim(),
           quantity: 1,
-          unit_cost: cost
+          unit_cost: cost,
+          supplier_id: resolvedSupplierId,
+          supplier_name: supplierName,
         });
 
       if (itemError) throw itemError;
@@ -236,6 +266,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       toast.success("Peça avulsa adicionada ao reparo!");
       setManualPartName("");
       setManualPartCost("");
+      setManualPartSupplierId("");
       fetchRepairData();
       onSuccess();
     } catch (err: any) {
@@ -477,64 +508,98 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                   </div>
 
                   {addMode === 'stock' ? (
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1 space-y-1">
-                        <Label className="text-[10px] uppercase font-semibold text-muted-foreground">Peça cadastrada no Estoque</Label>
-                        <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-                          <SelectTrigger className="h-9 text-xs bg-background">
-                            <SelectValue placeholder="Selecione uma peça..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableParts.length === 0 ? (
-                              <SelectItem value="none" disabled className="text-xs">Nenhuma peça em estoque nesta loja.</SelectItem>
-                            ) : (
-                              availableParts.map(p => (
-                                <SelectItem key={p.id} value={p.id} className="text-xs">
-                                  {p.name} {p.brand} {p.model} — {formatCurrency(p.cost_price)}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <Button
-                        className="h-9 px-3"
-                        onClick={handleAddPart}
-                        disabled={!selectedPartId || selectedPartId === "none" || loading}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <Label className="text-[10px] uppercase font-semibold text-muted-foreground">Peça avulsa (sem cadastro no estoque)</Label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={manualPartName}
-                          onChange={e => setManualPartName(e.target.value)}
-                          placeholder="Nome da peça (ex: Tela iPhone 13)"
-                          className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={manualPartCost}
-                          onChange={e => setManualPartCost(e.target.value)}
-                          placeholder="R$ Custo"
-                          className="w-24 h-9 rounded-md border border-input bg-background px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
+                    <>
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1 space-y-1">
+                          <Label className="text-[10px] uppercase font-semibold text-muted-foreground">Peça cadastrada no Estoque</Label>
+                          <Select value={selectedPartId} onValueChange={setSelectedPartId}>
+                            <SelectTrigger className="h-9 text-xs bg-background">
+                              <SelectValue placeholder="Selecione uma peça..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableParts.length === 0 ? (
+                                <SelectItem value="none" disabled className="text-xs">Nenhuma peça em estoque nesta loja.</SelectItem>
+                              ) : (
+                                availableParts.map(p => (
+                                  <SelectItem key={p.id} value={p.id} className="text-xs">
+                                    {p.name} {p.brand} {p.model} — {formatCurrency(p.cost_price)}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <Button
-                          className="h-9 px-3 shrink-0"
-                          onClick={handleAddManualPart}
-                          disabled={!manualPartName.trim() || !manualPartCost || loading}
+                          className="h-9 px-3"
+                          onClick={handleAddPart}
+                          disabled={!selectedPartId || selectedPartId === "none" || loading}
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                      <p className="text-[10px] text-muted-foreground">A peça avulsa não dá baixa no estoque, apenas registra o custo.</p>
-                    </div>
+                      {/* Supplier for stock part */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] uppercase font-semibold text-muted-foreground">Fornecedor (opcional)</label>
+                        <Select value={stockPartSupplierId} onValueChange={setStockPartSupplierId}>
+                          <SelectTrigger className="h-9 text-xs bg-background">
+                            <SelectValue placeholder="Selecione o fornecedor..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none" className="text-xs">— Sem fornecedor —</SelectItem>
+                            {suppliers.map(s => (
+                              <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-semibold text-muted-foreground">Peça avulsa (sem cadastro no estoque)</Label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={manualPartName}
+                            onChange={e => setManualPartName(e.target.value)}
+                            placeholder="Nome da peça (ex: Tela iPhone 13)"
+                            className="flex-1 h-9 rounded-md border border-input bg-background px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={manualPartCost}
+                            onChange={e => setManualPartCost(e.target.value)}
+                            placeholder="R$ Custo"
+                            className="w-24 h-9 rounded-md border border-input bg-background px-3 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                          <Button
+                            className="h-9 px-3 shrink-0"
+                            onClick={handleAddManualPart}
+                            disabled={!manualPartName.trim() || !manualPartCost || loading}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        {/* Supplier for manual part */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] uppercase font-semibold text-muted-foreground">Fornecedor (opcional)</label>
+                          <Select value={manualPartSupplierId} onValueChange={setManualPartSupplierId}>
+                            <SelectTrigger className="h-9 text-xs bg-background">
+                              <SelectValue placeholder="Selecione o fornecedor..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none" className="text-xs">— Sem fornecedor —</SelectItem>
+                              {suppliers.map(s => (
+                                <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">A peça avulsa não dá baixa no estoque, apenas registra o custo.</p>
+                      </div>
+                    </>
                   )}
 
                   {/* Lista de Peças Vinculadas */}
@@ -549,6 +614,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                           <div>
                             <p className="font-semibold text-foreground">{item.part_name}</p>
                             <p className="text-[10px] text-muted-foreground">Custo da Peça: {formatCurrency(item.unit_cost)}</p>
+                            {(item as any).supplier_name && (
+                              <p className="text-[10px] text-blue-500 font-medium">🏭 {(item as any).supplier_name}</p>
+                            )}
                           </div>
                           <Button 
                             variant="ghost" 

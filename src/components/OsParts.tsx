@@ -26,11 +26,18 @@ interface ServiceOrderItem {
   unit_cost: number;
   created_at: string;
   receipt_url?: string | null;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
   products?: {
     name: string;
     brand: string;
     model: string;
   };
+}
+
+interface Supplier {
+  id: string;
+  name: string;
 }
 
 interface OsPartsProps {
@@ -46,9 +53,11 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
   const { user } = useAuth();
   const [items, setItems] = useState<ServiceOrderItem[]>([]);
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [stockSupplierId, setStockSupplierId] = useState<string>("");
 
   // Mode: "stock" = select from stock | "new" = register new part
   const [addMode, setAddMode] = useState<"stock" | "new">("stock");
@@ -60,6 +69,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
     model: "",
     cost_price: "",
     sale_price: "",
+    supplier_id: "",
     receipt: null as File | null,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -86,6 +96,13 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
         if (productsError) throw productsError;
         setAvailableProducts(productsData || []);
       }
+
+      // Fetch suppliers
+      const { data: suppData } = await (supabase
+        .from("suppliers" as any)
+        .select("id, name")
+        .order("name") as any);
+      setSuppliers(suppData || []);
     } catch (error: any) {
       console.error("Error fetching parts:", error);
       toast.error("Erro ao carregar peças da OS");
@@ -124,6 +141,9 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (prodError) throw new Error("Erro ao baixar produto do estoque.");
 
+      const resolvedSupplierId = (!stockSupplierId || stockSupplierId === "none") ? null : stockSupplierId;
+      const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
+
       const { error: itemError } = await supabase
         .from("service_order_items" as any)
         .insert({
@@ -132,6 +152,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           quantity: 1,
           unit_price: product.sale_price || product.cost_price * 1.5,
           unit_cost: product.cost_price,
+          supplier_id: resolvedSupplierId,
+          supplier_name: supplierName,
         });
 
       if (itemError) {
@@ -141,6 +163,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       toast.success("Peça vinculada e baixada do estoque.");
       setSelectedProductId("");
+      setStockSupplierId("");
       fetchData();
     } catch (error: any) {
       toast.error(error.message || "Erro ao adicionar peça.");
@@ -166,6 +189,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       const costPrice = parseFloat(newPart.cost_price) || 0;
       const salePrice = parseFloat(newPart.sale_price) || costPrice * 1.5;
+      const resolvedSupplierId = (!newPart.supplier_id || newPart.supplier_id === "none") ? null : newPart.supplier_id;
+      const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
 
       // 2. Insert product into stock with status=sold (keeps history, not phantom)
       const { data: prodData, error: prodError } = await supabase
@@ -187,7 +212,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (prodError) throw prodError;
 
-      // 3. Insert into service_order_items with receipt
+      // 3. Insert into service_order_items with receipt and supplier
       const { error: itemError } = await supabase
         .from("service_order_items" as any)
         .insert({
@@ -197,12 +222,14 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           unit_price: salePrice,
           unit_cost: costPrice,
           receipt_url: receiptUrl,
+          supplier_id: resolvedSupplierId,
+          supplier_name: supplierName,
         });
 
       if (itemError) throw itemError;
 
       toast.success("Peça cadastrada e vinculada à OS com sucesso!");
-      setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", receipt: null });
+      setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null });
       setAddMode("stock");
       fetchData();
     } catch (error: any) {
@@ -270,33 +297,50 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
           {addMode === "stock" ? (
             /* ── Select from stock ──────────────────────────── */
-            <div className="flex items-end gap-2 bg-muted/20 p-3 rounded-lg border border-border/50">
-              <div className="flex-1 space-y-1.5">
-                <Label className="text-[10px] uppercase">Vincular Peça do Estoque</Label>
-                <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+            <div className="bg-muted/20 p-3 rounded-lg border border-border/50 space-y-3">
+              <div className="flex items-end gap-2">
+                <div className="flex-1 space-y-1.5">
+                  <Label className="text-[10px] uppercase">Vincular Peça do Estoque</Label>
+                  <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Selecione uma peça em estoque..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableProducts.length === 0 ? (
+                        <SelectItem value="none" disabled className="text-xs">Nenhuma peça (product_type: peça) no estoque.</SelectItem>
+                      ) : (
+                        availableProducts.map(p => (
+                          <SelectItem key={p.id} value={p.id} className="text-xs">
+                            {p.name} {p.brand} {p.model} — Custo: {formatMonetary(p.cost_price)}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  className="h-8 shrink-0 px-3"
+                  onClick={handleAddFromStock}
+                  disabled={!selectedProductId || selectedProductId === "none" || adding}
+                >
+                  {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              {/* Supplier for stock part */}
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase text-muted-foreground">Fornecedor da Peça (opcional)</Label>
+                <Select value={stockSupplierId} onValueChange={setStockSupplierId}>
                   <SelectTrigger className="h-8 text-xs bg-background">
-                    <SelectValue placeholder="Selecione uma peça em estoque..." />
+                    <SelectValue placeholder="Selecione o fornecedor..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableProducts.length === 0 ? (
-                      <SelectItem value="none" disabled className="text-xs">Nenhuma peça (product_type: peça) no estoque.</SelectItem>
-                    ) : (
-                      availableProducts.map(p => (
-                        <SelectItem key={p.id} value={p.id} className="text-xs">
-                          {p.name} {p.brand} {p.model} — Custo: {formatMonetary(p.cost_price)}
-                        </SelectItem>
-                      ))
-                    )}
+                    <SelectItem value="none" className="text-xs">— Sem fornecedor —</SelectItem>
+                    {suppliers.map(s => (
+                      <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                className="h-8 shrink-0 px-3"
-                onClick={handleAddFromStock}
-                disabled={!selectedProductId || selectedProductId === "none" || adding}
-              >
-                {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              </Button>
             </div>
           ) : (
             /* ── New part inline form ───────────────────────── */
@@ -354,6 +398,20 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                     placeholder="0.00 (auto)"
                     className="h-8 text-xs"
                   />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-[10px] uppercase text-muted-foreground">Fornecedor da Peça</Label>
+                  <Select value={newPart.supplier_id} onValueChange={v => setNewPart(p => ({ ...p, supplier_id: v }))}>
+                    <SelectTrigger className="h-8 text-xs bg-background">
+                      <SelectValue placeholder="Selecione o fornecedor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none" className="text-xs">— Sem fornecedor —</SelectItem>
+                      {suppliers.map(s => (
+                        <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -417,6 +475,9 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
               <div className="flex-1 min-w-0">
                 <p className="font-medium">{item.products?.name} {item.products?.brand}</p>
                 <p className="text-[10px] text-muted-foreground">Custo: {formatMonetary(item.unit_cost)} · Cobrado: {formatMonetary(item.unit_price)}</p>
+                {(item as any).supplier_name && (
+                  <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 Fornecedor: {(item as any).supplier_name}</p>
+                )}
                 {(item as any).receipt_url && (
                   <a
                     href={(item as any).receipt_url}
