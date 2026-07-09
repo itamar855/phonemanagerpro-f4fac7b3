@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Search, Package, ArrowRightLeft, AlertTriangle, Zap, Pencil, Trash2, Store, Wrench, Cpu } from "lucide-react";
+import { Plus, Search, Package, ArrowRightLeft, AlertTriangle, Zap, Pencil, Trash2, Store, Wrench, Cpu, Upload, FileText } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { logAction } from "@/utils/auditLogger";
 import DeviceRepairModal from "@/components/DeviceRepairModal";
@@ -106,7 +106,9 @@ const Estoque = () => {
   const [addPartOpen, setAddPartOpen] = useState(false);
   const [partForm, setPartForm] = useState({
     name: "", brand: "", model: "", cost_price: "", sale_price: "",
+    supplier_id: "", launch_cash_out: false, payment_method: "dinheiro"
   });
+  const [partVoucherFile, setPartVoucherFile] = useState<File | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
 
   const [form, setForm] = useState({
@@ -361,24 +363,113 @@ const Estoque = () => {
     if (!user || !activeStoreId || activeStoreId === "all") { toast.error("Selecione uma loja específica."); return; }
     if (!partForm.name || !partForm.cost_price) { toast.error("Nome e custo são obrigatórios."); return; }
     setLoading(true);
-    const { error } = await supabase.from("products").insert({
-      store_id: activeStoreId,
-      name: partForm.name,
-      brand: partForm.brand || "Genérico",
-      model: partForm.model || partForm.name,
-      cost_price: parseFloat(partForm.cost_price),
-      sale_price: partForm.sale_price ? parseFloat(partForm.sale_price) : null,
-      status: "in_stock",
-      product_type: "peca",
-      condition: "new",
-      created_by: user.id,
-    } as any);
-    if (error) { toast.error(error.message); }
-    else {
-      toast.success("Peça adicionada ao estoque!");
-      setAddPartOpen(false);
-      setPartForm({ name: "", brand: "", model: "", cost_price: "", sale_price: "" });
+
+    try {
+      let voucherUrl = null;
+      if (partVoucherFile) {
+        const fileExt = partVoucherFile.name.split(".").pop();
+        const safeName = partVoucherFile.name.replace(/[^a-zA-Z0-9]/g, "_");
+        const path = `pecas/comprovante-${Date.now()}-${safeName}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage.from("comprovantes").upload(path, partVoucherFile, { upsert: true });
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
+        voucherUrl = urlData.publicUrl;
+      }
+
+      let registerId = null;
+      if (partForm.launch_cash_out) {
+        const { data: register } = (await supabase.from("cash_registers" as any).select("id").eq("store_id", activeStoreId).eq("status", "open").maybeSingle()) as any;
+        if (!register) {
+          toast.error("Não há caixa aberto para esta loja! Abra o caixa antes de registrar a compra com saída.");
+          setLoading(false);
+          return;
+        }
+        registerId = register.id;
+      }
+
+      const supplierName = partForm.supplier_id ? supplierMap.get(partForm.supplier_id) : null;
+
+      const { data: insertedPart, error } = await supabase.from("products").insert({
+        store_id: activeStoreId,
+        name: partForm.name,
+        brand: partForm.brand || "Genérico",
+        model: partForm.model || partForm.name,
+        cost_price: parseFloat(partForm.cost_price),
+        sale_price: partForm.sale_price ? parseFloat(partForm.sale_price) : null,
+        status: "in_stock",
+        product_type: "peca",
+        condition: "new",
+        created_by: user.id,
+        supplier_id: partForm.supplier_id || null,
+        supplier_name: supplierName || null,
+        parts_payment_voucher: voucherUrl || null,
+      } as any).select().single();
+
+      if (error) {
+        toast.error(error.message);
+      } else {
+        if (partForm.launch_cash_out && registerId) {
+          const desc = `Compra de Peça: ${partForm.name}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
+          const amount = parseFloat(partForm.cost_price);
+          
+          await supabase.from("cash_entries" as any).insert({
+            cash_register_id: registerId,
+            store_id: activeStoreId,
+            type: "saida",
+            amount,
+            description: desc,
+            payment_method: partForm.payment_method,
+            confirmed: true,
+            receipt_url: voucherUrl || null,
+            created_by: user.id,
+          } as any);
+
+          await supabase.from("transactions").insert({
+            type: "expense_pj",
+            amount,
+            net_amount: amount,
+            description: desc,
+            category: "Peças",
+            store_id: activeStoreId,
+            created_by: user.id,
+            receipt_url: voucherUrl || null,
+            expected_settlement_date: new Date().toISOString(),
+            reconciled: true,
+          });
+        }
+
+        toast.success("Peça adicionada ao estoque!");
+        setAddPartOpen(false);
+        setPartForm({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", launch_cash_out: false, payment_method: "dinheiro" });
+        setPartVoucherFile(null);
+        fetchData();
+      }
+    } catch (err: any) {
+      toast.error("Erro ao processar cadastro: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  const handleQuickUploadVoucher = async (e: React.ChangeEvent<HTMLInputElement>, productId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoading(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const safeName = file.name.replace(/[^a-zA-Z0-9]/g, "_");
+      const path = `pecas/comprovante-${Date.now()}-${safeName}.${fileExt}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage.from("comprovantes").upload(path, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
+      const publicUrl = urlData.publicUrl;
+
+      const { error: dbError } = await supabase.from("products").update({ parts_payment_voucher: publicUrl } as any).eq("id", productId);
+      if (dbError) throw dbError;
+
+      toast.success("Comprovante enviado com sucesso!");
       fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao enviar comprovante: " + err.message);
     }
     setLoading(false);
   };
@@ -925,9 +1016,56 @@ const Estoque = () => {
                       <Label className="text-xs">Preço de Venda (R$)</Label>
                       <Input type="number" step="0.01" value={partForm.sale_price} onChange={e => setPartForm(f => ({ ...f, sale_price: e.target.value }))} placeholder="0.00 (auto)" className="h-10" />
                     </div>
+
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">Fornecedor</Label>
+                      <Select value={partForm.supplier_id} onValueChange={v => setPartForm(f => ({ ...f, supplier_id: v === "none" ? "" : v }))}>
+                        <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o fornecedor (opcional)" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum fornecedor</SelectItem>
+                          {suppliers.map(s => (
+                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">Comprovante de Pagamento</Label>
+                      <Input type="file" onChange={e => setPartVoucherFile(e.target.files?.[0] || null)} className="h-10 text-xs py-2" accept="image/*,application/pdf" />
+                    </div>
+
+                    <div className="col-span-2 flex items-center justify-between border border-border/60 rounded-lg p-2.5 bg-muted/20">
+                      <div className="space-y-0.5">
+                        <Label className="text-xs font-bold cursor-pointer" htmlFor="part-cash-out-toggle">Lançar saída no Caixa?</Label>
+                        <p className="text-[10px] text-muted-foreground">Cria uma despesa correspondente no caixa aberto da loja</p>
+                      </div>
+                      <input
+                        id="part-cash-out-toggle"
+                        type="checkbox"
+                        checked={partForm.launch_cash_out}
+                        onChange={e => setPartForm(f => ({ ...f, launch_cash_out: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary cursor-pointer"
+                      />
+                    </div>
+
+                    {partForm.launch_cash_out && (
+                      <div className="col-span-2 space-y-1.5 animate-in fade-in-50 duration-200">
+                        <Label className="text-xs">Forma de Pagamento</Label>
+                        <Select value={partForm.payment_method} onValueChange={v => setPartForm(f => ({ ...f, payment_method: v }))}>
+                          <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                            <SelectItem value="pix">PIX</SelectItem>
+                            <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                            <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                   <p className="text-[10px] text-muted-foreground">A peça ficará disponível em estoque para ser vinculada a OS e Reparos.</p>
-                  <Button type="submit" className="w-full h-10" disabled={loading}>
+                  <Button type="submit" className="w-full h-10 font-semibold" disabled={loading}>
                     {loading ? "Salvando..." : "Adicionar ao Estoque"}
                   </Button>
                 </form>
@@ -962,6 +1100,54 @@ const Estoque = () => {
                           {supplierName && (
                             <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 {supplierName}</p>
                           )}
+                          <div className="flex gap-2 mt-3 items-center flex-wrap">
+                            {p.parts_payment_voucher ? (
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[10px] gap-1 border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 shadow-none"
+                                  onClick={() => window.open(p.parts_payment_voucher, "_blank")}
+                                >
+                                  <FileText className="h-3 w-3" /> Ver Comprovante
+                                </Button>
+                                <Label
+                                  className="h-7 px-2 text-[10px] flex items-center justify-center border border-border bg-transparent text-foreground hover:bg-muted shadow-none rounded-md cursor-pointer font-medium"
+                                >
+                                  Alterar
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    accept="image/*,application/pdf"
+                                    onChange={(e) => handleQuickUploadVoucher(e, p.id)}
+                                  />
+                                </Label>
+                              </div>
+                            ) : (
+                              <Label
+                                className="h-7 px-2 text-[10px] flex items-center justify-center gap-1 border border-border bg-transparent text-muted-foreground hover:bg-muted shadow-none rounded-md cursor-pointer font-medium"
+                              >
+                                <Upload className="h-3 w-3" /> Anexar Comprovante
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  accept="image/*,application/pdf"
+                                  onChange={(e) => handleQuickUploadVoucher(e, p.id)}
+                                />
+                              </Label>
+                            )}
+                            <Button
+                              className="h-7 w-7 p-0 bg-transparent text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                setDeleteId(p.id);
+                                setDeleteType("product");
+                                setJustification("");
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="text-right shrink-0">
                           <p className="text-xs text-muted-foreground">Custo</p>

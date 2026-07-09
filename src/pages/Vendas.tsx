@@ -142,7 +142,11 @@ const Vendas = () => {
   });
 
   const fetchData = async () => {
-    if (!activeStoreId) return;
+    console.log("[Vendas] fetchData chamada. activeStoreId:", activeStoreId, "userRole:", userRole, "user:", user?.id);
+    if (!activeStoreId) {
+      console.warn("[Vendas] activeStoreId é null/undefined, abortando fetchData");
+      return;
+    }
     setLoading(true);
 
     let salesQuery = supabase.from("sales").select("*");
@@ -171,6 +175,9 @@ const Vendas = () => {
       supabase.from("user_roles").select("commission_sales_percent, commission_on_sales").eq("user_id", user?.id).maybeSingle()
     ]);
 
+    console.log("[Vendas] salesRes:", { error: salesRes.error, count: salesRes.data?.length, data: salesRes.data });
+    console.log("[Vendas] productsRes:", { error: productsRes.error, count: productsRes.data?.length });
+
     let userCommPercent = "10";
     if (currentRoleRes?.data) {
       const data = currentRoleRes.data as any;
@@ -179,6 +186,15 @@ const Vendas = () => {
       } else {
         userCommPercent = String(data.commission_sales_percent ?? 10);
       }
+    }
+
+    if (salesRes.error) {
+      console.error("Erro ao buscar vendas:", salesRes.error);
+      toast.error(`Erro ao carregar vendas: ${salesRes.error.message}`);
+    }
+    if (productsRes.error) {
+      console.error("Erro ao buscar produtos:", productsRes.error);
+      toast.error(`Erro ao carregar produtos: ${productsRes.error.message}`);
     }
 
     setSales((salesRes.data as unknown as Sale[]) ?? []);
