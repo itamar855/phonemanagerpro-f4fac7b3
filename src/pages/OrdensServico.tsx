@@ -64,18 +64,36 @@ const createPendingCashEntry = async (
   storeId: string, userId: string, amount: number, description: string, paymentMethod = "dinheiro",
 ) => {
   if (!storeId || amount <= 0) return;
-  const { data: register } = await supabase
-    .from("cash_registers" as any).select("id")
-    .eq("store_id", storeId).eq("status", "open").eq("opened_by", userId).maybeSingle();
+  let { data: register } = await supabase
+    .from("cash_registers" as any)
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("status", "open")
+    .eq("opened_by", userId)
+    .maybeSingle();
+
+  if (!register) {
+    const { data: fallbackRegister } = await supabase
+      .from("cash_registers" as any)
+      .select("id")
+      .eq("store_id", storeId)
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    register = fallbackRegister;
+  }
   
   const registerId = register ? (register as any).id : null;
-  await supabase.from("cash_entries" as any).insert({
-    cash_register_id: registerId, store_id: storeId,
-    type: "entrada", amount, description,
-    payment_method: paymentMethod, receipt_url: null,
-    confirmed: false,
-    created_by: userId,
-  } as any);
+
+  if (registerId) {
+    await supabase.from("cash_entries" as any).insert({
+      cash_register_id: registerId, store_id: storeId,
+      type: "entrada", amount, description,
+      payment_method: paymentMethod, receipt_url: null,
+      confirmed: false,
+      created_by: userId,
+    } as any);
+  }
 };
 
 // ── Gera PDF via jsPDF (importado dinamicamente) ──────────────────────────

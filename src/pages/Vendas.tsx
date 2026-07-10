@@ -49,15 +49,36 @@ type Accessory = { id: string; store_id: string; name: string; category: string;
 type CartItem = { acc: Accessory; qty: number; price: number };
 
 const createPendingCashEntry = async (storeId: string, userId: string, amount: number, description: string, paymentMethod: string, retroDate?: string, referenceKey?: string) => {
-  const { data: register } = await supabase.from("cash_registers" as any).select("id").eq("store_id", storeId).eq("status", "open").eq("opened_by", userId).maybeSingle();
+  let { data: register } = await supabase
+    .from("cash_registers" as any)
+    .select("id")
+    .eq("store_id", storeId)
+    .eq("status", "open")
+    .eq("opened_by", userId)
+    .maybeSingle();
+
+  if (!register) {
+    const { data: fallbackRegister } = await supabase
+      .from("cash_registers" as any)
+      .select("id")
+      .eq("store_id", storeId)
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    register = fallbackRegister;
+  }
+
   const registerId = register ? (register as any).id : null;
-  await supabase.from("cash_entries" as any).insert({
-    cash_register_id: registerId, store_id: storeId,
-    type: "entrada", amount, description,
-    payment_method: paymentMethod, receipt_url: null, confirmed: false, created_by: userId,
-    reference_key: referenceKey || null,
-    ...(retroDate ? { created_at: new Date(retroDate + "T12:00:00").toISOString() } : {}),
-  });
+
+  if (registerId) {
+    await supabase.from("cash_entries" as any).insert({
+      cash_register_id: registerId, store_id: storeId,
+      type: "entrada", amount, description,
+      payment_method: paymentMethod, receipt_url: null, confirmed: false, created_by: userId,
+      reference_key: referenceKey || null,
+      ...(retroDate ? { created_at: new Date(retroDate + "T12:00:00").toISOString() } : {}),
+    });
+  }
 };
 
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
