@@ -236,6 +236,47 @@ const Caixa = () => {
     if (activeStoreId) fetchRegister(activeStoreId); 
   }, [activeStoreId, activeTab]);
 
+  useEffect(() => {
+    const reconcileMissing = async () => {
+      if (!user) return;
+      const { data: missingTx } = await supabase.from("transactions").select("*").eq("type", "sale").like("description", "%[MISTO:%");
+      if (!missingTx || missingTx.length === 0) return;
+      let reconciledAny = false;
+      for (const tx of missingTx) {
+        const match = tx.description.match(/\[MISTO:(\{.*\})\]/);
+        if (!match) continue;
+        try {
+          const parsed = JSON.parse(match[1]);
+          const cleanDesc = tx.description.replace(/\[MISTO:.*\]/, '').trim();
+          
+          // Check if already reconciled
+          const { data: ceCheck } = await supabase.from("cash_entries" as any).select("id").like("description", `${cleanDesc}%`).limit(1);
+          if (ceCheck && ceCheck.length > 0) continue;
+          
+          // Find open register
+          const { data: regList } = await supabase.from("cash_registers" as any).select("id").eq("store_id", tx.store_id).eq("status", "open").limit(1);
+          if (!regList || regList.length === 0) continue;
+          const regId = (regList[0] as any).id;
+
+          const payload = {
+            cash_register_id: regId, store_id: tx.store_id, type: "entrada",
+            confirmed: false, created_by: tx.created_by, created_at: tx.created_at
+          };
+
+          if (parsed.dinheiro > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "dinheiro", amount: parsed.dinheiro, description: cleanDesc + " (Parte em Dinheiro)" });
+          if (parsed.pix > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "pix", amount: parsed.pix, description: cleanDesc + " (Parte em PIX)" });
+          if (parsed.cartao_credito > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "cartao_credito", amount: parsed.cartao_credito, description: cleanDesc + " (Parte em Cartão)" });
+          
+          reconciledAny = true;
+        } catch (e) {
+          console.error("Error reconciling tx:", tx.id, e);
+        }
+      }
+      if (reconciledAny) fetchRegister(activeStoreId);
+    };
+    reconcileMissing();
+  }, [user]);
+
   // ── Suppliers ────────────────────────────────────────────
   const fetchSuppliers = async () => {
     const { data, error } = await supabase
