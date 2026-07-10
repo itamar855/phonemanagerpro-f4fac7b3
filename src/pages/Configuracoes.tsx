@@ -234,9 +234,37 @@ export default function Configuracoes() {
             amount: m.amount, description: m.description, payment_method: 'dinheiro',
             confirmed: false, created_by: m.created_by, created_at: m.created_at
           };
-          if (m.description.includes('[PIX]')) payload.payment_method = 'pix';
-          else if (m.description.includes('[Cartão]')) payload.payment_method = 'cartao_credito';
-          else if (m.description.includes('MISTO')) { payload.payment_method = 'misto'; payload.type = 'misto'; }
+          if (m.description.includes('MISTO')) {
+            const match = m.description.match(/\[MISTO:(\{.*\})\]/);
+            if (match) {
+              try {
+                const parsed = JSON.parse(match[1]);
+                let success = true;
+                const cleanDesc = m.description.replace(/\[MISTO:.*\]/, '').trim();
+                
+                if (parsed.dinheiro > 0) {
+                  const { error } = await supabase.from('cash_entries' as any).insert({ ...payload, payment_method: 'dinheiro', amount: parsed.dinheiro, description: cleanDesc });
+                  if (error) success = false;
+                }
+                if (parsed.pix > 0) {
+                  const { error } = await supabase.from('cash_entries' as any).insert({ ...payload, payment_method: 'pix', amount: parsed.pix, description: cleanDesc });
+                  if (error) success = false;
+                }
+                if (parsed.cartao_credito > 0) {
+                  const { error } = await supabase.from('cash_entries' as any).insert({ ...payload, payment_method: 'cartao_credito', amount: parsed.cartao_credito, description: cleanDesc });
+                  if (error) success = false;
+                }
+                if (success) inserted++;
+                continue;
+              } catch (e) {
+                console.error("Erro no parse do misto", e);
+              }
+            }
+          } else if (m.description.includes('[PIX]')) {
+            payload.payment_method = 'pix';
+          } else if (m.description.includes('[Cartão]')) {
+            payload.payment_method = 'cartao_credito';
+          }
 
           const { error } = await supabase.from('cash_entries' as any).insert(payload);
           if (!error) inserted++;

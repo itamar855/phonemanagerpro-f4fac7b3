@@ -606,7 +606,9 @@ const Vendas = () => {
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
           });
           if (txError) throw txError;
-          await createPendingCashEntry(selectedProduct.store_id, user.id, totalConsolidated, descMisto, "misto", form.retro_date);
+          if (cashVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date);
+          if (cardVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date);
+          if (pixVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date);
         } else {
           // Single payment type
           if (cashVal > 0) {
@@ -698,7 +700,9 @@ const Vendas = () => {
         }).select().single();
         if (txError) throw txError;
         if (tx) txIdForNote = tx.id;
-        await createPendingCashEntry(storeToUse, user.id, cartTotal, descMisto, "misto");
+        if (cashAmount > 0) await createPendingCashEntry(storeToUse, user.id, cashAmount, desc, "dinheiro");
+        if (pdvCard > 0) await createPendingCashEntry(storeToUse, user.id, pdvCard, desc, "cartao_credito");
+        if (pdvPix > 0) await createPendingCashEntry(storeToUse, user.id, pdvPix, desc, "pix");
       } else {
         if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
           const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: storeToUse, created_by: user.id }).select().single();
@@ -1078,15 +1082,9 @@ const Vendas = () => {
       if (cash === 0 && card === 0 && pix === 0) {
         await createPendingCashEntry(editPdvSale.store_id, user.id, amount, newDesc, "dinheiro", editPdvForm.retro_date);
       } else {
-        const editPaymentsCount = [cash > 0, card > 0, pix > 0].filter(Boolean).length;
-        if (editPaymentsCount > 1) {
-          const descMisto = `${newDesc} [MISTO:{"dinheiro":${cash},"pix":${pix},"cartao_credito":${card}}]`;
-          await createPendingCashEntry(editPdvSale.store_id, user.id, amount, descMisto, "misto", editPdvForm.retro_date);
-        } else {
-          if (cash > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, cash, newDesc, "dinheiro", editPdvForm.retro_date);
-          if (card > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, card, newDesc, "cartao_credito", editPdvForm.retro_date);
-          if (pix > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, pix, newDesc, "pix", editPdvForm.retro_date);
-        }
+        if (cash > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, cash, newDesc, "dinheiro", editPdvForm.retro_date);
+        if (card > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, card, newDesc, "cartao_credito", editPdvForm.retro_date);
+        if (pix > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, pix, newDesc, "pix", editPdvForm.retro_date);
       }
 
       logAction("UPDATE_RECORD", "transactions", editPdvSale.id, editPdvSale, editPdvForm, editPdvSale.store_id);
