@@ -86,9 +86,9 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
       setItems((itemsData as unknown as ServiceOrderItem[]) || []);
 
       if (!readonly && storeId) {
-        const { data: productsData, error: productsError } = await supabase
+        const { data: productsData, error: productsError } = await (supabase
           .from("products")
-          .select("id, name, brand, model, cost_price, sale_price")
+          .select("id, name, brand, model, cost_price, sale_price, supplier_id, supplier_name") as any)
           .eq("store_id", storeId)
           .eq("status", "in_stock")
           .in("product_type", ["peca", "acessorio", "outro"]);
@@ -141,8 +141,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (prodError) throw new Error("Erro ao baixar produto do estoque.");
 
-      const resolvedSupplierId = (!stockSupplierId || stockSupplierId === "none") ? null : stockSupplierId;
-      const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
+      const resolvedSupplierId = (product as any).supplier_id || null;
+      const supplierName = (product as any).supplier_name || null;
 
       const { error: itemError } = await supabase
         .from("service_order_items" as any)
@@ -204,8 +204,11 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           sale_price: salePrice,
           status: "sold",           // Already used — not going through stock flow
           product_type: "peca",
-          condition: "used",
+          condition: "new",
           created_by: user.id,
+          supplier_id: resolvedSupplierId,
+          supplier_name: supplierName,
+          parts_payment_voucher: receiptUrl || null,
         } as any)
         .select()
         .single();
@@ -228,7 +231,49 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (itemError) throw itemError;
 
-      toast.success("Peça cadastrada e vinculada à OS com sucesso!");
+      // 4. Automatic cash out and transaction entry
+      const { data: register } = await supabase
+        .from("cash_registers" as any)
+        .select("id")
+        .eq("store_id", storeId)
+        .eq("status", "open")
+        .eq("opened_by", user.id)
+        .maybeSingle();
+      
+      const registerId = register ? (register as any).id : null;
+
+      if (registerId) {
+        const desc = `Compra de Peça Avulsa (OS): ${newPart.name.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
+        const hasReceipt = !!receiptUrl;
+
+        await supabase.from("cash_entries" as any).insert({
+          cash_register_id: registerId,
+          store_id: storeId,
+          type: "saida",
+          amount: costPrice,
+          description: desc,
+          payment_method: "pix",
+          confirmed: hasReceipt,
+          receipt_url: receiptUrl || null,
+          created_by: user.id,
+        } as any);
+
+        await supabase.from("transactions").insert({
+          type: "expense_pj",
+          amount: costPrice,
+          net_amount: costPrice,
+          description: desc,
+          net_earnings: -costPrice,
+          category: "reparo",
+          payment_method: "pix",
+          status: hasReceipt ? "completed" : "pending",
+          store_id: storeId,
+          created_by: user.id,
+          receipt_url: receiptUrl || null,
+        } as any);
+      }
+
+      toast.success("Peça cadastrada no estoque, vinculada à OS e lançada no caixa!");
       setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null });
       setAddMode("stock");
       fetchData();
@@ -291,7 +336,6 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
               onClick={() => setAddMode("new")}
               className={`flex-1 text-[10px] py-1.5 rounded-md font-medium transition-all ${addMode === "new" ? "bg-background shadow border border-border/50 text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
-              ➕ Nova Peça
             </button>
           </div>
 
@@ -325,21 +369,6 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                 >
                   {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                 </Button>
-              </div>
-              {/* Supplier for stock part */}
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase text-muted-foreground">Fornecedor da Peça (opcional)</Label>
-                <Select value={stockSupplierId} onValueChange={setStockSupplierId}>
-                  <SelectTrigger className="h-8 text-xs bg-background">
-                    <SelectValue placeholder="Selecione o fornecedor..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none" className="text-xs">— Sem fornecedor —</SelectItem>
-                    {suppliers.map(s => (
-                      <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             </div>
           ) : (

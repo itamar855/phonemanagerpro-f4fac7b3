@@ -10,9 +10,8 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Wrench, Plus, Trash2, Loader2, Camera, Upload, Receipt, CheckCircle, Cpu, FileText, Smartphone } from "lucide-react";
+import { Wrench, Plus, Trash2, Loader2, Camera, Upload, Receipt, CheckCircle, Cpu, FileText, Smartphone, Image as LucideImage, X } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
-import { Building2 } from "lucide-react";
 
 interface Supplier {
   id: string;
@@ -66,11 +65,13 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const [manualPartCost, setManualPartCost] = useState("");
   const [manualPartSupplierId, setManualPartSupplierId] = useState("");
   const [stockPartSupplierId, setStockPartSupplierId] = useState("");
+  const [manualPartReceipt, setManualPartReceipt] = useState<File | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   
   // Voucher upload states
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputPartsRef = useRef<HTMLInputElement>(null);
+  const fileInputManualPartRef = useRef<HTMLInputElement>(null);
   const [uploadingVoucher, setUploadingVoucher] = useState<'device' | 'parts' | null>(null);
 
   useEffect(() => {
@@ -86,6 +87,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       setManualPartCost("");
       setManualPartSupplierId("");
       setStockPartSupplierId("");
+      setManualPartReceipt(null);
       setAddMode('stock');
       setSuppliers([]);
     }
@@ -120,7 +122,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       // 3. Fetch available parts/accessories in stock for this store
       const { data: partsData, error: partsError } = await supabase
         .from("products")
-        .select("id, name, brand, model, cost_price")
+        .select("id, name, brand, model, cost_price, supplier_id, supplier_name")
         .eq("store_id", product.store_id)
         .eq("status", "in_stock")
         .in("product_type", ["peca", "acessorio", "outro"]);
@@ -194,6 +196,16 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     }
   };
 
+  const uploadReceipt = async (file: File, prefix: string): Promise<string | null> => {
+    const safeName = `${prefix}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+    const { data, error } = await supabase.storage
+      .from("comprovantes")
+      .upload(`pecas/${safeName}`, file, { upsert: true });
+    if (error) { toast.error("Erro no upload: " + error.message); return null; }
+    const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
+    return urlData.publicUrl;
+  };
+
   const handleAddPart = async () => {
     if (!activeRepair || !selectedPartId) return;
     const part = availableParts.find(p => p.id === selectedPartId);
@@ -201,8 +213,8 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
     setLoading(true);
     try {
-      const resolvedSupplierId = stockPartSupplierId && stockPartSupplierId !== 'none' ? stockPartSupplierId : null;
-      const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
+      const resolvedSupplierId = part.supplier_id || null;
+      const supplierName = part.supplier_name || null;
 
       // 1. Add item to repair list
       const { error: itemError } = await supabase
@@ -240,20 +252,54 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   };
 
   const handleAddManualPart = async () => {
-    if (!activeRepair || !manualPartName.trim() || !manualPartCost) return;
+    if (!activeRepair || !product || !user) return;
+    if (!manualPartName.trim() || !manualPartCost) {
+      toast.error("Nome e custo da peça são obrigatórios.");
+      return;
+    }
     const cost = parseFloat(manualPartCost);
     if (isNaN(cost) || cost < 0) { toast.error("Informe um custo válido."); return; }
 
-    const resolvedSupplierId = manualPartSupplierId && manualPartSupplierId !== 'none' ? manualPartSupplierId : null;
-    const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
-
     setLoading(true);
     try {
+      // 1. Upload receipt if any
+      let receiptUrl: string | null = null;
+      if (manualPartReceipt) {
+        receiptUrl = await uploadReceipt(manualPartReceipt, `internal-${activeRepair.id.slice(0, 8)}`);
+      }
+
+      const resolvedSupplierId = manualPartSupplierId && manualPartSupplierId !== 'none' ? manualPartSupplierId : null;
+      const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
+
+      // 2. Insert product into stock with status=sold (keeps history, not phantom)
+      const { data: prodData, error: prodError } = await supabase
+        .from("products")
+        .insert({
+          store_id: product.store_id,
+          name: manualPartName.trim(),
+          brand: "Genérico",
+          model: manualPartName.trim(),
+          cost_price: cost,
+          sale_price: cost * 1.5,
+          status: "sold", // Already used
+          product_type: "peca",
+          condition: "new",
+          created_by: user.id,
+          supplier_id: resolvedSupplierId,
+          supplier_name: supplierName,
+          parts_payment_voucher: receiptUrl || null,
+        } as any)
+        .select()
+        .single();
+
+      if (prodError) throw prodError;
+
+      // 3. Add item to repair list referencing the created product
       const { error: itemError } = await supabase
         .from("product_repair_items" as any)
         .insert({
           repair_id: activeRepair.id,
-          part_product_id: null,
+          part_product_id: (prodData as any).id,
           part_name: manualPartName.trim(),
           quantity: 1,
           unit_cost: cost,
@@ -263,10 +309,53 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (itemError) throw itemError;
 
-      toast.success("Peça avulsa adicionada ao reparo!");
+      // 4. Automatic cash out and transaction entry
+      const { data: register } = await supabase
+        .from("cash_registers" as any)
+        .select("id")
+        .eq("store_id", product.store_id)
+        .eq("status", "open")
+        .eq("opened_by", user.id)
+        .maybeSingle();
+      
+      const registerId = register ? (register as any).id : null;
+
+      if (registerId) {
+        const desc = `Compra de Peça Avulsa (Reparo Interno): ${manualPartName.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
+        const hasReceipt = !!receiptUrl;
+
+        await supabase.from("cash_entries" as any).insert({
+          cash_register_id: registerId,
+          store_id: product.store_id,
+          type: "saida",
+          amount: cost,
+          description: desc,
+          payment_method: "pix",
+          confirmed: hasReceipt,
+          receipt_url: receiptUrl || null,
+          created_by: user.id,
+        } as any);
+
+        await supabase.from("transactions").insert({
+          type: "expense_pj",
+          amount: cost,
+          net_amount: cost,
+          description: desc,
+          net_earnings: -cost,
+          category: "reparo",
+          payment_method: "pix",
+          status: hasReceipt ? "completed" : "pending",
+          store_id: product.store_id,
+          created_by: user.id,
+          receipt_url: receiptUrl || null,
+        } as any);
+      }
+
+      toast.success("Peça avulsa cadastrada no estoque, vinculada ao reparo e lançada no caixa!");
       setManualPartName("");
       setManualPartCost("");
       setManualPartSupplierId("");
+      setManualPartReceipt(null);
       fetchRepairData();
       onSuccess();
     } catch (err: any) {
@@ -502,8 +591,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                             : 'bg-background text-muted-foreground hover:bg-muted/50'
                         }`}
                       >
-                        Avulso
-                      </button>
+                        </button>
                     </div>
                   </div>
 
@@ -537,26 +625,11 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                      {/* Supplier for stock part */}
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] uppercase font-semibold text-muted-foreground">Fornecedor (opcional)</label>
-                        <Select value={stockPartSupplierId} onValueChange={setStockPartSupplierId}>
-                          <SelectTrigger className="h-9 text-xs bg-background">
-                            <SelectValue placeholder="Selecione o fornecedor..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none" className="text-xs">— Sem fornecedor —</SelectItem>
-                            {suppliers.map(s => (
-                              <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
                     </>
                   ) : (
                     <>
                       <div className="space-y-2">
-                        <Label className="text-[10px] uppercase font-semibold text-muted-foreground">Peça avulsa (sem cadastro no estoque)</Label>
+                        <Label className="text-[10px] uppercase font-semibold text-muted-foreground">Peça avulsa (cadastra e dá baixa automática)</Label>
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -597,7 +670,41 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                             </SelectContent>
                           </Select>
                         </div>
-                        <p className="text-[10px] text-muted-foreground">A peça avulsa não dá baixa no estoque, apenas registra o custo.</p>
+                        {/* Comprovante para peça avulsa */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] uppercase font-semibold text-muted-foreground">Comprovante de Pagamento (opcional)</label>
+                          <input
+                            ref={fileInputManualPartRef}
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={e => setManualPartReceipt(e.target.files?.[0] || null)}
+                          />
+                          {manualPartReceipt ? (
+                            <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">
+                              <LucideImage className="h-4 w-4 text-primary shrink-0" />
+                              <span className="flex-1 truncate text-primary">{manualPartReceipt.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setManualPartReceipt(null)}
+                                className="text-muted-foreground hover:text-destructive"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="w-full h-8 text-xs gap-1.5 border-dashed bg-background"
+                              onClick={() => fileInputManualPartRef.current?.click()}
+                            >
+                              <Upload className="h-3.5 w-3.5" />
+                              Anexar comprovante (Saída Confirmada no Caixa)
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">A peça avulsa será cadastrada no estoque com baixa automática e o custo correspondente será lançado no caixa.</p>
                       </div>
                     </>
                   )}
