@@ -97,11 +97,11 @@ const createPendingCashEntry = async (storeId: string, userId: string, amount: n
     
     if (insertError) {
       console.error("Erro ao inserir cash_entry:", insertError);
-      toast.error("Erro ao registrar no caixa: " + insertError.message);
+      throw new Error(insertError.message);
     }
   } else {
     console.warn("Nenhum caixa aberto encontrado para storeId:", storeId);
-    toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor não foi para o caixa!");
+    throw new Error("Nenhum caixa aberto na loja atual. Abra um caixa antes de registrar a venda!");
   }
 };
 
@@ -572,13 +572,14 @@ const Vendas = () => {
       // Mas para aparecer no Financeiro, vamos inserir por método!
       
       if (cashVal === 0 && cardVal === 0 && pixVal === 0) {
-        await supabase.from("transactions").insert({
+        const { error: txError } = await supabase.from("transactions").insert({
           type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
           description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
           created_by: user.id, destination_account_id: form.destination_account_id || null,
           expected_settlement_date: expectedDate.toISOString(),
           ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
         });
+        if (txError) throw txError;
         await createPendingCashEntry(selectedProduct.store_id, user.id, salePriceAfterDiscount, desc, "dinheiro", form.retro_date);
       } else {
         const paymentsList = [
@@ -598,48 +599,52 @@ const Vendas = () => {
 
           const descMisto = `${desc} [MISTO:{"dinheiro":${cashVal},"pix":${pixVal},"cartao_credito":${cardVal}}]`;
 
-          await supabase.from("transactions").insert({
+          const { error: txError } = await supabase.from("transactions").insert({
             type: "sale", amount: totalConsolidated, net_amount: totalNet,
             description: descMisto, store_id: selectedProduct.store_id, product_id: form.product_id,
             created_by: user.id, destination_account_id: form.destination_account_id || null,
             expected_settlement_date: expectedDate.toISOString(),
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
           });
+          if (txError) throw txError;
           await createPendingCashEntry(selectedProduct.store_id, user.id, totalConsolidated, descMisto, "misto", form.retro_date);
         } else {
           // Single payment type
           if (cashVal > 0) {
-            await supabase.from("transactions").insert({
+            const { error: txError1 } = await supabase.from("transactions").insert({
               type: "sale", amount: cashVal, net_amount: cashVal,
               description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
             });
+            if (txError1) throw txError1;
             await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date);
           }
           if (cardVal > 0) {
             const fee = (acc && Number(acc.credit_fee_percent)) || 0;
             const net = cardVal - (cardVal * (fee / 100));
-            await supabase.from("transactions").insert({
+            const { error: txError2 } = await supabase.from("transactions").insert({
               type: "sale", amount: cardVal, net_amount: net,
               description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
             });
+            if (txError2) throw txError2;
             await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date);
           }
           if (pixVal > 0) {
             const fee = (acc && Number(acc.pix_fee_percent)) || 0;
             const net = pixVal - (pixVal * (fee / 100));
-            await supabase.from("transactions").insert({
+            const { error: txError3 } = await supabase.from("transactions").insert({
               type: "sale", amount: pixVal, net_amount: net,
               description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
             });
+            if (txError3) throw txError3;
             await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date);
           }
         }
@@ -689,9 +694,10 @@ const Vendas = () => {
       if (paymentsCount > 1) {
         // Mixed payment consolidation
         const descMisto = `${desc} [MISTO:{"dinheiro":${cashAmount > 0 ? cashAmount : 0},"pix":${pdvPix},"cartao_credito":${pdvCard}}]`;
-        const { data: tx } = await supabase.from("transactions").insert({
+        const { data: tx, error: txError } = await supabase.from("transactions").insert({
           type: "income", category: "acessorio", amount: cartTotal, description: descMisto, store_id: storeToUse, created_by: user.id
         }).select().single();
+        if (txError) throw txError;
         if (tx) txIdForNote = tx.id;
         await createPendingCashEntry(storeToUse, user.id, cartTotal, descMisto, "misto");
       } else {
@@ -703,18 +709,21 @@ const Vendas = () => {
         } else {
           if (pdvCash > 0) {
             if (cashAmount > 0) {
-              const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: storeToUse, created_by: user.id }).select().single();
+              const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: storeToUse, created_by: user.id }).select().single();
+              if (txError) throw txError;
               if (!txIdForNote && tx) txIdForNote = tx.id;
               await createPendingCashEntry(storeToUse, user.id, cashAmount, desc, "dinheiro");
             }
           }
           if (pdvCard > 0) {
-            const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: storeToUse, created_by: user.id }).select().single();
+            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: storeToUse, created_by: user.id }).select().single();
+            if (txError) throw txError;
             if (!txIdForNote && tx) txIdForNote = tx.id;
             await createPendingCashEntry(storeToUse, user.id, pdvCard, desc, "cartao_credito");
           }
           if (pdvPix > 0) {
-            const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: storeToUse, created_by: user.id }).select().single();
+            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: storeToUse, created_by: user.id }).select().single();
+            if (txError) throw txError;
             if (!txIdForNote && tx) txIdForNote = tx.id;
             await createPendingCashEntry(storeToUse, user.id, pdvPix, desc, "pix");
           }

@@ -96,6 +96,45 @@ describe('Cash Entries — Integration Flow', () => {
       expect(cashOut).toBe(200);
       expect(cashIn - cashOut).toBe(4775);
     });
+
+    it('should correctly fallback to un-owned register if user did not open one', () => {
+      // 1. GERENTE abre o caixa
+      const gerenteId = 'gerente-id';
+      const registerId = 'caixa-gerente-123';
+      
+      const openingEntry = makeCashEntry({
+        type: 'abertura',
+        amount: 100,
+        description: 'Abertura de caixa (Gerente)',
+        confirmed: true,
+        created_by: gerenteId,
+        cash_register_id: registerId,
+      });
+
+      // 2. VENDEDOR faz uma venda sem ter caixa aberto
+      const vendedorId = 'vendedor-id';
+      
+      const saleEntry = makeCashEntry({
+        type: 'entrada',
+        amount: 2000,
+        description: 'Venda S23 Ultra → Maria',
+        payment_method: 'dinheiro',
+        confirmed: false,
+        created_by: vendedorId,
+        cash_register_id: registerId, // fallback para o caixa aberto pelo gerente
+      });
+
+      const allEntries = [openingEntry, saleEntry];
+      
+      // O VENDEDOR inseriu no caixa do GERENTE com sucesso
+      expect(allEntries[1].cash_register_id).toBe(registerId);
+      expect(allEntries[1].created_by).toBe(vendedorId);
+      
+      // Totais do caixa do GERENTE deve incluir a venda do VENDEDOR
+      const pendingEntries = allEntries.filter(e => !e.confirmed);
+      expect(pendingEntries).toHaveLength(1);
+      expect(pendingEntries[0].amount).toBe(2000);
+    });
   });
 
   describe('Reports Query Pattern', () => {

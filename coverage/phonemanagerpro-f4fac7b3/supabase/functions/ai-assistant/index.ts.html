@@ -1,0 +1,388 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for phonemanagerpro-f4fac7b3/supabase/functions/ai-assistant/index.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../index.html">All files</a> / <a href="index.html">phonemanagerpro-f4fac7b3/supabase/functions/ai-assistant</a> index.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/101</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/1</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/1</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/101</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a></td><td class="line-coverage quiet"><span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js"><span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" ><span class="branch-0 cbranch-no" title="branch not covered" >import { serve } from "https://deno.land/std@0.168.0/http/server.ts";</span></span></span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >const corsHeaders = {</span>
+<span class="cstat-no" title="statement not covered" >  "Access-Control-Allow-Origin": "*",</span>
+<span class="cstat-no" title="statement not covered" >  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",</span>
+<span class="cstat-no" title="statement not covered" >};</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >serve(async (req) =&gt; {</span>
+<span class="cstat-no" title="statement not covered" >  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >  try {</span>
+<span class="cstat-no" title="statement not covered" >    const { type, context } = await req.json();</span>
+<span class="cstat-no" title="statement not covered" >    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");</span>
+<span class="cstat-no" title="statement not covered" >    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    let systemPrompt = "";</span>
+<span class="cstat-no" title="statement not covered" >    let userPrompt = "";</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    if (type === "financial") {</span>
+<span class="cstat-no" title="statement not covered" >      systemPrompt = `Você é um analista financeiro especializado em lojas de celulares no Brasil. Analise os dados fornecidos e dê insights acionáveis em português. Seja direto e prático. Use formatação markdown. Inclua:</span>
+<span class="cstat-no" title="statement not covered" >- Análise de receitas vs despesas</span>
+<span class="cstat-no" title="statement not covered" >- Identificação de tendências</span>
+<span class="cstat-no" title="statement not covered" >- Sugestões de redução de custos</span>
+<span class="cstat-no" title="statement not covered" >- Alertas sobre gastos PF excessivos</span>
+<span class="cstat-no" title="statement not covered" >- Projeções simples`;</span>
+<span class="cstat-no" title="statement not covered" >      userPrompt = `Analise os seguintes dados financeiros da loja:\n${JSON.stringify(context, null, 2)}`;</span>
+<span class="cstat-no" title="statement not covered" >    } else if (type === "stock") {</span>
+<span class="cstat-no" title="statement not covered" >      systemPrompt = `Você é um especialista em gestão de estoque de lojas de celulares no Brasil. Analise os dados e sugira otimizações em português. Use markdown. Inclua:</span>
+<span class="cstat-no" title="statement not covered" >- Produtos com baixa rotatividade</span>
+<span class="cstat-no" title="statement not covered" >- Sugestões de compra baseadas em histórico</span>
+<span class="cstat-no" title="statement not covered" >- Alertas de estoque crítico</span>
+<span class="cstat-no" title="statement not covered" >- Otimização de preços</span>
+<span class="cstat-no" title="statement not covered" >- ROI do estoque`;</span>
+<span class="cstat-no" title="statement not covered" >      userPrompt = `Analise os seguintes dados de estoque e vendas:\n${JSON.stringify(context, null, 2)}`;</span>
+<span class="cstat-no" title="statement not covered" >    } else if (type === "legal") {</span>
+<span class="cstat-no" title="statement not covered" >      systemPrompt = `Você é um consultor jurídico especializado em termos de serviço para assistência técnica de celulares no Brasil. Gere ou adapte termos de responsabilidade em português. Use linguagem clara mas juridicamente adequada. Inclua cláusulas sobre:</span>
+<span class="cstat-no" title="statement not covered" >- Condição do aparelho na entrega</span>
+<span class="cstat-no" title="statement not covered" >- Responsabilidade sobre dados</span>
+<span class="cstat-no" title="statement not covered" >- Prazo de retirada</span>
+<span class="cstat-no" title="statement not covered" >- Garantia do serviço</span>
+<span class="cstat-no" title="statement not covered" >- Alterações no orçamento</span>
+<span class="cstat-no" title="statement not covered" >- LGPD e proteção de dados`;</span>
+<span class="cstat-no" title="statement not covered" >      userPrompt = context?.customRequest </span>
+<span class="cstat-no" title="statement not covered" >        ? `Adapte os termos para o seguinte cenário: ${context.customRequest}\n\nTermos atuais: ${context.currentTerms || "padrão"}`</span>
+<span class="cstat-no" title="statement not covered" >        : `Gere termos de responsabilidade completos para uma ordem de serviço de assistência técnica de celulares. Contexto: ${JSON.stringify(context, null, 2)}`;</span>
+<span class="cstat-no" title="statement not covered" >    } else if (type === "qualify") {</span>
+<span class="cstat-no" title="statement not covered" >      systemPrompt = `Você é um especialista em vendas e qualificação de leads para lojas de celulares e assistência técnica no Brasil. Analise o histórico de conversa e o perfil do lead para determinar o potencial de compra. Em português, use markdown. Forneça:</span>
+<span class="cstat-no" title="statement not covered" >- Score de Qualificação (0-100)</span>
+<span class="cstat-no" title="statement not covered" >- Perfil do Lead (Ex: Entusiasta, Necessidade Urgente, Pesquisa de Preço)</span>
+<span class="cstat-no" title="statement not covered" >- Principais Interesses (Ex: iPhone 15, Troca de Tela, Acessórios)</span>
+<span class="cstat-no" title="statement not covered" >- Objeções Identificadas</span>
+<span class="cstat-no" title="statement not covered" >- Próximo Passo Sugerido para o vendedor</span>
+<span class="cstat-no" title="statement not covered" >- Nome sugerido (se detectado na conversa)`;</span>
+<span class="cstat-no" title="statement not covered" >      userPrompt = `Analise o seguinte contexto do lead e histórico de mensagens:\n${JSON.stringify(context, null, 2)}`;</span>
+<span class="cstat-no" title="statement not covered" >    } else {</span>
+<span class="cstat-no" title="statement not covered" >      return new Response(JSON.stringify({ error: "Tipo inválido. Use: financial, stock, legal" }), {</span>
+<span class="cstat-no" title="statement not covered" >        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },</span>
+<span class="cstat-no" title="statement not covered" >      });</span>
+<span class="cstat-no" title="statement not covered" >    }</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {</span>
+<span class="cstat-no" title="statement not covered" >      method: "POST",</span>
+<span class="cstat-no" title="statement not covered" >      headers: {</span>
+<span class="cstat-no" title="statement not covered" >        Authorization: `Bearer ${LOVABLE_API_KEY}`,</span>
+<span class="cstat-no" title="statement not covered" >        "Content-Type": "application/json",</span>
+<span class="cstat-no" title="statement not covered" >      },</span>
+<span class="cstat-no" title="statement not covered" >      body: JSON.stringify({</span>
+<span class="cstat-no" title="statement not covered" >        model: "google/gemini-3-flash-preview",</span>
+<span class="cstat-no" title="statement not covered" >        messages: [</span>
+<span class="cstat-no" title="statement not covered" >          { role: "system", content: systemPrompt },</span>
+<span class="cstat-no" title="statement not covered" >          { role: "user", content: userPrompt },</span>
+<span class="cstat-no" title="statement not covered" >        ],</span>
+<span class="cstat-no" title="statement not covered" >        stream: false,</span>
+<span class="cstat-no" title="statement not covered" >      }),</span>
+<span class="cstat-no" title="statement not covered" >    });</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    if (!response.ok) {</span>
+<span class="cstat-no" title="statement not covered" >      const errorText = await response.text();</span>
+<span class="cstat-no" title="statement not covered" >      console.error("AI gateway error details:", errorText);</span>
+<span class="cstat-no" title="statement not covered" >      </span>
+<span class="cstat-no" title="statement not covered" >      if (response.status === 429) {</span>
+<span class="cstat-no" title="statement not covered" >        return new Response(JSON.stringify({ error: "Limite de requisições excedido. Verifique sua conta Lovable." }), {</span>
+<span class="cstat-no" title="statement not covered" >          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },</span>
+<span class="cstat-no" title="statement not covered" >        });</span>
+<span class="cstat-no" title="statement not covered" >      }</span>
+<span class="cstat-no" title="statement not covered" >      return new Response(JSON.stringify({ error: `Erro na IA (${response.status}). Certifique-se de que a LOVABLE_API_KEY está configurada.` }), {</span>
+<span class="cstat-no" title="statement not covered" >        status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" },</span>
+<span class="cstat-no" title="statement not covered" >      });</span>
+<span class="cstat-no" title="statement not covered" >    }</span>
+<span class="cstat-no" title="statement not covered" ></span>
+<span class="cstat-no" title="statement not covered" >    const aiData = await response.json();</span>
+<span class="cstat-no" title="statement not covered" >    return new Response(JSON.stringify(aiData), {</span>
+<span class="cstat-no" title="statement not covered" >      headers: { ...corsHeaders, "Content-Type": "application/json" },</span>
+<span class="cstat-no" title="statement not covered" >    });</span>
+<span class="cstat-no" title="statement not covered" >  } catch (e) {</span>
+<span class="cstat-no" title="statement not covered" >    console.error("ai-assistant error:", e);</span>
+<span class="cstat-no" title="statement not covered" >    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), {</span>
+<span class="cstat-no" title="statement not covered" >      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },</span>
+<span class="cstat-no" title="statement not covered" >    });</span>
+<span class="cstat-no" title="statement not covered" >  }</span>
+<span class="cstat-no" title="statement not covered" >});</span>
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-10T18:20:55.422Z
+            </div>
+        <script src="../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../sorter.js"></script>
+        <script src="../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

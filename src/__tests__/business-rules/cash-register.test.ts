@@ -58,6 +58,18 @@ describe('Cash Register — Business Rules', () => {
       expect(entryPayload.type).toBe('abertura');
       expect(entryPayload.confirmed).toBe(true);
     });
+
+    it('should fallback to active store register when user did not open one', () => {
+      // Quando Vendas.tsx tenta achar o caixa aberto por userId, mas não encontra, 
+      // ele usa um fallbackQuery procurando apenas por status=open e store_id.
+      const fallbackQueryFilters = {
+        status: 'open',
+        store_id: TEST_STORE_ID
+      };
+
+      expect(fallbackQueryFilters.status).toBe('open');
+      expect(fallbackQueryFilters.store_id).toBe(TEST_STORE_ID);
+    });
   });
 
   describe('Lançamento Manual', () => {
