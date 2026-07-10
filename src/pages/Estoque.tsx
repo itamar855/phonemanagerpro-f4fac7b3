@@ -378,7 +378,7 @@ const Estoque = () => {
 
       let registerId = null;
       if (partForm.launch_cash_out) {
-        const { data: register } = (await supabase.from("cash_registers" as any).select("id").eq("store_id", activeStoreId).eq("status", "open").maybeSingle()) as any;
+        const { data: register } = (await supabase.from("cash_registers" as any).select("id").eq("store_id", activeStoreId).eq("status", "open").eq("opened_by", user?.id).maybeSingle()) as any;
         if (!register) {
           toast.error("Não há caixa aberto para esta loja! Abra o caixa antes de registrar a compra com saída.");
           setLoading(false);

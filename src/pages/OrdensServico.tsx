@@ -66,7 +66,7 @@ const createPendingCashEntry = async (
   if (!storeId || amount <= 0) return;
   const { data: register } = await supabase
     .from("cash_registers" as any).select("id")
-    .eq("store_id", storeId).eq("status", "open").maybeSingle();
+    .eq("store_id", storeId).eq("status", "open").eq("opened_by", userId).maybeSingle();
   
   const registerId = register ? (register as any).id : null;
   await supabase.from("cash_entries" as any).insert({

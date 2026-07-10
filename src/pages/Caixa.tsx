@@ -143,19 +143,20 @@ const Caixa = () => {
       setAllOpenRegisters(mappedOpenData);
     }
 
-    // Se for Vendedor, prioritiza o próprio caixa dele antes de qualquer filtro
-    const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id);
+    // Se for Vendedor/Gerente, o caixa padrão deve ser o dele especificamente nesta loja selecionada
+    const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
     const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
 
     if (userRole !== "admin") {
-      // Vendedores sempre veem o próprio caixa se ele existir, independente da loja no topo
-      setCurrentRegister(userOwnedReg || activeOne || null);
+      // Vendedores/Gerentes sempre veem o próprio caixa da loja selecionada se existir, ou null
+      setCurrentRegister(userOwnedReg || null);
     } else {
       // Administradores:
       if (storeId !== "all") {
-        // Se mudou de loja e não estávamos gerenciando alguém especificamente...
-        if (!currentRegister || (currentRegister.store_id !== storeId && activeTab !== "current")) {
-          setCurrentRegister(activeOne || null);
+        const isCurrentlyManagingOpen = currentRegister ? mappedOpenData.find((r: any) => r.id === currentRegister.id) : null;
+        // Se mudou de loja e não estávamos gerenciando outro caixa aberto especificamente nessa nova loja:
+        if (!isCurrentlyManagingOpen || currentRegister.store_id !== storeId) {
+          setCurrentRegister(userOwnedReg || activeOne || null);
         }
       } else if (currentRegister) {
         // No modo "Todas as Unidades", atualizamos os dados se o caixa ainda estiver aberto
@@ -191,6 +192,10 @@ const Caixa = () => {
       
       if (storeId !== "all") {
         historyQuery = historyQuery.eq("store_id", storeId);
+      }
+
+      if (userRole !== "admin") {
+        historyQuery = historyQuery.eq("opened_by", user?.id);
       }
       
       const { data: historyData, error: historyError } = await historyQuery;
@@ -730,6 +735,8 @@ const Caixa = () => {
                     <thead className="border-b">
                       <tr>
                         <th className="py-2">Data</th>
+                        <th className="py-2">Loja</th>
+                        <th className="py-2">Vendedor</th>
                         <th className="py-2 text-right">Fechamento</th>
                         <th className="py-2 text-right">Diferença</th>
                         <th className="py-2 text-center">Ações</th>
@@ -739,6 +746,10 @@ const Caixa = () => {
                       {registersHistory.map(reg => (
                         <tr key={reg.id}>
                           <td className="py-2">{new Date(reg.opened_at).toLocaleDateString("pt-BR")}</td>
+                          <td className="py-2">
+                            <Badge variant="outline" className="text-[9px] py-0 h-4">{reg.stores?.name || "—"}</Badge>
+                          </td>
+                          <td className="py-2 font-medium">{reg.profiles?.display_name || "—"}</td>
                           <td className="py-2 text-right font-bold">{formatCurrency(Number(reg.closing_amount))}</td>
                           <td className={`py-2 text-right ${Math.abs(reg.difference || 0) < 0.1 ? "text-primary" : "text-destructive"}`}>
                             {formatCurrency(reg.difference || 0)}

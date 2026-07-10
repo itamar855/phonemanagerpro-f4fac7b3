@@ -49,7 +49,7 @@ type Accessory = { id: string; store_id: string; name: string; category: string;
 type CartItem = { acc: Accessory; qty: number; price: number };
 
 const createPendingCashEntry = async (storeId: string, userId: string, amount: number, description: string, paymentMethod: string, retroDate?: string) => {
-  const { data: register } = await supabase.from("cash_registers" as any).select("id").eq("store_id", storeId).eq("status", "open").maybeSingle();
+  const { data: register } = await supabase.from("cash_registers" as any).select("id").eq("store_id", storeId).eq("status", "open").eq("opened_by", userId).maybeSingle();
   const registerId = register ? (register as any).id : null;
   await supabase.from("cash_entries" as any).insert({
     cash_register_id: registerId, store_id: storeId,

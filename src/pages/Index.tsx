@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Package, TrendingUp, TrendingDown, Wrench,
-  ArrowUpRight, ArrowDownRight, ShoppingBag, AlertTriangle, Zap, Store, Users,
+  AlertTriangle, Zap, Store, Users,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -64,6 +64,7 @@ const Dashboard = () => {
     expensesPJ: 0, expensesPF: 0, storeCount: 0, openOS: 0, salesCount: 0,
     totalAccessories: 0, totalLeads: 0,
     faturamentoBruto: 0, faturamentoLiquido: 0, custoPecasOS: 0, lucroServicos: 0,
+    receitaAparelhos: 0, receitaAcessorios: 0, receitaOS: 0,
   });
   const [storeData, setStoreData] = useState<{ name: string; aparelhos: number; acessorios: number; investido: number }[]>([]);
   const [dailySales, setDailySales] = useState<{ date: string; total: number }[]>([]);
@@ -202,6 +203,9 @@ const Dashboard = () => {
       faturamentoLiquido,
       custoPecasOS,
       lucroServicos,
+      receitaAparelhos,
+      receitaAcessorios,
+      receitaOS,
     });
 
     if (isAdmin) {
@@ -264,21 +268,7 @@ const Dashboard = () => {
 
   const totalInvestedAll = stats.totalInvested + stats.totalInvestedAcc;
 
-  // Render cards conditionally
-  const kpiCards = [
-    can("estoque") && { label: "Aparelhos", value: String(stats.totalStock), sub: "em estoque", icon: Package, color: "text-primary" },
-    can("estoque") && { label: "Acessórios", value: String(stats.totalAccessories), sub: "unidades", icon: Zap, color: "text-accent" },
-    can("vendas") && { 
-      label: "Vendas", 
-      value: canSeeFinancials ? formatCurrency(stats.totalSalesRevenue) : `${stats.salesCount} unidades`, 
-      sub: canSeeFinancials ? `${stats.salesCount} vendas` : "sucesso", 
-      icon: ShoppingBag, 
-      color: "text-primary" 
-    },
-    can("vendas") && canSeeFinancials && { label: "Lucro", value: formatCurrency(stats.totalProfit), sub: "nas vendas", icon: stats.totalProfit >= 0 ? TrendingUp : TrendingDown, color: stats.totalProfit >= 0 ? "text-primary" : "text-destructive" },
-    can("os") && { label: "OS Abertas", value: String(stats.openOS), sub: "em andamento", icon: Wrench, color: "text-accent" },
-    can("leads") && { label: "Leads Funil", value: String(stats.totalLeads), sub: "em prospecção", icon: Users, color: "text-primary" },
-  ].filter(Boolean) as { label: string; value: string; sub: string; icon: any; color: string }[];
+  const hasAnyData = can("estoque") || can("vendas") || can("os") || can("transacoes") || can("caixa");
 
   return (
     <div className="space-y-4">
@@ -367,115 +357,157 @@ const Dashboard = () => {
         </div>
       )}
 
-      {kpiCards.length > 0 && (
-        <div className={`grid grid-cols-2 gap-3 ${kpiCards.length <= 3 ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
-          {kpiCards.map((card) => (
-            <Card key={card.label} className="border-border/50 shadow-lg shadow-black/10">
+      {/* 📊 FINANCEIRO CONSOLIDADO */}
+      {canSeeFinancials && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 border-b border-border/50 pb-1">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Resultado Financeiro Geral</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
               <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{card.label}</p>
-                  <card.icon className={`h-4 w-4 ${card.color}`} />
-                </div>
-                <p className={`font-display text-xl font-bold ${card.color}`}>{card.value}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{card.sub}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Faturamento Bruto</p>
+                <p className="font-display text-xl font-bold text-emerald-500 mt-1">{formatCurrency(stats.faturamentoBruto)}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Aparelhos + Acessórios + Serviços</p>
               </CardContent>
             </Card>
-          ))}
+            <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Faturamento Líquido</p>
+                <p className="font-display text-xl font-bold text-blue-500 mt-1">{formatCurrency(stats.faturamentoLiquido)}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Lucro líquido após CMV e Despesas</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Investido (Estoque)</p>
+                <p className="font-display text-xl font-bold text-orange-400 mt-1">{formatCurrency(totalInvestedAll)}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Aparelhos: {formatCurrency(stats.totalInvested)} · Acessórios: {formatCurrency(stats.totalInvestedAcc)}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Despesas Totais (PJ + PF)</p>
+                <p className="font-display text-xl font-bold text-destructive mt-1">{formatCurrency(stats.expensesPJ + stats.expensesPF)}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">PJ: {formatCurrency(stats.expensesPJ)} · PF: {formatCurrency(stats.expensesPF)}</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
-      {canSeeFinancials && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Faturamento Bruto</p>
-                <TrendingUp className="h-4 w-4 text-emerald-500" />
-              </div>
-              <p className="font-display text-2xl font-bold text-emerald-500">{formatCurrency(stats.faturamentoBruto)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Aparelhos + Acessórios + Serviços</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Faturamento Líquido</p>
-                <TrendingUp className="h-4 w-4 text-blue-500" />
-              </div>
-              <p className="font-display text-2xl font-bold text-blue-500">{formatCurrency(stats.faturamentoLiquido)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Lucro real após custos e despesas</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Pago em Peças (OS)</p>
-                <Package className="h-4 w-4 text-orange-400" />
-              </div>
-              <p className="font-display text-2xl font-bold text-orange-400">{formatCurrency(stats.custoPecasOS)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Custo de peças em OS realizadas</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 shadow-lg shadow-black/10 bg-gradient-to-br from-card to-card/50">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Lucro de Serviços</p>
-                <Wrench className={`h-4 w-4 ${stats.lucroServicos >= 0 ? "text-violet-400" : "text-destructive"}`} />
-              </div>
-              <p className={`font-display text-2xl font-bold ${stats.lucroServicos >= 0 ? "text-violet-400" : "text-destructive"}`}>{formatCurrency(stats.lucroServicos)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Receita de OS entregues − custo das peças</p>
-            </CardContent>
-          </Card>
+      {/* 📱 APARELHOS & CELULARES */}
+      {(can("estoque") || can("vendas")) && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 border-b border-border/50 pb-1">
+            <Store className="h-4 w-4 text-primary" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Celulares & Aparelhos</h2>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="border-border/50 shadow-md">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">Estoque de Aparelhos</p>
+                <p className="font-display text-lg font-bold text-primary mt-0.5">{stats.totalStock} <span className="text-xs font-normal text-muted-foreground">unidades</span></p>
+              </CardContent>
+            </Card>
+            {canSeeFinancials && (
+              <>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Valor Investido</p>
+                    <p className="font-display text-lg font-bold text-primary mt-0.5">{formatCurrency(stats.totalInvested)}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Receita de Aparelhos</p>
+                    <p className="font-display text-lg font-bold text-primary mt-0.5">{formatCurrency(stats.receitaAparelhos)}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Lucro de Vendas</p>
+                    <p className="font-display text-lg font-bold text-primary mt-0.5">{formatCurrency(stats.totalProfit)}</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {can("estoque") && canSeeFinancials && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Card className="border-border/50 shadow-lg shadow-black/10">
-            <CardContent className="p-4">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Investido em Aparelhos</p>
-              <p className="font-display text-lg font-bold text-primary mt-1">{formatCurrency(stats.totalInvested)}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 shadow-lg shadow-black/10">
-            <CardContent className="p-4">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Investido em Acessórios</p>
-              <p className="font-display text-lg font-bold text-accent mt-1">{formatCurrency(stats.totalInvestedAcc)}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 shadow-lg shadow-black/10">
-            <CardContent className="p-4">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total Investido</p>
-              <p className="font-display text-lg font-bold mt-1">{formatCurrency(totalInvestedAll)}</p>
-            </CardContent>
-          </Card>
+      {/* 🔌 ACESSÓRIOS */}
+      {(can("estoque") || can("vendas")) && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 border-b border-border/50 pb-1">
+            <Zap className="h-4 w-4 text-accent" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Acessórios</h2>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            <Card className="border-border/50 shadow-md">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">Estoque de Acessórios</p>
+                <p className="font-display text-lg font-bold text-accent mt-0.5">{stats.totalAccessories} <span className="text-xs font-normal text-muted-foreground">unidades</span></p>
+              </CardContent>
+            </Card>
+            {canSeeFinancials && (
+              <>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Valor Investido</p>
+                    <p className="font-display text-lg font-bold text-accent mt-0.5">{formatCurrency(stats.totalInvestedAcc)}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Receita de Acessórios</p>
+                    <p className="font-display text-lg font-bold text-accent mt-0.5">{formatCurrency(stats.receitaAcessorios)}</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {isAdmin && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Card className="border-border/50 shadow-lg shadow-black/10">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="rounded-lg p-3 bg-destructive/10 text-destructive">
-                <TrendingDown className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Gastos PJ</p>
-                <p className="font-display text-lg font-bold text-destructive">{formatCurrency(stats.expensesPJ)}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 shadow-lg shadow-black/10">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="rounded-lg p-3 bg-destructive/10 text-destructive">
-                <TrendingDown className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Gastos PF + Pro-labore</p>
-                <p className="font-display text-lg font-bold text-destructive">{formatCurrency(stats.expensesPF)}</p>
-              </div>
-            </CardContent>
-          </Card>
+      {/* 🔧 SERVIÇOS & CONSERTOS */}
+      {can("os") && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 border-b border-border/50 pb-1">
+            <Wrench className="h-4 w-4 text-violet-400" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Serviços & Ordens de Serviço (OS)</h2>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Card className="border-border/50 shadow-md">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">OS Abertas (Em Andamento)</p>
+                <p className="font-display text-lg font-bold text-violet-400 mt-0.5">{stats.openOS} <span className="text-xs font-normal text-muted-foreground">unidades</span></p>
+              </CardContent>
+            </Card>
+            {canSeeFinancials && (
+              <>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Receita de Serviços (Entregues)</p>
+                    <p className="font-display text-lg font-bold text-violet-400 mt-0.5">{formatCurrency(stats.receitaOS)}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Pago em Peças (OS)</p>
+                    <p className="font-display text-lg font-bold text-orange-400 mt-0.5">{formatCurrency(stats.custoPecasOS)}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Lucro de Serviços</p>
+                    <p className="font-display text-lg font-bold text-violet-400 mt-0.5">{formatCurrency(stats.lucroServicos)}</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -586,28 +618,7 @@ const Dashboard = () => {
         )}
       </div>
 
-      {(canSeeFinancials && (can("transacoes") || can("caixa"))) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { label: "Gastos PJ", value: stats.expensesPJ, icon: ArrowUpRight, color: "text-destructive" },
-            { label: "Gastos PF + Pro-labore", value: stats.expensesPF, icon: ArrowDownRight, color: "text-destructive" },
-          ].map(card => (
-            <Card key={card.label} className="border-border/50 shadow-lg shadow-black/10">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
-                  <card.icon className="h-5 w-5 text-destructive" />
-                </div>
-                <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{card.label}</p>
-                  <p className={`font-display text-lg font-bold ${card.color}`}>{formatCurrency(card.value)}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {kpiCards.length === 0 && !can("transacoes") && !can("caixa") && (
+      {!hasAnyData && (
         <Card className="border-border/50">
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Store className="h-10 w-10 mb-3 opacity-30" />
