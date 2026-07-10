@@ -10,7 +10,7 @@ if (!urlMatch || !keyMatch) {
   process.exit(1);
 }
 
-const url = urlMatch[1].replace(/[\"']/g, '').trim() + '/rest/v1/sales?select=id,store_id,created_at,notes&order=created_at.desc&limit=5';
+const url = urlMatch[1].replace(/[\"']/g, '').trim() + '/rest/v1/transactions?select=id,store_id,created_at,description,amount&order=created_at.desc&limit=5';
 const key = keyMatch[1].replace(/[\"']/g, '').trim();
 
 const options = {
