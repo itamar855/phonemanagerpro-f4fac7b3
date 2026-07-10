@@ -662,7 +662,8 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                             : 'bg-background text-muted-foreground hover:bg-muted/50'
                         }`}
                       >
-                        </button>
+                        Avulso
+                      </button>
                     </div>
                   </div>
 
