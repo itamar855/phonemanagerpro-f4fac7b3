@@ -239,7 +239,24 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (partError) throw partError;
 
-      toast.success("Peça vinculada e dada baixa do estoque.");
+      // 3. Update device cost price
+      const { data: currentProduct, error: getProductError } = await supabase
+        .from("products")
+        .select("cost_price")
+        .eq("id", product.id)
+        .single();
+      if (getProductError) throw getProductError;
+
+      const currentCost = Number(currentProduct?.cost_price || 0);
+      const newCost = currentCost + Number(part.cost_price);
+
+      const { error: updateCostError } = await supabase
+        .from("products")
+        .update({ cost_price: newCost })
+        .eq("id", product.id);
+      if (updateCostError) throw updateCostError;
+
+      toast.success("Peça vinculada, dada baixa do estoque e custo do aparelho atualizado.");
       setSelectedPartId("");
       setStockPartSupplierId("");
       fetchRepairData();
@@ -294,6 +311,23 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (prodError) throw prodError;
 
+      // 2.5 Update device cost price
+      const { data: currentProduct, error: getProductError } = await supabase
+        .from("products")
+        .select("cost_price")
+        .eq("id", product.id)
+        .single();
+      if (getProductError) throw getProductError;
+
+      const currentCost = Number(currentProduct?.cost_price || 0);
+      const newCost = currentCost + cost;
+
+      const { error: updateCostError } = await supabase
+        .from("products")
+        .update({ cost_price: newCost })
+        .eq("id", product.id);
+      if (updateCostError) throw updateCostError;
+
       // 3. Add item to repair list referencing the created product
       const { error: itemError } = await supabase
         .from("product_repair_items" as any)
@@ -310,20 +344,30 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       if (itemError) throw itemError;
 
       // 4. Automatic cash out and transaction entry
-      const { data: register } = await supabase
+      let { data: register } = await supabase
         .from("cash_registers" as any)
         .select("id")
         .eq("store_id", product.store_id)
         .eq("status", "open")
         .eq("opened_by", user.id)
         .maybeSingle();
+
+      if (!register) {
+        const { data: fallbackRegister } = await supabase
+          .from("cash_registers" as any)
+          .select("id")
+          .eq("store_id", product.store_id)
+          .eq("status", "open")
+          .limit(1)
+          .maybeSingle();
+        register = fallbackRegister;
+      }
       
       const registerId = register ? (register as any).id : null;
+      const desc = `Compra de Peça Avulsa (Reparo Interno): ${manualPartName.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
+      const hasReceipt = !!receiptUrl;
 
       if (registerId) {
-        const desc = `Compra de Peça Avulsa (Reparo Interno): ${manualPartName.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
-        const hasReceipt = !!receiptUrl;
-
         await supabase.from("cash_entries" as any).insert({
           cash_register_id: registerId,
           store_id: product.store_id,
@@ -335,23 +379,23 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           receipt_url: receiptUrl || null,
           created_by: user.id,
         } as any);
-
-        await supabase.from("transactions").insert({
-          type: "expense_pj",
-          amount: cost,
-          net_amount: cost,
-          description: desc,
-          net_earnings: -cost,
-          category: "reparo",
-          payment_method: "pix",
-          status: hasReceipt ? "completed" : "pending",
-          store_id: product.store_id,
-          created_by: user.id,
-          receipt_url: receiptUrl || null,
-        } as any);
       }
 
-      toast.success("Peça avulsa cadastrada no estoque, vinculada ao reparo e lançada no caixa!");
+      await supabase.from("transactions").insert({
+        type: "expense_pj",
+        amount: cost,
+        net_amount: cost,
+        description: desc,
+        net_earnings: -cost,
+        category: "reparo",
+        payment_method: "pix",
+        status: hasReceipt ? "completed" : "pending",
+        store_id: product.store_id,
+        created_by: user.id,
+        receipt_url: receiptUrl || null,
+      } as any);
+
+      toast.success("Peça avulsa cadastrada, custo do aparelho atualizado e saída registrada!");
       setManualPartName("");
       setManualPartCost("");
       setManualPartSupplierId("");
@@ -368,6 +412,16 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const handleRemovePart = async (itemId: string, partProductId: string) => {
     setLoading(true);
     try {
+      // 0. Get the unit_cost of the item being removed
+      const { data: itemData, error: getItemError } = await (supabase
+        .from("product_repair_items" as any)
+        .select("unit_cost")
+        .eq("id", itemId)
+        .single() as any);
+      if (getItemError) throw getItemError;
+
+      const itemCost = Number(itemData?.unit_cost || 0);
+
       // 1. Delete item
       const { error: itemError } = await supabase
         .from("product_repair_items" as any)
@@ -384,7 +438,24 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (partError) throw partError;
 
-      toast.success("Peça removida do reparo e retornada ao estoque.");
+      // 3. Decrement device cost price
+      const { data: currentProduct, error: getProductError } = await supabase
+        .from("products")
+        .select("cost_price")
+        .eq("id", product.id)
+        .single();
+      if (getProductError) throw getProductError;
+
+      const currentCost = Number(currentProduct?.cost_price || 0);
+      const newCost = Math.max(0, currentCost - itemCost);
+
+      const { error: updateCostError } = await supabase
+        .from("products")
+        .update({ cost_price: newCost })
+        .eq("id", product.id);
+      if (updateCostError) throw updateCostError;
+
+      toast.success("Peça removida do reparo, retornada ao estoque e custo do aparelho atualizado.");
       fetchRepairData();
       onSuccess();
     } catch (err: any) {

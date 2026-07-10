@@ -232,20 +232,30 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
       if (itemError) throw itemError;
 
       // 4. Automatic cash out and transaction entry
-      const { data: register } = await supabase
+      let { data: register } = await supabase
         .from("cash_registers" as any)
         .select("id")
         .eq("store_id", storeId)
         .eq("status", "open")
         .eq("opened_by", user.id)
         .maybeSingle();
+
+      if (!register) {
+        const { data: fallbackRegister } = await supabase
+          .from("cash_registers" as any)
+          .select("id")
+          .eq("store_id", storeId)
+          .eq("status", "open")
+          .limit(1)
+          .maybeSingle();
+        register = fallbackRegister;
+      }
       
       const registerId = register ? (register as any).id : null;
+      const desc = `Compra de Peça Avulsa (OS): ${newPart.name.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
+      const hasReceipt = !!receiptUrl;
 
       if (registerId) {
-        const desc = `Compra de Peça Avulsa (OS): ${newPart.name.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
-        const hasReceipt = !!receiptUrl;
-
         await supabase.from("cash_entries" as any).insert({
           cash_register_id: registerId,
           store_id: storeId,
@@ -257,21 +267,21 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           receipt_url: receiptUrl || null,
           created_by: user.id,
         } as any);
-
-        await supabase.from("transactions").insert({
-          type: "expense_pj",
-          amount: costPrice,
-          net_amount: costPrice,
-          description: desc,
-          net_earnings: -costPrice,
-          category: "reparo",
-          payment_method: "pix",
-          status: hasReceipt ? "completed" : "pending",
-          store_id: storeId,
-          created_by: user.id,
-          receipt_url: receiptUrl || null,
-        } as any);
       }
+
+      await supabase.from("transactions").insert({
+        type: "expense_pj",
+        amount: costPrice,
+        net_amount: costPrice,
+        description: desc,
+        net_earnings: -costPrice,
+        category: "reparo",
+        payment_method: "pix",
+        status: hasReceipt ? "completed" : "pending",
+        store_id: storeId,
+        created_by: user.id,
+        receipt_url: receiptUrl || null,
+      } as any);
 
       toast.success("Peça cadastrada no estoque, vinculada à OS e lançada no caixa!");
       setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null });
