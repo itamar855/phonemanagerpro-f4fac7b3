@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logger } from "./logger";
 
 export type AuditAction = 
   | "CREATE_SALE" 
@@ -35,6 +36,12 @@ export const logAction = async (
       finalStoreId = profile?.store_id;
     }
 
+    const _meta = {
+      correlationId: logger.getCorrelationId(),
+      userAgent: navigator.userAgent,
+      timestamp: new Date().toISOString()
+    };
+
     const { error } = await supabase.from("audit_logs").insert({
       user_id: user.id,
       store_id: finalStoreId,
@@ -42,7 +49,7 @@ export const logAction = async (
       entity_type: entityType,
       entity_id: entityId,
       before_state: oldValues,
-      after_state: newValues,
+      after_state: newValues ? { ...newValues, _meta } : { _meta },
     } as any);
 
     if (error) {

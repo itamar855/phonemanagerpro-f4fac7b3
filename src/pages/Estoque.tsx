@@ -413,8 +413,7 @@ const Estoque = () => {
           const amount = parseFloat(partForm.cost_price);
           
           await supabase.from("cash_entries" as any).insert({
-            cash_register_id: registerId,
-            store_id: activeStoreId,
+            register_id: registerId,
             type: "saida",
             amount,
             description: desc,
