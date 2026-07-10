@@ -91,7 +91,6 @@ const createPendingCashEntry = async (storeId: string, userId: string, amount: n
       cash_register_id: registerId, store_id: actualStoreId,
       type: "entrada", amount, description,
       payment_method: paymentMethod, receipt_url: null, confirmed: false, created_by: userId,
-      reference_key: referenceKey || null,
       ...(retroDate ? { created_at: new Date(retroDate + "T12:00:00").toISOString() } : {}),
     });
     
