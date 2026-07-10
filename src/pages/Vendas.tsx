@@ -133,7 +133,7 @@ const Vendas = () => {
   const [newCustomerForm, setNewCustomerForm] = useState(emptyCustomerForm);
   const [customerSalesHistory, setCustomerSalesHistory] = useState<Sale[]>([]);
   const [justification, setJustification] = useState("");
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteItem, setDeleteItem] = useState<{ id: string, type: "sale" | "pdv" } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [salesSearch, setSalesSearch] = useState("");
   const [selectedViewSale, setSelectedViewSale] = useState<Sale | null>(null);
@@ -763,30 +763,47 @@ const Vendas = () => {
     }
   };
 
-  const handleDeleteSale = async (saleId: string, reason: string) => {
-    const sale = sales.find(s => s.id === saleId);
-    if (!sale) return;
-    
+  const handleDeleteSale = async (item: { id: string, type: "sale" | "pdv" }, reason: string) => {
     setLoading(true);
     try {
-      // 1. Restaurar o produto para 'in_stock'
-      await supabase.from("products").update({ status: "in_stock", sale_price: null }).eq("id", sale.product_id);
-      
-      // 2. Se houver trade-in, apagar o produto que foi criado
-      if (sale.trade_in_product_id) {
-        await supabase.from("products").delete().eq("id", sale.trade_in_product_id);
+      if (item.type === "pdv") {
+        const pdvSale = pdvSales.find(s => s.id === item.id);
+        if (!pdvSale) return;
+        
+        // Excluir de transactions
+        const { error: txError } = await supabase.from("transactions").delete().eq("id", pdvSale.id);
+        if (txError) throw txError;
+        
+        // Excluir de cash_entries baseado na descrição
+        if (pdvSale.description) {
+           await supabase.from("cash_entries").delete().eq("description", pdvSale.description);
+        }
+        
+        logAction("DELETE_RECORD", "transactions", pdvSale.id, pdvSale, { reason }, pdvSale.store_id);
+        toast.success("Venda PDV removida com sucesso!");
+      } else {
+        const sale = sales.find(s => s.id === item.id);
+        if (!sale) return;
+        
+        // 1. Restaurar o produto para 'in_stock'
+        await supabase.from("products").update({ status: "in_stock", sale_price: null }).eq("id", sale.product_id);
+        
+        // 2. Se houver trade-in, apagar o produto que foi criado
+        if (sale.trade_in_product_id) {
+          await supabase.from("products").delete().eq("id", sale.trade_in_product_id);
+        }
+        
+        // 3. Apagar as transações vinculadas
+        await supabase.from("transactions").delete().eq("product_id", sale.product_id).eq("type", "sale");
+        
+        // 4. Apagar a venda
+        const { error } = await supabase.from("sales").delete().eq("id", sale.id);
+        
+        if (error) throw error;
+        
+        logAction("DELETE_RECORD", "sales", sale.id, sale, { reason }, sale.store_id);
+        toast.success("Venda removida e produto retornou ao estoque!");
       }
-      
-      // 3. Apagar as transações vinculadas
-      await supabase.from("transactions").delete().eq("product_id", sale.product_id).eq("type", "sale");
-      
-      // 4. Apagar a venda
-      const { error } = await supabase.from("sales").delete().eq("id", sale.id);
-      
-      if (error) throw error;
-      
-      logAction("DELETE_RECORD", "sales", sale.id, sale, { reason }, sale.store_id);
-      toast.success("Venda removida e produto retornou ao estoque!");
       fetchData();
     } catch (error: any) {
       toast.error("Erro ao remover venda: " + error.message);
@@ -1725,114 +1742,127 @@ const Vendas = () => {
 
       {/* Lista de vendas */}
       <div className="space-y-2">
-        {pdvSales.map(tx => (
-          <Card key={tx.id} className="border-border/50 shadow-lg shadow-black/10">
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-sm truncate">{tx.description}</p>
-                    <Badge className="text-[10px] bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 shrink-0">PDV</Badge>
-                    {activeStoreId === "all" && (
-                      <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                        {(storeMap.get(tx.store_id) as any)?.name}
-                      </Badge>
-                    )}
+        {[
+          ...pdvSales.map(tx => ({ type: "pdv" as const, data: tx, date: new Date(tx.created_at).getTime() })),
+          ...filteredSales.map(sale => ({ type: "sale" as const, data: sale, date: new Date(sale.created_at).getTime() }))
+        ].sort((a, b) => b.date - a.date).map(item => {
+          if (item.type === "pdv") {
+            const tx = item.data;
+            return (
+              <Card key={`pdv-${tx.id}`} className="border-border/50 shadow-lg shadow-black/10">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm truncate">{tx.description}</p>
+                        <Badge className="text-[10px] bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 shrink-0">PDV</Badge>
+                        {activeStoreId === "all" && (
+                          <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
+                            {(storeMap.get(tx.store_id) as any)?.name}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">{new Date(tx.created_at).toLocaleDateString("pt-BR")}</p>
+                      <div className="flex gap-2 mt-2">
+                        {(userRole === "admin" || userRole === "gerente") && (
+                          <Button
+                            className="h-7 px-2 text-[10px] gap-1 border border-yellow-500/40 bg-yellow-500/5 text-yellow-600 dark:text-yellow-500 hover:bg-yellow-500/10 shadow-none"
+                            onClick={() => handleOpenPdvEdit(tx)}
+                          >
+                            <Pencil className="h-3 w-3" />Editar
+                          </Button>
+                        )}
+                        {userRole === "admin" && (
+                          <Button className="h-7 px-2 text-[10px] gap-1 text-destructive border border-destructive/30 bg-transparent hover:bg-destructive/10 shadow-none"
+                            onClick={() => { setDeleteItem({ id: tx.id, type: "pdv" }); setJustification(""); setDeleteDialogOpen(true); }} disabled={loading}>
+                            <Trash2 className="h-3.5 w-3.5" />Excluir
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="font-display font-bold text-sm text-primary shrink-0">{formatCurrency(Number(tx.amount))}</p>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">{new Date(tx.created_at).toLocaleDateString("pt-BR")}</p>
-                  {(userRole === "admin" || userRole === "gerente") && (
-                    <div className="flex gap-2 mt-2">
-                      <Button
-                        className="h-7 px-2 text-[10px] gap-1 border border-yellow-500/40 bg-yellow-500/5 text-yellow-600 dark:text-yellow-500 hover:bg-yellow-500/10 shadow-none"
-                        onClick={() => handleOpenPdvEdit(tx)}
-                      >
-                        <Pencil className="h-3 w-3" />Editar
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <p className="font-display font-bold text-sm text-primary shrink-0">{formatCurrency(Number(tx.amount))}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-
-        {filteredSales.map(sale => {
-          const product = productMap.get(sale.product_id) as any;
-          const isLoading = notaLoading === sale.id;
-          return (
-            <Card
-              key={sale.id}
-              className="border-border/50 shadow-lg shadow-black/10 cursor-pointer hover:border-primary/40 transition-colors"
-              onClick={() => setSelectedViewSale(sale)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-sm truncate">{product?.name || "Aparelho"}</p>
-                      {product?.imei && (
-                        <span className="text-[10px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/60 hidden sm:inline">
-                          {product.imei}
-                        </span>
-                      )}
-                      {activeStoreId === "all" && (
-                        <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                          {(storeMap.get(sale.store_id) as any)?.name}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {sale.has_trade_in && <Badge className="text-[10px] bg-primary/15 text-primary border border-primary/20">Troca: {sale.trade_in_device_name}</Badge>}
-                      {Number(sale.payment_cash) > 0 && <Badge className="text-[10px] border border-border bg-transparent text-foreground">💵 {formatCurrency(Number(sale.payment_cash))}</Badge>}
-                      {Number(sale.payment_card) > 0 && <Badge className="text-[10px] border border-border bg-transparent text-foreground">💳 {formatCurrency(Number(sale.payment_card))}{sale.installments && sale.installments > 1 ? ` (${sale.installments}x)` : ""}</Badge>}
-                      {Number(sale.payment_pix) > 0 && <Badge className="text-[10px] border border-border bg-transparent text-foreground">📱 {formatCurrency(Number(sale.payment_pix))}</Badge>}
-                      {Number(sale.discount) > 0 && <Badge className="text-[10px] text-yellow-500 border border-yellow-500/30 bg-transparent">🏷️ -{formatCurrency(Number(sale.discount))}</Badge>}
-                      {sale.warranty_days && <Badge className="text-[10px] text-blue-500 border border-blue-500/30 bg-transparent">🛡️ {sale.warranty_days}d</Badge>}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      {sale.customer_name ? `Cliente: ${sale.customer_name}` : "Venda avulsa"}{sale.seller_id && profileMap.get(sale.seller_id) ? ` · Vendedor: ${profileMap.get(sale.seller_id)}` : ""} · {new Date(sale.created_at).toLocaleDateString("pt-BR")}
-                    </p>
-                    <div className="flex gap-2 mt-2" onClick={e => e.stopPropagation()}>
-                      <Button className="h-7 px-2 text-[10px] gap-1 border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 shadow-none"
-                        onClick={() => setSelectedViewSale(sale)}>
-                        <Eye className="h-3 w-3" />Ver detalhes
-                      </Button>
-                      {/* Admin, gerente e vendedor têm acesso à edição da venda (com auditoria detalhada) */}
-                      {(userRole === "admin" || userRole === "gerente" || userRole === "vendedor") && (
-                        <Button className="h-7 px-2 text-[10px] gap-1 border border-yellow-500/40 bg-yellow-500/5 text-yellow-600 dark:text-yellow-500 hover:bg-yellow-500/10 shadow-none"
-                          onClick={() => handleOpenEdit(sale)}>
-                          <Pencil className="h-3 w-3" />Editar
+                </CardContent>
+              </Card>
+            );
+          } else {
+            const sale = item.data;
+            const product = productMap.get(sale.product_id) as any;
+            const isLoading = notaLoading === sale.id;
+            return (
+              <Card
+                key={`sale-${sale.id}`}
+                className="border-border/50 shadow-lg shadow-black/10 cursor-pointer hover:border-primary/40 transition-colors"
+                onClick={() => setSelectedViewSale(sale)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm truncate">{product?.name || "Aparelho"}</p>
+                        {product?.imei && (
+                          <span className="text-[10px] font-mono text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/60 hidden sm:inline">
+                            {product.imei}
+                          </span>
+                        )}
+                        {activeStoreId === "all" && (
+                          <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
+                            {(storeMap.get(sale.store_id) as any)?.name}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        {sale.has_trade_in && <Badge className="text-[10px] bg-primary/15 text-primary border border-primary/20">Troca: {sale.trade_in_device_name}</Badge>}
+                        {Number(sale.payment_cash) > 0 && <Badge className="text-[10px] border border-border bg-transparent text-foreground">💵 {formatCurrency(Number(sale.payment_cash))}</Badge>}
+                        {Number(sale.payment_card) > 0 && <Badge className="text-[10px] border border-border bg-transparent text-foreground">💳 {formatCurrency(Number(sale.payment_card))}{sale.installments && sale.installments > 1 ? ` (${sale.installments}x)` : ""}</Badge>}
+                        {Number(sale.payment_pix) > 0 && <Badge className="text-[10px] border border-border bg-transparent text-foreground">📱 {formatCurrency(Number(sale.payment_pix))}</Badge>}
+                        {Number(sale.discount) > 0 && <Badge className="text-[10px] text-yellow-500 border border-yellow-500/30 bg-transparent">🏷️ -{formatCurrency(Number(sale.discount))}</Badge>}
+                        {sale.warranty_days && <Badge className="text-[10px] text-blue-500 border border-blue-500/30 bg-transparent">🛡️ {sale.warranty_days}d</Badge>}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {sale.customer_name ? `Cliente: ${sale.customer_name}` : "Venda avulsa"}{sale.seller_id && profileMap.get(sale.seller_id) ? ` · Vendedor: ${profileMap.get(sale.seller_id)}` : ""} · {new Date(sale.created_at).toLocaleDateString("pt-BR")}
+                      </p>
+                      <div className="flex gap-2 mt-2" onClick={e => e.stopPropagation()}>
+                        <Button className="h-7 px-2 text-[10px] gap-1 border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 shadow-none"
+                          onClick={() => setSelectedViewSale(sale)}>
+                          <Eye className="h-3 w-3" />Ver detalhes
                         </Button>
-                      )}
-                      <Button className="h-7 px-2 text-[10px] gap-1 border border-border bg-transparent text-foreground hover:bg-muted shadow-none"
-                        onClick={() => handleGerarNota(sale, false)} disabled={isLoading}>
-                        <FileText className="h-3 w-3" />{isLoading ? "Gerando..." : "Comprovante"}
-                      </Button>
-                      {sale.customer_phone && (
-                        <Button className="h-7 px-2 text-[10px] gap-1 text-green-500 border border-green-500/30 bg-transparent hover:bg-green-500/10 shadow-none"
-                          onClick={() => handleGerarNota(sale, true)} disabled={isLoading}>
-                          <MessageCircle className="h-3 w-3" />WhatsApp
+                        {/* Admin, gerente e vendedor têm acesso à edição da venda (com auditoria detalhada) */}
+                        {(userRole === "admin" || userRole === "gerente" || userRole === "vendedor") && (
+                          <Button className="h-7 px-2 text-[10px] gap-1 border border-yellow-500/40 bg-yellow-500/5 text-yellow-600 dark:text-yellow-500 hover:bg-yellow-500/10 shadow-none"
+                            onClick={() => handleOpenEdit(sale)}>
+                            <Pencil className="h-3 w-3" />Editar
+                          </Button>
+                        )}
+                        <Button className="h-7 px-2 text-[10px] gap-1 border border-border bg-transparent text-foreground hover:bg-muted shadow-none"
+                          onClick={() => handleGerarNota(sale, false)} disabled={isLoading}>
+                          <FileText className="h-3 w-3" />{isLoading ? "Gerando..." : "Comprovante"}
                         </Button>
-                      )}
-                      {userRole !== "vendedor" && (
-                        <Button className="h-7 px-2 text-[10px] gap-1 text-destructive border border-destructive/30 bg-transparent hover:bg-destructive/10 shadow-none"
-                          onClick={() => { setDeleteId(sale.id); setJustification(""); setDeleteDialogOpen(true); }} disabled={loading}>
-                          <Trash2 className="h-3.5 w-3.5" />Excluir
-                        </Button>
-                      )}
+                        {sale.customer_phone && (
+                          <Button className="h-7 px-2 text-[10px] gap-1 text-green-500 border border-green-500/30 bg-transparent hover:bg-green-500/10 shadow-none"
+                            onClick={() => handleGerarNota(sale, true)} disabled={isLoading}>
+                            <MessageCircle className="h-3 w-3" />WhatsApp
+                          </Button>
+                        )}
+                        {userRole !== "vendedor" && (
+                          <Button className="h-7 px-2 text-[10px] gap-1 text-destructive border border-destructive/30 bg-transparent hover:bg-destructive/10 shadow-none"
+                            onClick={() => { setDeleteItem({ id: sale.id, type: "sale" }); setJustification(""); setDeleteDialogOpen(true); }} disabled={loading}>
+                            <Trash2 className="h-3.5 w-3.5" />Excluir
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-display font-bold text-sm text-primary">{formatCurrency(Number(sale.sale_price))}</p>
+                      {Number(sale.discount) > 0 && <p className="text-[10px] text-yellow-500">-{formatCurrency(Number(sale.discount))}</p>}
+                      {sale.has_trade_in && sale.trade_in_value && <p className="text-[10px] text-muted-foreground">Troca: {formatCurrency(Number(sale.trade_in_value))}</p>}
+                      {Number(sale.commission_value) > 0 && <p className="text-[10px] text-yellow-500">Comissão: {formatCurrency(Number(sale.commission_value))}</p>}
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-display font-bold text-sm text-primary">{formatCurrency(Number(sale.sale_price))}</p>
-                    {Number(sale.discount) > 0 && <p className="text-[10px] text-yellow-500">-{formatCurrency(Number(sale.discount))}</p>}
-                    {sale.has_trade_in && sale.trade_in_value && <p className="text-[10px] text-muted-foreground">Troca: {formatCurrency(Number(sale.trade_in_value))}</p>}
-                    {Number(sale.commission_value) > 0 && <p className="text-[10px] text-yellow-500">Comissão: {formatCurrency(Number(sale.commission_value))}</p>}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
+                </CardContent>
+              </Card>
+            );
+          }
         })}
 
         {filteredSales.length === 0 && pdvSales.length === 0 && (
@@ -2041,8 +2071,8 @@ const Vendas = () => {
                 className="flex-1" 
                 disabled={!justification || loading}
                 onClick={async () => {
-                  if (deleteId) {
-                    await handleDeleteSale(deleteId, justification);
+                  if (deleteItem) {
+                    await handleDeleteSale(deleteItem, justification);
                     setDeleteDialogOpen(false);
                   }
                 }}
