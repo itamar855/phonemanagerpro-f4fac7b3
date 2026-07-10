@@ -64,7 +64,7 @@ const createPendingCashEntry = async (
   storeId: string, userId: string, amount: number, description: string, paymentMethod = "dinheiro",
 ) => {
   if (!storeId || amount <= 0) return;
-  let { data: register } = await supabase
+  let { data: register, error: regError } = await supabase
     .from("cash_registers" as any)
     .select("id")
     .eq("store_id", storeId)
@@ -72,27 +72,43 @@ const createPendingCashEntry = async (
     .eq("opened_by", userId)
     .maybeSingle();
 
+  if (regError) {
+    console.error("Erro ao buscar caixa do usuário (OS):", regError);
+  }
+
   if (!register) {
-    const { data: fallbackRegister } = await supabase
+    const { data: fallbackRegister, error: fallError } = await supabase
       .from("cash_registers" as any)
       .select("id")
       .eq("store_id", storeId)
       .eq("status", "open")
       .limit(1)
       .maybeSingle();
+      
+    if (fallError) {
+      console.error("Erro ao buscar caixa fallback (OS):", fallError);
+    }
     register = fallbackRegister;
   }
   
   const registerId = register ? (register as any).id : null;
 
   if (registerId) {
-    await supabase.from("cash_entries" as any).insert({
+    const { error: insertError } = await supabase.from("cash_entries" as any).insert({
       cash_register_id: registerId, store_id: storeId,
       type: "entrada", amount, description,
       payment_method: paymentMethod, receipt_url: null,
       confirmed: false,
       created_by: userId,
     } as any);
+    
+    if (insertError) {
+      console.error("Erro ao inserir cash_entry (OS):", insertError);
+      toast.error("Erro ao registrar no caixa: " + insertError.message);
+    }
+  } else {
+    console.warn("Nenhum caixa aberto encontrado para storeId:", storeId);
+    toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor da OS não foi para o caixa!");
   }
 };
 
