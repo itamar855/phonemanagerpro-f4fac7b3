@@ -688,20 +688,20 @@ const Estoque = () => {
       </div>
 
       <Tabs defaultValue="aparelhos">
-        <TabsList className="w-full sm:w-auto flex-wrap">
-          <TabsTrigger value="aparelhos" className="flex-1 sm:flex-none gap-2">
+        <TabsList className="w-full sm:w-auto flex overflow-x-auto whitespace-nowrap pb-1 justify-start gap-1 bg-transparent border-b border-border/50 h-auto rounded-none scrollbar-none">
+          <TabsTrigger value="aparelhos" className="gap-2 shrink-0 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent">
             <Package className="h-4 w-4" /> Aparelhos ({inStock.length})
           </TabsTrigger>
-          <TabsTrigger value="acessorios" className="flex-1 sm:flex-none gap-2">
+          <TabsTrigger value="acessorios" className="gap-2 shrink-0 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent">
             <Zap className="h-4 w-4" /> Acessórios ({filteredAccessories.length})
           </TabsTrigger>
-          <TabsTrigger value="pecas" className="flex-1 sm:flex-none gap-2">
+          <TabsTrigger value="pecas" className="gap-2 shrink-0 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent">
             <Cpu className="h-4 w-4" /> Peças ({parts.length})
           </TabsTrigger>
-          <TabsTrigger value="vendidos" className="flex-1 sm:flex-none gap-2">
+          <TabsTrigger value="vendidos" className="gap-2 shrink-0 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent">
             <Package className="h-4 w-4" /> Vendidos ({filteredProducts.filter(p => p.status === 'sold').length})
           </TabsTrigger>
-          <TabsTrigger value="reparo" className="flex-1 sm:flex-none gap-2 relative">
+          <TabsTrigger value="reparo" className="gap-2 shrink-0 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none bg-transparent relative">
             <Wrench className="h-4 w-4" /> Em Reparo
             {inRepair.length > 0 && (
               <span className="ml-1 inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold">

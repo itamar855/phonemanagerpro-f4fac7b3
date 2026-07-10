@@ -48,13 +48,14 @@ type Customer = Tables<"customers">;
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };
 
-const createPendingCashEntry = async (storeId: string, userId: string, amount: number, description: string, paymentMethod: string, retroDate?: string) => {
+const createPendingCashEntry = async (storeId: string, userId: string, amount: number, description: string, paymentMethod: string, retroDate?: string, referenceKey?: string) => {
   const { data: register } = await supabase.from("cash_registers" as any).select("id").eq("store_id", storeId).eq("status", "open").eq("opened_by", userId).maybeSingle();
   const registerId = register ? (register as any).id : null;
   await supabase.from("cash_entries" as any).insert({
     cash_register_id: registerId, store_id: storeId,
     type: "entrada", amount, description,
     payment_method: paymentMethod, receipt_url: null, confirmed: false, created_by: userId,
+    reference_key: referenceKey || null,
     ...(retroDate ? { created_at: new Date(retroDate + "T12:00:00").toISOString() } : {}),
   });
 };
@@ -535,39 +536,67 @@ const Vendas = () => {
         });
         await createPendingCashEntry(selectedProduct.store_id, user.id, salePriceAfterDiscount, desc, "dinheiro", form.retro_date);
       } else {
-        if (cashVal > 0) {
+        const paymentsList = [
+          { name: "dinheiro", val: cashVal },
+          { name: "cartao_credito", val: cardVal },
+          { name: "pix", val: pixVal }
+        ].filter(p => p.val > 0);
+
+        if (paymentsList.length > 1) {
+          // Mixed payment consolidation
+          const totalConsolidated = cashVal + cardVal + pixVal;
+          const feeCard = (acc && Number(acc.credit_fee_percent)) || 0;
+          const feePix = (acc && Number(acc.pix_fee_percent)) || 0;
+          const netCard = cardVal - (cardVal * (feeCard / 100));
+          const netPix = pixVal - (pixVal * (feePix / 100));
+          const totalNet = cashVal + netCard + netPix;
+
+          const descMisto = `${desc} [MISTO:{"dinheiro":${cashVal},"pix":${pixVal},"cartao_credito":${cardVal}}]`;
+
           await supabase.from("transactions").insert({
-            type: "sale", amount: cashVal, net_amount: cashVal,
-            description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+            type: "sale", amount: totalConsolidated, net_amount: totalNet,
+            description: descMisto, store_id: selectedProduct.store_id, product_id: form.product_id,
             created_by: user.id, destination_account_id: form.destination_account_id || null,
             expected_settlement_date: expectedDate.toISOString(),
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
           });
-          await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date);
-        }
-        if (cardVal > 0) {
-          const fee = (acc && Number(acc.credit_fee_percent)) || 0;
-          const net = cardVal - (cardVal * (fee / 100));
-          await supabase.from("transactions").insert({
-            type: "sale", amount: cardVal, net_amount: net,
-            description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-            created_by: user.id, destination_account_id: form.destination_account_id || null,
-            expected_settlement_date: expectedDate.toISOString(),
-            ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-          });
-          await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date);
-        }
-        if (pixVal > 0) {
-          const fee = (acc && Number(acc.pix_fee_percent)) || 0;
-          const net = pixVal - (pixVal * (fee / 100));
-          await supabase.from("transactions").insert({
-            type: "sale", amount: pixVal, net_amount: net,
-            description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-            created_by: user.id, destination_account_id: form.destination_account_id || null,
-            expected_settlement_date: expectedDate.toISOString(),
-            ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-          });
-          await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date);
+          await createPendingCashEntry(selectedProduct.store_id, user.id, totalConsolidated, descMisto, "misto", form.retro_date);
+        } else {
+          // Single payment type
+          if (cashVal > 0) {
+            await supabase.from("transactions").insert({
+              type: "sale", amount: cashVal, net_amount: cashVal,
+              description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+              created_by: user.id, destination_account_id: form.destination_account_id || null,
+              expected_settlement_date: expectedDate.toISOString(),
+              ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+            });
+            await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date);
+          }
+          if (cardVal > 0) {
+            const fee = (acc && Number(acc.credit_fee_percent)) || 0;
+            const net = cardVal - (cardVal * (fee / 100));
+            await supabase.from("transactions").insert({
+              type: "sale", amount: cardVal, net_amount: net,
+              description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+              created_by: user.id, destination_account_id: form.destination_account_id || null,
+              expected_settlement_date: expectedDate.toISOString(),
+              ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+            });
+            await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date);
+          }
+          if (pixVal > 0) {
+            const fee = (acc && Number(acc.pix_fee_percent)) || 0;
+            const net = pixVal - (pixVal * (fee / 100));
+            await supabase.from("transactions").insert({
+              type: "sale", amount: pixVal, net_amount: net,
+              description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+              created_by: user.id, destination_account_id: form.destination_account_id || null,
+              expected_settlement_date: expectedDate.toISOString(),
+              ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
+            });
+            await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date);
+          }
         }
       }
       
@@ -602,29 +631,41 @@ const Vendas = () => {
       const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
       let txIdForNote: string | undefined = undefined;
 
-      if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
-        const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: activeStoreId, created_by: user.id }).select().single();
-        if (txError) throw txError;
-        txIdForNote = tx?.id;
-        await createPendingCashEntry(activeStoreId, user.id, cartTotal, desc, "dinheiro");
+       const cashAmount = pdvCash - pdvTroco;
+      const paymentsCount = [cashAmount > 0, pdvCard > 0, pdvPix > 0].filter(Boolean).length;
+
+      if (paymentsCount > 1) {
+        // Mixed payment consolidation
+        const descMisto = `${desc} [MISTO:{"dinheiro":${cashAmount > 0 ? cashAmount : 0},"pix":${pdvPix},"cartao_credito":${pdvCard}}]`;
+        const { data: tx } = await supabase.from("transactions").insert({
+          type: "income", category: "acessorio", amount: cartTotal, description: descMisto, store_id: activeStoreId, created_by: user.id
+        }).select().single();
+        if (tx) txIdForNote = tx.id;
+        await createPendingCashEntry(activeStoreId, user.id, cartTotal, descMisto, "misto");
       } else {
-        if (pdvCash > 0) {
-          const cashAmount = pdvCash - pdvTroco;
-          if (cashAmount > 0) {
-            const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: activeStoreId, created_by: user.id }).select().single();
-            if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(activeStoreId, user.id, cashAmount, desc, "dinheiro");
+        if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
+          const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: activeStoreId, created_by: user.id }).select().single();
+          if (txError) throw txError;
+          txIdForNote = tx?.id;
+          await createPendingCashEntry(activeStoreId, user.id, cartTotal, desc, "dinheiro");
+        } else {
+          if (pdvCash > 0) {
+            if (cashAmount > 0) {
+              const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: activeStoreId, created_by: user.id }).select().single();
+              if (!txIdForNote && tx) txIdForNote = tx.id;
+              await createPendingCashEntry(activeStoreId, user.id, cashAmount, desc, "dinheiro");
+            }
           }
-        }
-        if (pdvCard > 0) {
-          const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: activeStoreId, created_by: user.id }).select().single();
-          if (!txIdForNote && tx) txIdForNote = tx.id;
-          await createPendingCashEntry(activeStoreId, user.id, pdvCard, desc, "cartao_credito");
-        }
-        if (pdvPix > 0) {
-          const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: activeStoreId, created_by: user.id }).select().single();
-          if (!txIdForNote && tx) txIdForNote = tx.id;
-          await createPendingCashEntry(activeStoreId, user.id, pdvPix, desc, "pix");
+          if (pdvCard > 0) {
+            const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: activeStoreId, created_by: user.id }).select().single();
+            if (!txIdForNote && tx) txIdForNote = tx.id;
+            await createPendingCashEntry(activeStoreId, user.id, pdvCard, desc, "cartao_credito");
+          }
+          if (pdvPix > 0) {
+            const { data: tx } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: activeStoreId, created_by: user.id }).select().single();
+            if (!txIdForNote && tx) txIdForNote = tx.id;
+            await createPendingCashEntry(activeStoreId, user.id, pdvPix, desc, "pix");
+          }
         }
       }
 
@@ -960,9 +1001,15 @@ const Vendas = () => {
       if (cash === 0 && card === 0 && pix === 0) {
         await createPendingCashEntry(editPdvSale.store_id, user.id, amount, newDesc, "dinheiro", editPdvForm.retro_date);
       } else {
-        if (cash > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, cash, newDesc, "dinheiro", editPdvForm.retro_date);
-        if (card > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, card, newDesc, "cartao_credito", editPdvForm.retro_date);
-        if (pix > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, pix, newDesc, "pix", editPdvForm.retro_date);
+        const editPaymentsCount = [cash > 0, card > 0, pix > 0].filter(Boolean).length;
+        if (editPaymentsCount > 1) {
+          const descMisto = `${newDesc} [MISTO:{"dinheiro":${cash},"pix":${pix},"cartao_credito":${card}}]`;
+          await createPendingCashEntry(editPdvSale.store_id, user.id, amount, descMisto, "misto", editPdvForm.retro_date);
+        } else {
+          if (cash > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, cash, newDesc, "dinheiro", editPdvForm.retro_date);
+          if (card > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, card, newDesc, "cartao_credito", editPdvForm.retro_date);
+          if (pix > 0) await createPendingCashEntry(editPdvSale.store_id, user.id, pix, newDesc, "pix", editPdvForm.retro_date);
+        }
       }
 
       logAction("UPDATE_RECORD", "transactions", editPdvSale.id, editPdvSale, editPdvForm, editPdvSale.store_id);

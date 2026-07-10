@@ -103,7 +103,26 @@ const Caixa = () => {
     pix: "PIX",
     cartao_credito: "Crédito",
     cartao_debito: "Débito",
-    transferencia: "Transferência"
+    transferencia: "Transferência",
+    misto: "Misto"
+  };
+
+  const getMistoValues = (description: string | null): Record<string, number> => {
+    if (!description) return {};
+    const match = description.match(/\[MISTO:(\{.*?\})\]/);
+    if (match && match[1]) {
+      try { return JSON.parse(match[1]); } catch { return {}; }
+    }
+    return {};
+  };
+
+  const getMistoLabel = (description: string | null): string => {
+    const vals = getMistoValues(description);
+    const parts: string[] = [];
+    if (vals.dinheiro > 0) parts.push(`Dinheiro: ${formatCurrency(vals.dinheiro)}`);
+    if (vals.pix > 0) parts.push(`PIX: ${formatCurrency(vals.pix)}`);
+    if (vals.cartao_credito > 0) parts.push(`Cartão: ${formatCurrency(vals.cartao_credito)}`);
+    return parts.length > 0 ? `Misto (${parts.join(" | ")})` : "Misto";
   };
 
   const fetchRegister = async (storeId: string | null) => {
@@ -324,14 +343,29 @@ const Caixa = () => {
   };
 
   const confirmedEntries = entries.filter(e => e.confirmed === true);
-  const confirmedDinheiro = confirmedEntries.filter(e => e.payment_method === "dinheiro");
   
-  const cashIn  = confirmedDinheiro.filter(e => ["entrada"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
-  const cashOut = confirmedDinheiro.filter(e => ["saida","sangria"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
+  const cashIn = confirmedEntries.filter(e => ["entrada"].includes(e.type)).reduce((s, e) => {
+    if (e.payment_method === "dinheiro") return s + Number(e.amount);
+    if (e.payment_method === "misto") return s + Number(getMistoValues(e.description).dinheiro || 0);
+    return s;
+  }, 0);
+  const cashOut = confirmedEntries.filter(e => ["saida","sangria"].includes(e.type)).reduce((s, e) => {
+    if (e.payment_method === "dinheiro") return s + Number(e.amount);
+    if (e.payment_method === "misto") return s + Number(getMistoValues(e.description).dinheiro || 0);
+    return s;
+  }, 0);
   const expectedCash = Number(currentRegister?.opening_amount || 0) + cashIn - cashOut;
 
-  const totalPix   = confirmedEntries.filter(e => e.payment_method === "pix").reduce((s, e) => s + Number(e.amount), 0);
-  const totalCard  = confirmedEntries.filter(e => ["cartao_credito", "cartao_debito"].includes(e.payment_method)).reduce((s, e) => s + Number(e.amount), 0);
+  const totalPix = confirmedEntries.reduce((s, e) => {
+    if (e.payment_method === "pix") return s + Number(e.amount);
+    if (e.payment_method === "misto") return s + Number(getMistoValues(e.description).pix || 0);
+    return s;
+  }, 0);
+  const totalCard = confirmedEntries.reduce((s, e) => {
+    if (["cartao_credito", "cartao_debito"].includes(e.payment_method)) return s + Number(e.amount);
+    if (e.payment_method === "misto") return s + Number(getMistoValues(e.description).cartao_credito || 0);
+    return s;
+  }, 0);
   const totalTotal = expectedCash + totalPix + totalCard;
 
   const closingAmount = parseFloat(closeForm.amount) || 0;
@@ -681,9 +715,9 @@ const Caixa = () => {
                 <CardContent className="space-y-2">
                   {entries.map(entry => (
                     <div key={entry.id} className="flex items-center justify-between text-xs border rounded-lg p-2 bg-muted/20" onClick={() => !entry.confirmed && openConfirmDialog(entry)}>
-                      <div>
-                        <p className="font-medium">{entry.description}</p>
-                        <p className="text-muted-foreground">{paymentLabels[entry.payment_method || ""] || "Outro"} · {new Date(entry.created_at).toLocaleTimeString("pt-BR")}</p>
+                      <div className="min-w-0 flex-1 mr-2">
+                        <p className="font-medium truncate">{(entry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
+                        <p className="text-muted-foreground">{entry.payment_method === "misto" ? getMistoLabel(entry.description) : (paymentLabels[entry.payment_method || ""] || "Outro")} · {new Date(entry.created_at).toLocaleTimeString("pt-BR")}</p>
                       </div>
                       <div className="text-right flex items-center gap-3">
                         <div className="space-y-1">
@@ -1088,10 +1122,10 @@ const Caixa = () => {
                   ) : (
                     historyEntries.map(entry => (
                       <div key={entry.id} className="flex items-center justify-between text-xs border rounded-lg p-2 bg-muted/20">
-                        <div>
-                          <p className="font-medium">{entry.description}</p>
+                        <div className="min-w-0 flex-1 mr-2">
+                          <p className="font-medium truncate">{(entry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
                           <p className="text-muted-foreground">
-                            {paymentLabels[entry.payment_method || ""] || "Outro"} · {new Date(entry.created_at).toLocaleTimeString("pt-BR")}
+                            {entry.payment_method === "misto" ? getMistoLabel(entry.description) : (paymentLabels[entry.payment_method || ""] || "Outro")} · {new Date(entry.created_at).toLocaleTimeString("pt-BR")}
                           </p>
                         </div>
                         <div className="text-right">
