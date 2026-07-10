@@ -197,6 +197,57 @@ export default function Configuracoes() {
     setLoading(false);
   };
 
+  const reconcileOrphanSales = async () => {
+    toast.loading("Procurando e conciliando vendas...", { id: "reconcile" });
+    try {
+      const { data: transactions } = await supabase.from('transactions').select('*').in('type', ['sale', 'income']);
+      const { data: cashEntries } = await supabase.from('cash_entries' as any).select('*').in('type', ['entrada', 'misto', 'dinheiro', 'pix', 'cartao_credito']);
+      const { data: registers } = await supabase.from('cash_registers' as any).select('*').eq('status', 'open');
+
+      if (!transactions || !cashEntries || !registers) throw new Error("Erro ao carregar dados.");
+
+      const missing = [];
+      for (const tx of transactions) {
+        if (tx.type !== 'sale' && tx.category !== 'acessorio') continue;
+        const txDesc = tx.description || "";
+        const cleanDesc = txDesc.replace(/\[.*?\]/g, '').trim();
+        const match = cashEntries.find(ce => {
+          const ceDesc = (ce as any).description || "";
+          return ceDesc.includes(cleanDesc) && Math.abs((ce as any).amount - tx.amount) < 1;
+        });
+        if (!match) missing.push(tx);
+      }
+
+      if (missing.length === 0) {
+        toast.success("Nenhuma venda órfã encontrada! Tudo certo.", { id: "reconcile" });
+        return;
+      }
+
+      let inserted = 0;
+      for (const m of missing) {
+        let register = registers.find(r => (r as any).store_id === m.store_id && (r as any).opened_by === m.created_by);
+        if (!register) register = registers.find(r => (r as any).store_id === m.store_id);
+
+        if (register) {
+          const payload: any = {
+            cash_register_id: (register as any).id, store_id: m.store_id, type: 'entrada',
+            amount: m.amount, description: m.description, payment_method: 'dinheiro',
+            confirmed: false, created_by: m.created_by, created_at: m.created_at
+          };
+          if (m.description.includes('[PIX]')) payload.payment_method = 'pix';
+          else if (m.description.includes('[Cartão]')) payload.payment_method = 'cartao_credito';
+          else if (m.description.includes('MISTO')) { payload.payment_method = 'misto'; payload.type = 'misto'; }
+
+          const { error } = await supabase.from('cash_entries' as any).insert(payload);
+          if (!error) inserted++;
+        }
+      }
+      toast.success(`${inserted} vendas órfãs foram conciliadas no caixa!`, { id: "reconcile" });
+    } catch (err: any) {
+      toast.error("Erro na conciliação: " + err.message, { id: "reconcile" });
+    }
+  };
+
   const clearLogs = async () => {
     if (!activeStoreId) return;
     try {
@@ -411,9 +462,16 @@ export default function Configuracoes() {
                 <CardTitle className="text-lg">Logs de Erro do Sistema</CardTitle>
                 <CardDescription>Eventos e falhas registrados pela aplicação</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={clearLogs}>
-                Limpar Logs
-              </Button>
+              <div className="flex items-center gap-2">
+                {userRole === 'admin' && (
+                  <Button variant="outline" size="sm" onClick={reconcileOrphanSales}>
+                    Conciliar Vendas Órfãs
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={clearLogs}>
+                  Limpar Logs
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {errorLogs.length === 0 ? (
