@@ -63,7 +63,7 @@ const Dashboard = () => {
     totalSalesRevenue: 0, totalProfit: 0,
     expensesPJ: 0, expensesPF: 0, storeCount: 0, openOS: 0, salesCount: 0,
     totalAccessories: 0, totalLeads: 0,
-    faturamentoBruto: 0, faturamentoLiquido: 0, custoPecasOS: 0, lucroServicos: 0,
+    faturamentoBruto: 0, faturamentoLiquido: 0, custoPecasOS: 0, custoPecasReparos: 0, lucroServicos: 0,
     receitaAparelhos: 0, receitaAcessorios: 0, receitaOS: 0,
   });
   const [storeData, setStoreData] = useState<{ name: string; aparelhos: number; acessorios: number; investido: number }[]>([]);
@@ -140,6 +140,32 @@ const Dashboard = () => {
       serviceOrderItems = itemsData ?? [];
     }
 
+    // Fetch product repairs and repair items for internal store devices during the period
+    let productRepairItems: any[] = [];
+    if (can("estoque")) {
+      const repairQuery = supabase
+        .from("product_repairs" as any)
+        .select("id, status, created_at")
+        .gte("created_at", start)
+        .lte("created_at", end);
+      
+      if (effectiveStoreId) {
+        repairQuery.eq("store_id", effectiveStoreId);
+      }
+      
+      const { data: repairsData } = await repairQuery;
+      const productRepairs = repairsData ?? [];
+      
+      if (productRepairs.length > 0) {
+        const repairIds = productRepairs.map((r: any) => r.id);
+        const { data: itemsData } = await supabase
+          .from("product_repair_items" as any)
+          .select("repair_id, unit_cost, quantity")
+          .in("repair_id", repairIds);
+        productRepairItems = itemsData ?? [];
+      }
+    }
+
     const inStock = products.filter((p: any) => p.status === "in_stock");
     const totalInvested = inStock.reduce((sum: number, p: any) => sum + Number(p.cost_price), 0);
     const totalInvestedAcc = accessories.reduce((sum: number, a: any) => sum + Number(a.cost_price) * a.quantity, 0);
@@ -179,6 +205,9 @@ const Dashboard = () => {
       .filter((item: any) => activeOSIds.has(item.service_order_id))
       .reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
 
+    // Custo de peças usadas em reparos internos de aparelhos da loja
+    const custoPecasReparos = productRepairItems.reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
+
     // Lucro de serviços = receita das OS entregues - custo das peças nessas OS
     const deliveredOSIds = new Set(osDelivered.map((o: any) => o.id));
     const custoPecasDelivered = serviceOrderItems
@@ -190,7 +219,8 @@ const Dashboard = () => {
     const despesasPJAdicionais = transactions.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
     const despesasPFTotal = transactions.filter((t: any) => t.type === "expense_pf" || t.type === "pro_labore").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
-    const faturamentoLiquido = faturamentoBruto - cmvAparelhos - cmvAcessorios - custoPecasOS - despesasPJAdicionais - despesasPFTotal;
+    // Consideramos custo de peças internos como redução do faturamento líquido também (já que foi gasto em peças de reparos internos)
+    const faturamentoLiquido = faturamentoBruto - cmvAparelhos - cmvAcessorios - custoPecasOS - custoPecasReparos - despesasPJAdicionais - despesasPFTotal;
 
     setStats({
       totalStock: inStock.length, totalInvested, totalInvestedAcc,
@@ -202,6 +232,7 @@ const Dashboard = () => {
       faturamentoBruto,
       faturamentoLiquido,
       custoPecasOS,
+      custoPecasReparos,
       lucroServicos,
       receitaAparelhos,
       receitaAcessorios,
@@ -404,7 +435,7 @@ const Dashboard = () => {
             <Store className="h-4 w-4 text-primary" />
             <h2 className="text-xs font-bold uppercase tracking-wider text-foreground">Celulares & Aparelhos</h2>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <Card className="border-border/50 shadow-md">
               <CardContent className="p-3">
                 <p className="text-[10px] text-muted-foreground uppercase">Estoque de Aparelhos</p>
@@ -429,6 +460,12 @@ const Dashboard = () => {
                   <CardContent className="p-3">
                     <p className="text-[10px] text-muted-foreground uppercase">Lucro de Vendas</p>
                     <p className="font-display text-lg font-bold text-primary mt-0.5">{formatCurrency(stats.totalProfit)}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-border/50 shadow-md">
+                  <CardContent className="p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Reparos Internos (Peças)</p>
+                    <p className="font-display text-lg font-bold text-orange-400 mt-0.5">{formatCurrency(stats.custoPecasReparos)}</p>
                   </CardContent>
                 </Card>
               </>
