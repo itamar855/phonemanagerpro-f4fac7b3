@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { PaymentMethodBadge } from "../components/PaymentMethodBadge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -105,6 +106,24 @@ const createPendingCashEntry = async (storeId: string, userId: string, amount: n
 };
 
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
+
+const formatDescription = (desc: string | null) => {
+  if (!desc) return "";
+  const match = desc.match(/\[MISTO:(\{.*\})\]/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      const parts = [];
+      if (parsed.dinheiro > 0) parts.push(`Dinheiro: R$ ${parsed.dinheiro}`);
+      if (parsed.pix > 0) parts.push(`PIX: R$ ${parsed.pix}`);
+      if (parsed.cartao_credito > 0) parts.push(`Cartão: R$ ${parsed.cartao_credito}`);
+      return desc.replace(match[0], `[Misto: ${parts.join(" | ")}]`);
+    } catch (e) {
+      return desc;
+    }
+  }
+  return desc;
+};
 
 const Vendas = () => {
   const { user, userRole, activeStoreId, setActiveStoreId } = useAuth();
@@ -1767,7 +1786,7 @@ const Vendas = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm truncate">{tx.description}</p>
+                        <p className="font-medium text-sm truncate">{formatDescription(tx.description)}</p>
                         <Badge className="text-[10px] bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 shrink-0">PDV</Badge>
                         {activeStoreId === "all" && (
                           <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">

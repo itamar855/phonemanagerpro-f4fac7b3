@@ -42,6 +42,24 @@ const TRANSACTION_CATEGORIES = [
   "Impostos/Taxas", "Tarifas Bancárias", "Outros"
 ];
 
+const formatDescription = (desc: string | null) => {
+  if (!desc) return "";
+  const match = desc.match(/\[MISTO:(\{.*\})\]/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      const parts = [];
+      if (parsed.dinheiro > 0) parts.push(`Dinheiro: R$ ${parsed.dinheiro}`);
+      if (parsed.pix > 0) parts.push(`PIX: R$ ${parsed.pix}`);
+      if (parsed.cartao_credito > 0) parts.push(`Cartão: R$ ${parsed.cartao_credito}`);
+      return desc.replace(match[0], `[Misto: ${parts.join(" | ")}]`);
+    } catch (e) {
+      return desc;
+    }
+  }
+  return desc;
+};
+
 const Transacoes = () => {
   const { user, userRole, activeStoreId } = useAuth();
   const [transactions, setTransactions] = useState<Tables<"transactions">[]>([]);
@@ -570,7 +588,7 @@ const Transacoes = () => {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="font-semibold text-sm truncate">{tx.description || tx.category || typeLabels[tx.type]}</p>
+                    <p className="font-semibold text-sm truncate">{formatDescription(tx.description) || tx.category || typeLabels[tx.type]}</p>
                     {tx.category && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 font-normal text-muted-foreground">{tx.category}</Badge>}
                   </div>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
