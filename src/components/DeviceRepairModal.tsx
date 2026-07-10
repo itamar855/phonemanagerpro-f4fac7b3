@@ -368,8 +368,9 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       const hasReceipt = !!receiptUrl;
 
       if (registerId) {
-        const { error: insertError } = await supabase.from("cash_entries" as any).insert({
-          register_id: registerId,
+        await supabase.from("cash_entries" as any).insert({
+          cash_register_id: registerId,
+          store_id: product.store_id,
           type: "saida",
           amount: cost,
           description: desc,

@@ -257,7 +257,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (registerId) {
         await supabase.from("cash_entries" as any).insert({
-          register_id: registerId,
+          cash_register_id: registerId,
+          store_id: storeId,
           type: "saida",
           amount: costPrice,
           description: desc,

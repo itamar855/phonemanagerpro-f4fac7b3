@@ -190,7 +190,7 @@ const Caixa = () => {
     if (regToUse) {
        const { data: entriesData, error: entriesError } = await supabase
          .from("cash_entries" as any).select("*")
-         .eq("register_id", (regToUse as any).id)
+         .eq("cash_register_id", (regToUse as any).id)
          .order("confirmed", { ascending: true })
          .order("created_at", { ascending: false });
        
@@ -280,7 +280,8 @@ const Caixa = () => {
 
     // 1. Cash out from register
     const { error: entryErr } = await supabase.from("cash_entries" as any).insert({
-      register_id: currentRegister.id,
+      cash_register_id: currentRegister.id,
+      store_id: currentRegister.store_id,
       type: "saida",
       amount,
       description: payForm.description || `Pagamento fornecedor: ${selectedSupplier.name}`,
@@ -391,7 +392,8 @@ const Caixa = () => {
     if (error) { toast.error(error.message); setLoading(false); return; }
 
     await supabase.from("cash_entries" as any).insert({
-      register_id: (reg as any).id,
+      cash_register_id: (reg as any).id,
+      store_id: (reg as any).store_id,
       type: "abertura",
       amount: parseFloat(openForm.amount) || 0,
       description: "Abertura de caixa",
@@ -435,7 +437,7 @@ const Caixa = () => {
     if (!currentRegister || !user) return;
     setLoading(true);
     await supabase.from("cash_entries" as any).insert({
-      register_id: currentRegister.id,
+      cash_register_id: currentRegister.id, store_id: currentRegister.store_id,
       type: entryForm.type, amount: parseFloat(entryForm.amount) || 0,
       description: entryForm.description, payment_method: entryForm.payment_method,
       confirmed: false, created_by: user.id,
@@ -461,7 +463,7 @@ const Caixa = () => {
     if (!currentRegister || !user) return;
     setLoading(true);
     const { error } = await supabase.from("cash_entries" as any).insert({
-      register_id: currentRegister.id,
+      cash_register_id: currentRegister.id, store_id: currentRegister.store_id,
       type: "sangria", amount: parseFloat(sangriaForm.amount) || 0,
       description: "Sangria: " + sangriaForm.description, payment_method: "dinheiro",
       confirmed: true, created_by: user.id,
@@ -537,7 +539,7 @@ const Caixa = () => {
     const { data: entriesData, error } = await supabase
       .from("cash_entries" as any)
       .select("*")
-      .eq("register_id", reg.id)
+      .eq("cash_register_id", reg.id)
       .order("created_at", { ascending: false });
       
     if (error) {

@@ -745,7 +745,7 @@ const Relatorios = () => {
     if (cashIds.length > 0) {
       const { data: ce } = await supabase.from("cash_entries" as any)
         .select("*")
-        .in("register_id", cashIds)
+        .in("cash_register_id", cashIds)
         .eq("confirmed", true);
       cashEntries = ce ?? [];
     }

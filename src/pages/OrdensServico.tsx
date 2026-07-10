@@ -102,8 +102,9 @@ const createPendingCashEntry = async (
   const registerId = register ? (register as any).id : null;
 
   if (registerId) {
+    const actualStoreId = (register as any)?.store_id || (storeId !== "all" ? storeId : null);
     const { error: insertError } = await supabase.from("cash_entries" as any).insert({
-      register_id: registerId,
+      cash_register_id: registerId, store_id: actualStoreId,
       type: "entrada", amount, description,
       payment_method: paymentMethod, receipt_url: null,
       confirmed: false,
