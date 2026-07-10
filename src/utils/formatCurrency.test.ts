@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCurrency } from './logger'; // Substitua pelo path real se for diferente, mas normalmente fica em utils/index ou algo assim
+// mock import para teste genérico
 
 describe('formatCurrency', () => {
   it('should format zero correctly', () => {
