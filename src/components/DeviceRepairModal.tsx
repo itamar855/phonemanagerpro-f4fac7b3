@@ -73,6 +73,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const fileInputPartsRef = useRef<HTMLInputElement>(null);
   const fileInputManualPartRef = useRef<HTMLInputElement>(null);
   const [uploadingVoucher, setUploadingVoucher] = useState<'device' | 'parts' | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number | null>>({});
 
   useEffect(() => {
     if (isOpen && product) {
@@ -418,6 +419,13 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     if (!file || !product) return;
 
     setUploadingVoucher(type);
+    setUploadProgress(prev => ({ ...prev, [type]: 0 }));
+    let progressVal = 0;
+    const progressInterval = setInterval(() => {
+      progressVal = Math.min(progressVal + Math.floor(Math.random() * 15) + 5, 95);
+      setUploadProgress(prev => ({ ...prev, [type]: progressVal }));
+    }, 200);
+
     try {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const path = `reparos/${product.id}-${type}-${Date.now()}-${safeName}`;
@@ -443,10 +451,19 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (dbError) throw dbError;
 
+      clearInterval(progressInterval);
+      setUploadProgress(prev => ({ ...prev, [type]: 100 }));
       toast.success("Comprovante enviado com sucesso!");
+
+      setTimeout(() => {
+        setUploadProgress(prev => ({ ...prev, [type]: null }));
+      }, 1000);
+
       fetchRepairData();
       onSuccess();
     } catch (err: any) {
+      clearInterval(progressInterval);
+      setUploadProgress(prev => ({ ...prev, [type]: null }));
       toast.error("Erro no upload do comprovante: " + err.message);
     } finally {
       setUploadingVoucher(null);
@@ -907,6 +924,14 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                           <Upload className="h-3.5 w-3.5" /> Enviar Arquivo
                         </Button>
                       )}
+                      {uploadProgress['device'] !== undefined && uploadProgress['device'] !== null && (
+                        <div className="space-y-1 mt-1.5">
+                          <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden border border-border">
+                            <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${uploadProgress['device']}%` }} />
+                          </div>
+                          <p className="text-[9px] font-bold text-muted-foreground text-right">{uploadProgress['device']}%</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Comprovante das Peças */}
@@ -927,6 +952,14 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                         <Button variant="outline" className="w-full h-9 text-xs gap-1.5 bg-background" onClick={() => fileInputPartsRef.current?.click()}>
                           <Upload className="h-3.5 w-3.5" /> Enviar Arquivo
                         </Button>
+                      )}
+                      {uploadProgress['parts'] !== undefined && uploadProgress['parts'] !== null && (
+                        <div className="space-y-1 mt-1.5">
+                          <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden border border-border">
+                            <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${uploadProgress['parts']}%` }} />
+                          </div>
+                          <p className="text-[9px] font-bold text-muted-foreground text-right">{uploadProgress['parts']}%</p>
+                        </div>
                       )}
                     </div>
                   </div>

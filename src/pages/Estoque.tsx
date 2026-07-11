@@ -532,6 +532,14 @@ const Estoque = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
+
+    const toastId = toast.loading("Enviando comprovante... 0%");
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+      progress = Math.min(progress + Math.floor(Math.random() * 15) + 5, 95);
+      toast.loading(`Enviando comprovante... ${progress}%`, { id: toastId });
+    }, 200);
+
     try {
       const fileExt = file.name.split(".").pop();
       const safeName = file.name.replace(/[^a-zA-Z0-9]/g, "_");
@@ -544,12 +552,15 @@ const Estoque = () => {
       const { error: dbError } = await supabase.from("products").update({ parts_payment_voucher: publicUrl } as any).eq("id", productId);
       if (dbError) throw dbError;
 
-      toast.success("Comprovante enviado com sucesso!");
+      clearInterval(progressInterval);
+      toast.success("Comprovante enviado com sucesso!", { id: toastId });
       fetchData();
     } catch (err: any) {
-      toast.error("Erro ao enviar comprovante: " + err.message);
+      clearInterval(progressInterval);
+      toast.error("Erro ao enviar comprovante: " + err.message, { id: toastId });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const filteredProducts = products.filter((p) => {
