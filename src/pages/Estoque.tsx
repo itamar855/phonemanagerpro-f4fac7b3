@@ -502,7 +502,7 @@ const Estoque = () => {
 
       if (supUpdateErr) throw supUpdateErr;
 
-      await logAction("return_part_to_supplier", "products", p.id, p, { ...p, status: "returned", credit_added: p.cost_price }, activeStoreId || "");
+      await logAction("UPDATE_RECORD", "products", p.id, p, { ...p, status: "returned", credit_added: p.cost_price }, activeStoreId || "");
 
       toast.success(`Peça devolvida! R$ ${p.cost_price.toFixed(2)} creditados ao fornecedor.`);
       fetchData();
