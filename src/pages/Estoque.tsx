@@ -114,6 +114,7 @@ const Estoque = () => {
   const [partVoucherFile, setPartVoucherFile] = useState<File | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [repairCostsMap, setRepairCostsMap] = useState<Map<string, number>>(new Map());
+  const [showAlerts, setShowAlerts] = useState(false);
 
   const [form, setForm] = useState({
     name: "", brand: "iPhone" as string, model: "", imei: "",
@@ -770,19 +771,36 @@ const Estoque = () => {
 
       {/* Alertas */}
       {(lowStockStores.length > 0 || lowStockAcc.length > 0) && (
-        <div className="space-y-2">
-          {lowStockStores.map(s => (
-            <div key={s.id} className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-              <p className="text-xs"><span className="font-semibold">{s.name}</span>: estoque baixo de aparelhos — apenas <span className="font-bold text-destructive">{storeStockCounts[s.id] || 0}</span></p>
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 overflow-hidden">
+          <button
+            onClick={() => setShowAlerts(!showAlerts)}
+            className="w-full flex items-center justify-between p-3 text-xs font-semibold text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+              <span>{lowStockStores.length + lowStockAcc.length} alertas de estoque baixo detectados</span>
             </div>
-          ))}
-          {lowStockAcc.map(a => (
-            <div key={a.id} className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
-              <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
-              <p className="text-xs"><span className="font-semibold">{a.name}</span>: apenas <span className="font-bold text-yellow-500">{a.quantity}</span> unidades (mín: {a.min_quantity})</p>
+            <span className="text-[10px] underline decoration-dotted">
+              {showAlerts ? "Recolher detalhes" : "Ver detalhes"}
+            </span>
+          </button>
+          
+          {showAlerts && (
+            <div className="border-t border-yellow-500/10 p-3 space-y-1.5 bg-background/50 max-h-[220px] overflow-y-auto">
+              {lowStockStores.map(s => (
+                <div key={s.id} className="flex items-center gap-2 rounded border border-destructive/20 bg-destructive/5 p-2 text-[11px]">
+                  <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                  <p><span className="font-semibold text-foreground">{s.name}</span>: estoque baixo de aparelhos — apenas <span className="font-bold text-destructive">{storeStockCounts[s.id] || 0}</span></p>
+                </div>
+              ))}
+              {lowStockAcc.map(a => (
+                <div key={a.id} className="flex items-center gap-2 rounded border border-yellow-500/20 bg-yellow-500/5 p-2 text-[11px]">
+                  <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+                  <p><span className="font-semibold text-foreground">{a.name}</span>: apenas <span className="font-bold text-yellow-500">{a.quantity}</span> unidades (mín: {a.min_quantity})</p>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
