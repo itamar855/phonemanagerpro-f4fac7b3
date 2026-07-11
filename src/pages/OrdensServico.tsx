@@ -1086,7 +1086,7 @@ const OrdensServico = () => {
       <div className="flex gap-2 w-full flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, IMEI, modelo ou nÂº da OS..." className="pl-9 h-10" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, IMEI, modelo ou nº da OS..." className="pl-9 h-10" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Label className="text-xs text-muted-foreground shrink-0">De</Label>
@@ -1205,7 +1205,7 @@ const OrdensServico = () => {
                 <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
                   <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Cliente</p>
                   <p className="font-medium">{detailOrder.customer_name}</p>
-                  {detailOrder.customer_phone && <p>ðŸ“ž {detailOrder.customer_phone}</p>}
+                  {detailOrder.customer_phone && <p>📞 {detailOrder.customer_phone}</p>}
                   {detailOrder.customer_cpf && <p>CPF: {detailOrder.customer_cpf}</p>}
                 </div>
 
@@ -1219,7 +1219,7 @@ const OrdensServico = () => {
                   {detailOrder.device_accessories && <p>Acessórios: {detailOrder.device_accessories}</p>}
                   {detailOrder.device_is_off && (
                     <div className="mt-2 p-2.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[10px] font-bold leading-normal">
-                      âš ï¸ APARELHO DEU ENTRADA DESLIGADO
+                      ⚠️ APARELHO DEU ENTRADA DESLIGADO
                       <span className="block font-medium text-muted-foreground mt-0.5">
                         Não foi possível testar os periféricos e afirmar que estão em perfeito funcionamento.
                       </span>
