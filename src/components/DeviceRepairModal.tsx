@@ -506,11 +506,115 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   };
 
   const handleFinishRepair = async () => {
-    if (!activeRepair || !product) return;
+    if (!activeRepair || !product || !user) return;
     setLoading(true);
 
     try {
-      // 1. Update repair status to completed
+      // 1. Fetch current cash register
+      let { data: register } = await supabase
+        .from("cash_registers" as any)
+        .select("id")
+        .eq("store_id", product.store_id)
+        .eq("status", "open")
+        .eq("opened_by", user.id)
+        .maybeSingle();
+
+      if (!register) {
+        const { data: fallbackRegister } = await supabase
+          .from("cash_registers" as any)
+          .select("id")
+          .eq("store_id", product.store_id)
+          .eq("status", "open")
+          .limit(1)
+          .maybeSingle();
+        register = fallbackRegister;
+      }
+      const registerId = register ? (register as any).id : null;
+
+      // 2. Fetch full details of all parts in repairItems to check if they are manual parts
+      const partIds = repairItems.map(item => item.part_product_id);
+      let dbParts: any[] = [];
+      if (partIds.length > 0) {
+        const { data } = await supabase
+          .from("products")
+          .select("id, created_at, cost_price")
+          .in("id", partIds);
+        dbParts = data || [];
+      }
+
+      // 3. Distinguish stock parts (created before repair) vs manual parts (created during repair)
+      const repairTime = new Date(activeRepair.created_at).getTime();
+      const stockParts = dbParts.filter(p => {
+        const partTime = new Date(p.created_at).getTime();
+        return partTime < repairTime - 5000;
+      });
+      const totalStockPartsCost = stockParts.reduce((acc, p) => acc + Number(p.cost_price || 0), 0);
+
+      // 4. Calculate device base cost
+      const totalPartsCost = repairItems.reduce((acc, item) => acc + Number(item.unit_cost || 0), 0);
+      const baseDeviceCost = Math.max(0, Number(product.cost_price || 0) - totalPartsCost);
+
+      // 5. Insert cash entry for device cost (only if positive and cash register is open)
+      if (baseDeviceCost > 0 && registerId) {
+        const deviceConfirmed = !!(product as any).device_payment_voucher;
+        await supabase.from("cash_entries" as any).insert({
+          cash_register_id: registerId,
+          store_id: product.store_id,
+          type: "saida",
+          amount: baseDeviceCost,
+          description: `Custo de Aquisição: ${product.name}`,
+          payment_method: "pix",
+          confirmed: deviceConfirmed,
+          receipt_url: (product as any).device_payment_voucher || null,
+          created_by: user.id,
+        } as any);
+
+        await supabase.from("transactions").insert({
+          type: "expense_pj",
+          amount: baseDeviceCost,
+          net_amount: baseDeviceCost,
+          description: `Custo de Aquisição: ${product.name}`,
+          net_earnings: -baseDeviceCost,
+          category: "reparo",
+          payment_method: "pix",
+          status: deviceConfirmed ? "completed" : "pending",
+          store_id: product.store_id,
+          created_by: user.id,
+          receipt_url: (product as any).device_payment_voucher || null,
+        } as any);
+      }
+
+      // 6. Insert cash entry for stock parts cost (only if positive and cash register is open)
+      if (totalStockPartsCost > 0 && registerId) {
+        const partsConfirmed = !!(product as any).parts_payment_voucher;
+        await supabase.from("cash_entries" as any).insert({
+          cash_register_id: registerId,
+          store_id: product.store_id,
+          type: "saida",
+          amount: totalStockPartsCost,
+          description: `Peças do Reparo (Estoque): ${product.name}`,
+          payment_method: "pix",
+          confirmed: partsConfirmed,
+          receipt_url: (product as any).parts_payment_voucher || null,
+          created_by: user.id,
+        } as any);
+
+        await supabase.from("transactions").insert({
+          type: "expense_pj",
+          amount: totalStockPartsCost,
+          net_amount: totalStockPartsCost,
+          description: `Peças do Reparo (Estoque): ${product.name}`,
+          net_earnings: -totalStockPartsCost,
+          category: "reparo",
+          payment_method: "pix",
+          status: partsConfirmed ? "completed" : "pending",
+          store_id: product.store_id,
+          created_by: user.id,
+          receipt_url: (product as any).parts_payment_voucher || null,
+        } as any);
+      }
+
+      // 7. Update repair status to completed
       const { error: repairError } = await supabase
         .from("product_repairs" as any)
         .update({
@@ -521,7 +625,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (repairError) throw repairError;
 
-      // 2. Update product status to in_stock
+      // 8. Update product status to in_stock
       const { error: prodError } = await supabase
         .from("products")
         .update({ status: "in_stock" })
@@ -531,7 +635,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       await logAction("UPDATE_RECORD", "product_repairs", activeRepair.id, null, { status: "completed" }, product.store_id);
 
-      toast.success("Reparo finalizado! Aparelho retornou ao estoque com o custo recalculado.");
+      toast.success("Reparo finalizado! Lançamentos gerados no caixa e aparelho retornou ao estoque.");
       onClose();
       onSuccess();
     } catch (err: any) {

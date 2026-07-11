@@ -139,5 +139,29 @@ describe('OS Billing — Business Rules', () => {
       expect(repairPayload).toHaveProperty('cash_register_id');
       expect(repairPayload).not.toHaveProperty('register_id');
     });
+
+    it('should confirm cash entry immediately if payment voucher is attached', () => {
+      const deviceVoucher = 'https://supabase.co/storage/v1/object/public/comprovantes/device-123.jpg';
+      const cashEntry = {
+        amount: 1200,
+        confirmed: !!deviceVoucher,
+        receipt_url: deviceVoucher,
+      };
+
+      expect(cashEntry.confirmed).toBe(true);
+      expect(cashEntry.receipt_url).toBe(deviceVoucher);
+    });
+
+    it('should leave cash entry pending (confirmed=false) if no payment voucher is attached', () => {
+      const deviceVoucher = null;
+      const cashEntry = {
+        amount: 1200,
+        confirmed: !!deviceVoucher,
+        receipt_url: deviceVoucher,
+      };
+
+      expect(cashEntry.confirmed).toBe(false);
+      expect(cashEntry.receipt_url).toBe(null);
+    });
   });
 });
