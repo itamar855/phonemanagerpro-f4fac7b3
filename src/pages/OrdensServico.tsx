@@ -36,20 +36,20 @@ import { OSFormModal } from "@/components/features/os/OSFormModal";
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
-const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condiÃ§Ãµes descritas nesta OS.
-2. A loja nÃ£o se responsabiliza por dados contidos no aparelho. Recomenda-se backup prÃ©vio.
-3. Em caso de nÃ£o retirada do aparelho apÃ³s 90 dias da conclusÃ£o do serviÃ§o, a loja poderÃ¡ dispor do mesmo para cobrir custos.
-4. A garantia do serviÃ§o cobre apenas o defeito reparado e a peÃ§a substituÃ­da, pelo perÃ­odo de 90 dias.
-5. O orÃ§amento inicial pode sofrer alteraÃ§Ãµes apÃ³s anÃ¡lise tÃ©cnica, mediante aprovaÃ§Ã£o do cliente.
-6. A loja nÃ£o se responsabiliza por danos prÃ©-existentes nÃ£o descritos nesta OS.
-7. ServiÃ§os de diagnÃ³stico podem ter custo mesmo que o reparo nÃ£o seja efetuado.`;
+const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condições descritas nesta OS.
+2. A loja não se responsabiliza por dados contidos no aparelho. Recomenda-se backup prévio.
+3. Em caso de não retirada do aparelho após 90 dias da conclusão do serviço, a loja poderá dispor do mesmo para cobrir custos.
+4. A garantia do serviço cobre apenas o defeito reparado e a peça substituída, pelo período de 90 dias.
+5. O orçamento inicial pode sofrer alterações após análise técnica, mediante aprovação do cliente.
+6. A loja não se responsabiliza por danos pré-existentes não descritos nesta OS.
+7. Serviços de diagnóstico podem ter custo mesmo que o reparo não seja efetuado.`;
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   open:             { label: "Aberta",               color: "bg-blue-500/15 text-blue-400 border-blue-500/20",         icon: Clock       },
-  analyzing:        { label: "Em AnÃ¡lise",           color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
-  waiting_part:     { label: "Aguardando PeÃ§a",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20",   icon: Package     },
+  analyzing:        { label: "Em Análise",           color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
+  waiting_part:     { label: "Aguardando Peça",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20",   icon: Package     },
   repairing:        { label: "Em Reparo",            color: "bg-purple-500/15 text-purple-400 border-purple-500/20",   icon: Wrench      },
-  waiting_approval: { label: "Aguardando AprovaÃ§Ã£o", color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
+  waiting_approval: { label: "Aguardando Aprovação", color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
   ready:            { label: "Pronta p/ Retirada",   color: "bg-primary/15 text-primary border-primary/20",            icon: CheckCircle2 },
   delivered:        { label: "Entregue",             color: "bg-muted text-muted-foreground border-border",            icon: CheckCircle2 },
   cancelled:        { label: "Cancelada",            color: "bg-destructive/15 text-destructive border-destructive/20", icon: AlertCircle },
@@ -58,8 +58,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: typeof 
 const allStatuses = Object.keys(statusConfig);
 
 const paymentLabels: Record<string, string> = {
-  dinheiro: "Dinheiro", cartao_credito: "CartÃ£o CrÃ©dito",
-  cartao_debito: "CartÃ£o DÃ©bito", pix: "PIX", outro: "Outro",
+  dinheiro: "Dinheiro", cartao_credito: "Cartão Crédito",
+  cartao_debito: "Cartão Débito", pix: "PIX", outro: "Outro",
 };
 
 const createPendingCashEntry = async (
@@ -80,7 +80,7 @@ const createPendingCashEntry = async (
   let { data: register, error: regError } = await query.maybeSingle();
 
   if (regError) {
-    console.error("Erro ao buscar caixa do usuÃ¡rio (OS):", regError);
+    console.error("Erro ao buscar caixa do usuário (OS):", regError);
   }
 
   if (!register) {
@@ -119,7 +119,7 @@ const createPendingCashEntry = async (
     }
   } else {
     console.warn("Nenhum caixa aberto encontrado para storeId:", storeId);
-    toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor da OS nÃ£o foi para o caixa!");
+    toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor da OS não foi para o caixa!");
   }
 };
 
@@ -394,7 +394,7 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
       doc.text(store.pdf_footer, W / 2, 290, { align: "center", maxWidth: CW });
     }
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(...SOFT);
-    doc.text(`${storeName}  |  ${new Date().toLocaleString("pt-BR")}  |  Cell Pro 360  |  PÃ¡gina ${i}/${pageCount}`, W / 2, 294, { align: "center" });
+    doc.text(`${storeName}  |  ${new Date().toLocaleString("pt-BR")}  |  Cell Pro 360  |  Página ${i}/${pageCount}`, W / 2, 294, { align: "center" });
   }
 
   return doc;
@@ -403,7 +403,7 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
 // â”€â”€ Gera Cupom 80mm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string) => {
   const { default: jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "mm", format: [80, 200] }); // Formato contÃ­nuo 80mm
+  const doc = new jsPDF({ unit: "mm", format: [80, 200] }); // Formato contínuo 80mm
   let y = 10;
   const W = 80;
   
@@ -425,11 +425,11 @@ const generateThermalPdf = async (order: any, store: any, techName: string, publ
   
   const line = () => { doc.line(5, y, W-5, y); y += 4; };
 
-  textC(store?.name || "AssistÃªncia TÃ©cnica", 12, true);
+  textC(store?.name || "Assistência Técnica", 12, true);
   if (store?.cnpj) textC(`CNPJ: ${store.cnpj}`, 8);
   if (store?.phone) textC(`Tel: ${store.phone}`, 8);
   line();
-  textC(`ORDEM DE SERVIÃ‡O #${order.order_number}`, 10, true);
+  textC(`ORDEM DE SERVIÇO #${order.order_number}`, 10, true);
   textC(new Date(order.created_at).toLocaleString("pt-BR"), 8);
   line();
   textL("Cliente", order.customer_name);
@@ -441,9 +441,9 @@ const generateThermalPdf = async (order: any, store: any, techName: string, publ
     textC("Nao testamos perifericos.", 7);
   }
   textL("Defeito", order.reported_defect);
-  textL("ServiÃ§o", order.requested_service);
+  textL("Serviço", order.requested_service);
   if (order.final_price) textL("Valor", formatCurrency(Number(order.final_price)));
-  else textL("OrÃ§amento", formatCurrency(Number(order.estimated_price || 0)));
+  else textL("Orçamento", formatCurrency(Number(order.estimated_price || 0)));
   line();
   textC("Acompanhe online:", 8);
   textC(publicUrl, 7);
@@ -600,7 +600,7 @@ const OrdensServico = () => {
     try {
       const storeIdToUse = activeStoreId === "all" ? form.store_id || stores[0]?.id : activeStoreId;
 
-      // Duplication check â€” 60 second window for same user + customer + device
+      // Duplication check — 60 second window for same user + customer + device
       const sixtySecondsAgo = new Date(Date.now() - 60000).toISOString();
       const { data: recentOS } = await supabase
         .from("service_orders")
@@ -613,7 +613,7 @@ const OrdensServico = () => {
         .limit(1);
 
       if (recentOS && recentOS.length > 0) {
-        toast.error("OS duplicada bloqueada! Uma OS idÃªntica foi criada hÃ¡ menos de 60 segundos.");
+        toast.error("OS duplicada bloqueada! Uma OS idêntica foi criada há menos de 60 segundos.");
         isSubmitting.current = false;
         setLoading(false);
         return;
@@ -667,7 +667,7 @@ const OrdensServico = () => {
       if (error) { 
         toast.error("Erro ao criar OS: " + error.message); 
       } else { 
-        toast.success("Ordem de ServiÃ§o criada!"); 
+        toast.success("Ordem de Serviço criada!"); 
         setDialogOpen(false); 
         resetForm(); 
         fetchData(); 
@@ -727,7 +727,7 @@ const OrdensServico = () => {
       const order = orders.find(o => o.id === orderId);
       if (order && (order as any).store_id) {
         const o = order as any;
-        const desc = `OS #${o.order_number} â€” ${o.requested_service} (${o.customer_name})`;
+        const desc = `OS #${o.order_number} — ${o.requested_service} (${o.customer_name})`;
         
         const cash = Number(o.payment_cash || 0);
         const card = Number(o.payment_card || 0);
@@ -749,7 +749,7 @@ const OrdensServico = () => {
             await createPendingCashEntry(o.store_id, user.id, amount, desc, "dinheiro");
             await supabase.from("transactions").insert({
               type: "income",
-              category: "ManutenÃ§Ã£o",
+              category: "Manutenção",
               amount,
               net_amount: amount,
               description: `${desc} [Dinheiro]`,
@@ -764,7 +764,7 @@ const OrdensServico = () => {
             await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
             await supabase.from("transactions").insert({
               type: "income",
-              category: "ManutenÃ§Ã£o",
+              category: "Manutenção",
               amount: cash,
               net_amount: cash,
               description: `${desc} [Dinheiro]`,
@@ -782,10 +782,10 @@ const OrdensServico = () => {
             expectedDate.setDate(expectedDate.getDate() + days);
             await supabase.from("transactions").insert({
               type: "income",
-              category: "ManutenÃ§Ã£o",
+              category: "Manutenção",
               amount: card,
               net_amount: card - (card * (fee / 100)),
-              description: `${desc} [CartÃ£o]`,
+              description: `${desc} [Cartão]`,
               store_id: o.store_id,
               created_by: user.id,
               destination_account_id: defaultAccountId,
@@ -801,7 +801,7 @@ const OrdensServico = () => {
             expectedDate.setDate(expectedDate.getDate() + days);
             await supabase.from("transactions").insert({
               type: "income",
-              category: "ManutenÃ§Ã£o",
+              category: "Manutenção",
               amount: pix,
               net_amount: pix - (pix * (fee / 100)),
               description: `${desc} [PIX]`,
@@ -816,7 +816,7 @@ const OrdensServico = () => {
             await createPendingCashEntry(o.store_id, user.id, other, desc, "outro");
             await supabase.from("transactions").insert({
               type: "income",
-              category: "ManutenÃ§Ã£o",
+              category: "Manutenção",
               amount: other,
               net_amount: other,
               description: `${desc} [Outro]`,
@@ -828,7 +828,7 @@ const OrdensServico = () => {
             });
           }
         }
-        toast.info("LanÃ§amentos financeiros registrados.");
+        toast.info("Lançamentos financeiros registrados.");
       }
     }
 
@@ -836,7 +836,7 @@ const OrdensServico = () => {
     fetchData();
     if (detailOrder?.id === orderId) setDetailOrder({ ...detailOrder, status: newStatus });
     
-    // Pequeno atraso para liberar o botÃ£o, evitando multi-clicks
+    // Pequeno atraso para liberar o botão, evitando multi-clicks
     setTimeout(() => {
       isSubmitting.current = false;
     }, 1000);
@@ -844,7 +844,7 @@ const OrdensServico = () => {
 
   const handleUpdateService = async () => {
     if (!user || !detailOrder) return;
-    if (!updateForm.justification) { toast.error("Informe o motivo da alteraÃ§Ã£o!"); return; }
+    if (!updateForm.justification) { toast.error("Informe o motivo da alteração!"); return; }
     setLoading(true);
 
     const updates: any = {};
@@ -868,7 +868,7 @@ const OrdensServico = () => {
     const { error } = await supabase.from("service_orders").update(updates).eq("id", detailOrder.id);
     if (error) { toast.error(error.message); }
     else {
-      toast.success("ServiÃ§o atualizado!");
+      toast.success("Serviço atualizado!");
       const updated = { ...detailOrder, ...updates };
       setDetailOrder(updated);
       fetchData();
@@ -884,7 +884,7 @@ const OrdensServico = () => {
     if (error) {
       toast.error("Erro ao excluir: " + error.message);
     } else {
-      toast.success("Ordem de ServiÃ§o removida!");
+      toast.success("Ordem de Serviço removida!");
       setDetailOrder(null);
       fetchData();
       logAction("DELETE_RECORD", "service_orders", id, null, { reason }, activeStoreId);
@@ -910,7 +910,7 @@ const OrdensServico = () => {
   const handleExportPdf = async (order: any) => {
     setPdfLoading(true);
     try {
-      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "AssistÃªncia TÃ©cnica" };
+      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
@@ -925,7 +925,7 @@ const OrdensServico = () => {
   const handleExportThermal = async (order: any) => {
     setPdfLoading(true);
     try {
-      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "AssistÃªncia TÃ©cnica" };
+      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateThermalPdf(order, storeObj, techName, publicUrl);
@@ -939,7 +939,7 @@ const OrdensServico = () => {
     if (!order.customer_phone) { toast.error("Cliente sem telefone cadastrado!"); return; }
     setPdfLoading(true);
     try {
-      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "AssistÃªncia TÃ©cnica" };
+      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
@@ -958,7 +958,7 @@ const OrdensServico = () => {
 
       const phone = order.customer_phone.replace(/\D/g, "");
       const msg = encodeURIComponent(
-        `OlÃ¡ ${order.customer_name}! ðŸ‘‹\n\nSua Ordem de ServiÃ§o #${order.order_number} estÃ¡ com status: *${statusConfig[order.status]?.label}*.\n\nðŸ“„ Acesse sua OS completa:\n${shareUrl}\n\n_${storeObj.name}_`
+        `Olá ${order.customer_name}! 👋\n\nSua Ordem de Serviço #${order.order_number} está com status: *${statusConfig[order.status]?.label}*.\n\n📄 Acesse sua OS completa:\n${shareUrl}\n\n_${storeObj.name}_`
       );
       window.open(`https://wa.me/55${phone}?text=${msg}`, "_blank");
       toast.success("WhatsApp aberto!");
@@ -1026,7 +1026,7 @@ const OrdensServico = () => {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Ordens de ServiÃ§o</h1>
+          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Ordens de Serviço</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{orders.length} ordens registradas</p>
         </div>
         {isAdmin && (
@@ -1096,7 +1096,7 @@ const OrdensServico = () => {
             onChange={e => setFilterStartDate(e.target.value)}
             className="h-10 w-[145px]"
           />
-          <Label className="text-xs text-muted-foreground shrink-0">AtÃ©</Label>
+          <Label className="text-xs text-muted-foreground shrink-0">Até</Label>
           <Input
             type="date"
             value={filterEndDate}
@@ -1163,12 +1163,12 @@ const OrdensServico = () => {
               <DialogHeader>
                 <DialogTitle className="font-display flex items-center gap-2">
                   <span className="text-muted-foreground font-mono text-sm">#{detailOrder.order_number}</span>
-                  OS â€” {detailOrder.customer_name}
+                  OS — {detailOrder.customer_name}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
 
-                {/* Status + aÃ§Ãµes */}
+                {/* Status + ações */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`text-[10px] border ${statusConfig[detailOrder.status]?.color}`}>
@@ -1192,7 +1192,7 @@ const OrdensServico = () => {
                   </div>
                 </div>
 
-                {/* Link pÃºblico */}
+                {/* Link público */}
                 <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
                   <span className="text-[10px] text-muted-foreground flex-1 truncate">{getPublicUrl(detailOrder.id)}</span>
                   <Button className="h-6 text-[10px] bg-transparent hover:bg-muted"
@@ -1215,28 +1215,28 @@ const OrdensServico = () => {
                   <p className="font-medium">{detailOrder.device_brand} {detailOrder.device_model}</p>
                   {detailOrder.device_imei && <p>IMEI: {detailOrder.device_imei}</p>}
                   {detailOrder.device_color && <p>Cor: {detailOrder.device_color}</p>}
-                  {detailOrder.device_condition && <p>CondiÃ§Ã£o: {detailOrder.device_condition}</p>}
-                  {detailOrder.device_accessories && <p>AcessÃ³rios: {detailOrder.device_accessories}</p>}
+                  {detailOrder.device_condition && <p>Condição: {detailOrder.device_condition}</p>}
+                  {detailOrder.device_accessories && <p>Acessórios: {detailOrder.device_accessories}</p>}
                   {detailOrder.device_is_off && (
                     <div className="mt-2 p-2.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[10px] font-bold leading-normal">
                       âš ï¸ APARELHO DEU ENTRADA DESLIGADO
                       <span className="block font-medium text-muted-foreground mt-0.5">
-                        NÃ£o foi possÃ­vel testar os perifÃ©ricos e afirmar que estÃ£o em perfeito funcionamento.
+                        Não foi possível testar os periféricos e afirmar que estão em perfeito funcionamento.
                       </span>
                     </div>
                   )}
                 </div>
 
-                {/* ServiÃ§o */}
+                {/* Serviço */}
                 <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
-                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">ServiÃ§o</p>
+                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Serviço</p>
                   <p><span className="text-muted-foreground">Defeito:</span> {detailOrder.reported_defect}</p>
-                  <p><span className="text-muted-foreground">ServiÃ§o:</span> {detailOrder.requested_service}</p>
-                  {detailOrder.technician_id && <p><span className="text-muted-foreground">TÃ©cnico:</span> {profileMap.get(detailOrder.technician_id) ?? "â€”"}</p>}
+                  <p><span className="text-muted-foreground">Serviço:</span> {detailOrder.requested_service}</p>
+                  {detailOrder.technician_id && <p><span className="text-muted-foreground">Técnico:</span> {profileMap.get(detailOrder.technician_id) ?? "—"}</p>}
                   <p><span className="text-muted-foreground">Estimado:</span> {formatCurrency(Number(detailOrder.estimated_price || 0))}</p>
                   {detailOrder.final_price && <p><span className="text-muted-foreground">Final:</span> <span className="font-bold text-primary">{formatCurrency(Number(detailOrder.final_price))}</span></p>}
-                  {detailOrder.estimated_completion && <p><span className="text-muted-foreground">PrevisÃ£o:</span> {new Date(detailOrder.estimated_completion).toLocaleString("pt-BR")}</p>}
-                  {detailOrder.warranty_end_date && <p><span className="text-muted-foreground">Garantia atÃ©:</span> <span className="font-bold text-green-500">{new Date(detailOrder.warranty_end_date).toLocaleDateString("pt-BR")}</span></p>}
+                  {detailOrder.estimated_completion && <p><span className="text-muted-foreground">Previsão:</span> {new Date(detailOrder.estimated_completion).toLocaleString("pt-BR")}</p>}
+                  {detailOrder.warranty_end_date && <p><span className="text-muted-foreground">Garantia até:</span> <span className="font-bold text-green-500">{new Date(detailOrder.warranty_end_date).toLocaleDateString("pt-BR")}</span></p>}
                 </div>
 
                 {/* Entry Checklist Viewer */}
@@ -1252,7 +1252,7 @@ const OrdensServico = () => {
                 {/* Galeria de Fotos */}
                 <OsPhotoGallery orderId={detailOrder.id} />
 
-                {/* PeÃ§as da OS */}
+                {/* Peças da OS */}
                 <OsParts orderId={detailOrder.id} storeId={detailOrder.store_id} />
 
                 {/* Pagamento atual */}
@@ -1260,7 +1260,7 @@ const OrdensServico = () => {
                   <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
                     <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Pagamento Recebido</p>
                     {Number(detailOrder.payment_cash) > 0 && <p><span className="text-muted-foreground">Dinheiro:</span> {formatCurrency(Number(detailOrder.payment_cash))}</p>}
-                    {Number(detailOrder.payment_card) > 0 && <p><span className="text-muted-foreground">CartÃ£o:</span> {formatCurrency(Number(detailOrder.payment_card))}</p>}
+                    {Number(detailOrder.payment_card) > 0 && <p><span className="text-muted-foreground">Cartão:</span> {formatCurrency(Number(detailOrder.payment_card))}</p>}
                     {Number(detailOrder.payment_pix) > 0 && <p><span className="text-muted-foreground">PIX:</span> {formatCurrency(Number(detailOrder.payment_pix))}</p>}
                     {Number(detailOrder.payment_other) > 0 && <p><span className="text-muted-foreground">Outro:</span> {formatCurrency(Number(detailOrder.payment_other))}</p>}
                     <p className="font-bold text-primary">Total: {formatCurrency(totalPaid(detailOrder))}</p>
@@ -1287,29 +1287,29 @@ const OrdensServico = () => {
 
                 {/* Termos */}
                 <div className="rounded-lg border border-border p-3 text-xs">
-                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide mb-2">Termos e CondiÃ§Ãµes</p>
+                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide mb-2">Termos e Condições</p>
                   <div className="max-h-28 overflow-y-auto">
                     <p className="text-muted-foreground leading-relaxed whitespace-pre-line">{TERMS_TEXT}</p>
                   </div>
                   {detailOrder.terms_accepted && (
                     <div className="flex items-center gap-1 mt-2 text-primary font-medium">
                       <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-[10px]">Cliente aceitou os termos de serviÃ§o</span>
+                      <span className="text-[10px]">Cliente aceitou os termos de serviço</span>
                     </div>
                   )}
                   {detailOrder.device_is_off && (
                     <div className="flex items-center gap-1 mt-1 text-red-500 font-bold">
                       <CheckCircle2 className="h-3.5 w-3.5 text-red-500" />
-                      <span className="text-[10px]">Cliente ciente: Aparelho entrou Desligado (sem teste de perifÃ©ricos)</span>
+                      <span className="text-[10px]">Cliente ciente: Aparelho entrou Desligado (sem teste de periféricos)</span>
                     </div>
                   )}
                 </div>
 
-                {/* Atualizar serviÃ§o */}
+                {/* Atualizar serviço */}
                 {detailOrder.status !== "cancelled" && (
                   <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
                     <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                      <DollarSign className="h-3.5 w-3.5" /> Atualizar ServiÃ§o
+                      <DollarSign className="h-3.5 w-3.5" /> Atualizar Serviço
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -1324,7 +1324,7 @@ const OrdensServico = () => {
                                onChange={e => setUpdateForm(f => ({ ...f, warranty_end_date: e.target.value }))} className="h-9 text-xs" />
                       </div>
                       <div className="space-y-1.5 col-span-2">
-                        <Label className="text-xs">TÃ©cnico ResponsÃ¡vel</Label>
+                        <Label className="text-xs">Técnico Responsável</Label>
                         <Select value={updateForm.technician_id} onValueChange={v => setUpdateForm(f => ({ ...f, technician_id: v }))}>
                           <SelectTrigger className="h-9"><SelectValue placeholder="Selecione" /></SelectTrigger>
                           <SelectContent>
@@ -1336,7 +1336,7 @@ const OrdensServico = () => {
 
                     <div className="pt-2">
                        <OsChecklist
-                         title="Checklist de SaÃ­da (Testes PÃ³s-Reparo)"
+                         title="Checklist de Saída (Testes Pós-Reparo)"
                          data={updateForm.exit_checklist}
                          onChange={(d) => setUpdateForm({ ...updateForm, exit_checklist: d })}
                        />
@@ -1349,7 +1349,7 @@ const OrdensServico = () => {
                         <Input type="number" step="0.01" value={updateForm.payment_cash} onChange={e => setUpdateForm(f => ({ ...f, payment_cash: e.target.value }))} placeholder="0.00" className="h-8 text-xs" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[10px] flex items-center gap-1"><CreditCard className="h-3 w-3" /> CartÃ£o</Label>
+                        <Label className="text-[10px] flex items-center gap-1"><CreditCard className="h-3 w-3" /> Cartão</Label>
                         <Input type="number" step="0.01" value={updateForm.payment_card} onChange={e => setUpdateForm(f => ({ ...f, payment_card: e.target.value }))} placeholder="0.00" className="h-8 text-xs" />
                       </div>
                       <div className="space-y-1">
@@ -1363,7 +1363,7 @@ const OrdensServico = () => {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Obs. de Pagamento</Label>
-                      <Input value={updateForm.payment_notes} onChange={e => setUpdateForm(f => ({ ...f, payment_notes: e.target.value }))} placeholder="Ex: Parte em dinheiro, parte no cartÃ£o" className="h-9" />
+                      <Input value={updateForm.payment_notes} onChange={e => setUpdateForm(f => ({ ...f, payment_notes: e.target.value }))} placeholder="Ex: Parte em dinheiro, parte no cartão" className="h-9" />
                     </div>
 
                     <div className="space-y-1.5">
@@ -1379,7 +1379,7 @@ const OrdensServico = () => {
                       ) : existingReceiptUrl ? (
                         <div className="flex items-center gap-2 rounded bg-green-500/10 p-2 text-[10px] text-green-600 border border-green-500/20 font-medium">
                           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate flex-1">Comprovante jÃ¡ enviado</span>
+                          <span className="truncate flex-1">Comprovante já enviado</span>
                           <button onClick={() => setExistingReceiptUrl(null)} className="text-destructive hover:underline">Trocar</button>
                         </div>
                       ) : (
@@ -1408,18 +1408,18 @@ const OrdensServico = () => {
                     )}
 
                     <div className="space-y-1.5 pt-2">
-                      <Label className="text-xs font-semibold text-primary">Campo ObrigatÃ³rio: Motivo da AlteraÃ§Ã£o</Label>
+                      <Label className="text-xs font-semibold text-primary">Campo Obrigatório: Motivo da Alteração</Label>
                       <Input 
                         value={updateForm.justification} 
                         onChange={e => setUpdateForm(f => ({ ...f, justification: e.target.value }))} 
-                        placeholder="Ex: AtualizaÃ§Ã£o de preÃ§o, peÃ§a adicionada, tÃ©cnico alterado..." 
+                        placeholder="Ex: Atualização de preço, peça adicionada, técnico alterado..." 
                         required 
                         className="h-10 border-primary/40 shadow-sm"
                       />
                     </div>
 
                     <Button className="w-full h-10 font-bold" onClick={handleUpdateService} disabled={loading || !updateForm.justification}>
-                      {loading ? "Salvando..." : "Salvar AlteraÃ§Ãµes e Justificar"}
+                      {loading ? "Salvando..." : "Salvar Alterações e Justificar"}
                     </Button>
                   </div>
                 )}
@@ -1446,7 +1446,7 @@ const OrdensServico = () => {
                   </div>
                 )}
 
-                {/* Ãrea Administrativa */}
+                {/* Área Administrativa */}
                 {isAdmin && (
                   <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-4">
                     <p className="text-xs font-bold text-destructive uppercase tracking-wider flex items-center gap-2">
@@ -1459,7 +1459,7 @@ const OrdensServico = () => {
                         <Input 
                           value={justification} 
                           onChange={(e) => setJustification(e.target.value)} 
-                          placeholder="Motivo da transferÃªncia..." 
+                          placeholder="Motivo da transferência..." 
                           className="h-8 text-xs border-destructive/20" 
                         />
                         <Select 
@@ -1488,10 +1488,10 @@ const OrdensServico = () => {
                         }}
                         disabled={loading}
                       >
-                        <Trash2 className="h-3.5 w-3.5" /> Excluir Ordem de ServiÃ§o
+                        <Trash2 className="h-3.5 w-3.5" /> Excluir Ordem de Serviço
                       </Button>
                       <p className="text-[10px] text-center text-destructive/60 mt-2 italic">
-                        Esta aÃ§Ã£o Ã© irreversÃ­vel e removerÃ¡ todos os registros vinculados.
+                        Esta ação é irreversível e removerá todos os registros vinculados.
                       </p>
                     </div>
                   </div>
@@ -1507,12 +1507,12 @@ const OrdensServico = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" /> Confirmar AÃ§Ã£o
+              <AlertCircle className="h-5 w-5" /> Confirmar Ação
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              {actionType === "delete" ? "Esta aÃ§Ã£o excluirÃ¡ a OS permanentemente." : "VocÃª estÃ¡ alterando o status para uma fase crÃ­tica."}
+              {actionType === "delete" ? "Esta ação excluirá a OS permanentemente." : "Você está alterando o status para uma fase crítica."}
               <br />Por favor, informe uma justificativa:
             </p>
             <div className="space-y-1.5">
