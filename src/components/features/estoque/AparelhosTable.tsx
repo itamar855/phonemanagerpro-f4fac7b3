@@ -284,6 +284,12 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                           </div>
                         );
                       })()}
+                      {p.sale_price !== null && p.sale_price !== undefined && (
+                        <div className="text-right mt-1">
+                          <p className="text-[10px] text-muted-foreground">Venda</p>
+                          <p className="font-display font-bold text-xs text-primary">{formatCurrency(Number(p.sale_price))}</p>
+                        </div>
+                      )}
                       {p.status === "in_stock" && stores.length > 1 && (
                         <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted"
                           onClick={() => { setTransferProduct(p); setTransferDialogOpen(true); }}>
