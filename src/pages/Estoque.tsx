@@ -108,7 +108,8 @@ const Estoque = () => {
   const [addPartOpen, setAddPartOpen] = useState(false);
   const [partForm, setPartForm] = useState({
     name: "", brand: "", model: "", cost_price: "", sale_price: "",
-    supplier_id: "", launch_cash_out: false, payment_method: "dinheiro"
+    supplier_id: "", launch_cash_out: false, payment_method: "dinheiro",
+    use_credit: false
   });
   const [partVoucherFile, setPartVoucherFile] = useState<File | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -148,7 +149,7 @@ const Estoque = () => {
         ? supabase.from("products").select("*").eq("store_id", activeStoreId).in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
         : supabase.from("products").select("*").in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
       ).order("created_at", { ascending: false }),
-      (supabase.from("suppliers" as any).select("id, name").order("name") as any),
+      (supabase.from("suppliers" as any).select("id, name, credit_balance").order("name") as any),
     ]);
 
     const pErr = productsRes.error;
@@ -391,6 +392,24 @@ const Estoque = () => {
 
       const supplierName = partForm.supplier_id ? supplierMap.get(partForm.supplier_id) : null;
 
+      let creditToUse = 0;
+      let remainingAmount = parseFloat(partForm.cost_price);
+
+      if (partForm.use_credit && partForm.supplier_id) {
+        const selectedSup = suppliers.find(s => s.id === partForm.supplier_id);
+        if (selectedSup && Number(selectedSup.credit_balance) > 0) {
+          creditToUse = Math.min(remainingAmount, Number(selectedSup.credit_balance));
+          remainingAmount -= creditToUse;
+
+          const { error: supUpdateErr } = await supabase
+            .from("suppliers" as any)
+            .update({ credit_balance: Number(selectedSup.credit_balance) - creditToUse } as any)
+            .eq("id", partForm.supplier_id);
+
+          if (supUpdateErr) throw supUpdateErr;
+        }
+      }
+
       const { data: insertedPart, error } = await supabase.from("products").insert({
         store_id: activeStoreId,
         name: partForm.name,
@@ -410,44 +429,85 @@ const Estoque = () => {
       if (error) {
         toast.error(error.message);
       } else {
-        if (partForm.launch_cash_out && registerId) {
-          const desc = `Compra de Peça: ${partForm.name}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
-          const amount = parseFloat(partForm.cost_price);
-          
+        const desc = `Compra de Peça: ${partForm.name}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}${creditToUse > 0 ? ` (Abatido R$ ${creditToUse.toFixed(2)} do crédito)` : ""}`;
+        
+        if (partForm.launch_cash_out && registerId && remainingAmount > 0) {
           await supabase.from("cash_entries" as any).insert({
             cash_register_id: registerId,
             store_id: activeStoreId,
             type: "saida",
-            amount,
+            amount: remainingAmount,
             description: desc,
             payment_method: partForm.payment_method,
             confirmed: true,
             receipt_url: voucherUrl || null,
             created_by: user.id,
           } as any);
-
-          await supabase.from("transactions").insert({
-            type: "expense_pj",
-            amount,
-            net_amount: amount,
-            description: desc,
-            category: "Peças",
-            store_id: activeStoreId,
-            created_by: user.id,
-            receipt_url: voucherUrl || null,
-            expected_settlement_date: new Date().toISOString(),
-            reconciled: true,
-          });
         }
+
+        // Sempre lança a transação financeira
+        const transactionAmount = remainingAmount > 0 ? remainingAmount : parseFloat(partForm.cost_price);
+        await supabase.from("transactions").insert({
+          type: "expense_pj",
+          amount: transactionAmount,
+          net_amount: transactionAmount,
+          description: desc,
+          category: "Peças",
+          store_id: activeStoreId,
+          created_by: user.id,
+          receipt_url: voucherUrl || null,
+          expected_settlement_date: new Date().toISOString(),
+          reconciled: true,
+        });
 
         toast.success("Peça adicionada ao estoque!");
         setAddPartOpen(false);
-        setPartForm({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", launch_cash_out: false, payment_method: "dinheiro" });
+        setPartForm({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", launch_cash_out: false, payment_method: "dinheiro", use_credit: false });
         setPartVoucherFile(null);
         fetchData();
       }
     } catch (err: any) {
       toast.error("Erro ao processar cadastro: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  const handleReturnPart = async (p: any) => {
+    const confirm = window.confirm(`Deseja realmente devolver a peça "${p.name}" ao fornecedor? O valor de custo de R$ ${p.cost_price.toFixed(2)} será revertido em crédito.`);
+    if (!confirm) return;
+
+    setLoading(true);
+    try {
+      const { error: prodErr } = await supabase
+        .from("products")
+        .update({ status: "returned" } as any)
+        .eq("id", p.id);
+
+      if (prodErr) throw prodErr;
+
+      const { data: supplierObj, error: suppErr } = await supabase
+        .from("suppliers" as any)
+        .select("credit_balance")
+        .eq("id", p.supplier_id)
+        .single() as any;
+
+      if (suppErr) throw suppErr;
+
+      const newBalance = Number(supplierObj.credit_balance || 0) + Number(p.cost_price);
+
+      const { error: supUpdateErr } = await supabase
+        .from("suppliers" as any)
+        .update({ credit_balance: newBalance } as any)
+        .eq("id", p.supplier_id);
+
+      if (supUpdateErr) throw supUpdateErr;
+
+      await logAction("return_part_to_supplier", "products", p.id, p, { ...p, status: "returned", credit_added: p.cost_price }, activeStoreId || "");
+
+      toast.success(`Peça devolvida! R$ ${p.cost_price.toFixed(2)} creditados ao fornecedor.`);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao processar devolução: " + err.message);
     }
     setLoading(false);
   };
@@ -803,6 +863,26 @@ const Estoque = () => {
                       </Select>
                     </div>
 
+                    {partForm.supplier_id && (suppliers.find(s => s.id === partForm.supplier_id)?.credit_balance ?? 0) > 0 && (
+                      <div className="col-span-2 flex items-center justify-between border border-primary/20 bg-primary/5 rounded-lg p-2.5 animate-in fade-in-50 duration-200">
+                        <div className="space-y-0.5">
+                          <Label className="text-xs font-bold cursor-pointer text-primary" htmlFor="part-credit-toggle">
+                            Abater do saldo de crédito existente?
+                          </Label>
+                          <p className="text-[10px] text-muted-foreground">
+                            Saldo disponível: {formatCurrency(Number(suppliers.find(s => s.id === partForm.supplier_id)?.credit_balance))}
+                          </p>
+                        </div>
+                        <input
+                          id="part-credit-toggle"
+                          type="checkbox"
+                          checked={partForm.use_credit}
+                          onChange={e => setPartForm(f => ({ ...f, use_credit: e.target.checked }))}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary cursor-pointer"
+                        />
+                      </div>
+                    )}
+
                     <div className="col-span-2 space-y-1.5">
                       <Label className="text-xs">Comprovante de Pagamento</Label>
                       <Input type="file" onChange={e => setPartVoucherFile(e.target.files?.[0] || null)} className="h-10 text-xs py-2" accept="image/*,application/pdf" />
@@ -908,6 +988,16 @@ const Estoque = () => {
                                   onChange={(e) => handleQuickUploadVoucher(e, p.id)}
                                 />
                               </Label>
+                            )}
+                            {p.supplier_id && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[10px] gap-1 border-yellow-500/30 text-yellow-600 hover:bg-yellow-500/10"
+                                onClick={() => handleReturnPart(p)}
+                              >
+                                <ArrowRightLeft className="h-3 w-3" /> Devolver
+                              </Button>
                             )}
                             <Button
                               className="h-7 w-7 p-0 bg-transparent text-destructive hover:bg-destructive/10"

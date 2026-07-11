@@ -349,7 +349,7 @@ const Caixa = () => {
     });
 
     // 2. Update supplier credit balance
-    const newBalance = Number(selectedSupplier.credit_balance) - amount + creditAdjust;
+    const newBalance = Number(selectedSupplier.credit_balance) + amount + creditAdjust;
     await supabase.from("suppliers" as any)
       .update({ credit_balance: newBalance } as any)
       .eq("id", selectedSupplier.id);
