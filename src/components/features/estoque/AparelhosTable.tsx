@@ -55,6 +55,7 @@ interface AparelhosTableProps {
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;
   setDeleteDialogOpen: (open: boolean) => void;
+  repairCostsMap?: Map<string, number>;
 }
 
 export const AparelhosTable: React.FC<AparelhosTableProps> = ({
@@ -63,6 +64,7 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
   setTransferProduct, setTransferDialogOpen, setRepairProduct, setRepairModalOpen,
   setDefectsProduct, setDefectsList, setCustomDefect, setDefectsDialogOpen,
   openEditProduct, setDeleteId, setDeleteType, setJustification, setDeleteDialogOpen,
+  repairCostsMap = new Map(),
 }) => {
   return (
     <>
@@ -262,15 +264,26 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                       )}
                     </div>
                     <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Custo</p>
-                        <p className="font-display font-bold text-sm">{formatCurrency(Number(p.cost_price))}</p>
-                        {margin !== null && (
-                          <p className={`text-xs font-medium mt-0.5 ${margin >= 0 ? "text-primary" : "text-destructive"}`}>
-                            {margin >= 0 ? "+" : ""}{formatCurrency(margin)}
-                          </p>
-                        )}
-                      </div>
+                      {(() => {
+                        const repairCost = repairCostsMap.get(p.id) || 0;
+                        const baseDeviceCost = Number(p.cost_price || 0) - repairCost;
+                        return (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Custo</p>
+                            <p className="font-display font-bold text-sm">{formatCurrency(baseDeviceCost)}</p>
+                            {repairCost > 0 && (
+                              <p className="text-xs font-bold text-emerald-500 font-display">
+                                +{formatCurrency(repairCost)}
+                              </p>
+                            )}
+                            {margin !== null && (
+                              <p className={`text-[10px] font-medium mt-1 border-t border-border/30 pt-0.5 ${margin >= 0 ? "text-primary" : "text-destructive"}`}>
+                                Margem: {margin >= 0 ? "+" : ""}{formatCurrency(margin)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {p.status === "in_stock" && stores.length > 1 && (
                         <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted"
                           onClick={() => { setTransferProduct(p); setTransferDialogOpen(true); }}>

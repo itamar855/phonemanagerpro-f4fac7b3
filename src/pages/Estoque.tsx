@@ -113,6 +113,7 @@ const Estoque = () => {
   });
   const [partVoucherFile, setPartVoucherFile] = useState<File | null>(null);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [repairCostsMap, setRepairCostsMap] = useState<Map<string, number>>(new Map());
 
   const [form, setForm] = useState({
     name: "", brand: "iPhone" as string, model: "", imei: "",
@@ -130,6 +131,7 @@ const Estoque = () => {
   });
 
   const fetchData = async () => {
+    console.log("[Estoque] fetchData iniciou. activeStoreId:", activeStoreId);
     if (!activeStoreId) return;
     setLoading(true);
     
@@ -141,7 +143,7 @@ const Estoque = () => {
       accQuery = accQuery.eq("store_id", activeStoreId);
     }
 
-    const [productsRes, storesRes, accRes, partsRes, suppRes] = await Promise.all([
+    const [productsRes, storesRes, accRes, partsRes, suppRes, repairsRes] = await Promise.all([
       productsQuery.order("created_at", { ascending: false }),
       supabase.from("stores").select("*"),
       accQuery.order("created_at", { ascending: false }),
@@ -150,6 +152,7 @@ const Estoque = () => {
         : supabase.from("products").select("*").in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
       ).order("created_at", { ascending: false }),
       (supabase.from("suppliers" as any).select("id, name, credit_balance").order("name") as any),
+      (supabase.from("product_repairs" as any).select("id, product_id, status, product_repair_items(unit_cost, quantity)").eq("status", "completed") as any),
     ]);
 
     const pErr = productsRes.error;
@@ -158,6 +161,18 @@ const Estoque = () => {
       toast.error(`Falha ao carregar estoque: ${pErr.message}`);
     }
     console.log(`[DEBUG] Estoque carregado. Qtd: ${productsRes.data?.length || 0}. Loja Selecionada: ${activeStoreId}`);
+    
+    const costsMap = new Map<string, number>();
+    if (repairsRes?.data) {
+      repairsRes.data.forEach((r: any) => {
+        const items = r.product_repair_items || [];
+        const cost = items.reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
+        const current = costsMap.get(r.product_id) || 0;
+        costsMap.set(r.product_id, current + cost);
+      });
+    }
+    setRepairCostsMap(costsMap);
+
     setProducts(productsRes.data ?? []);
     setStores(storesRes.data ?? []);
     setAccessories((accRes.data ?? []) as unknown as Accessory[]);
@@ -800,6 +815,7 @@ const Estoque = () => {
             setDeleteType={setDeleteType}
             setJustification={setJustification}
             setDeleteDialogOpen={setDeleteDialogOpen}
+            repairCostsMap={repairCostsMap}
           />
         </TabsContent>
 

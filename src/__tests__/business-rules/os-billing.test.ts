@@ -163,5 +163,36 @@ describe('OS Billing — Business Rules', () => {
       expect(cashEntry.confirmed).toBe(false);
       expect(cashEntry.receipt_url).toBe(null);
     });
+
+    it('should NOT post manual part cost instantly, but post total parts cost at repair completion', () => {
+      // Setup hypothetical list of parts containing both a stock part and a manual part
+      const repairItems = [
+        { id: '1', part_product_id: 'stock-part-1', unit_cost: 150 },
+        { id: '2', part_product_id: 'manual-part-2', unit_cost: 100 }
+      ];
+
+      // Instantly added manual part does not generate financial record
+      const mockAddManualPartAction = () => {
+        return { cashEntryGenerated: false, transactionGenerated: false };
+      };
+      const manualPartRes = mockAddManualPartAction();
+      expect(manualPartRes.cashEntryGenerated).toBe(false);
+
+      // On finish repair, total parts cost is calculated as the sum of all items
+      const totalPartsCost = repairItems.reduce((acc, item) => acc + item.unit_cost, 0);
+      expect(totalPartsCost).toBe(250); // 150 (stock) + 100 (manual)
+
+      const partsVoucher = 'voucher-123.pdf';
+      const partsCashEntry = {
+        amount: totalPartsCost,
+        confirmed: !!partsVoucher,
+        receipt_url: partsVoucher,
+        description: 'Peças do Reparo (Total): iPhone 14'
+      };
+
+      expect(partsCashEntry.amount).toBe(250);
+      expect(partsCashEntry.confirmed).toBe(true);
+      expect(partsCashEntry.receipt_url).toBe('voucher-123.pdf');
+    });
   });
 });

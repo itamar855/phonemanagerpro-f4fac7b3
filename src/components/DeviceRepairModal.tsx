@@ -343,59 +343,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       if (itemError) throw itemError;
 
-      // 4. Automatic cash out and transaction entry
-      let { data: register } = await supabase
-        .from("cash_registers" as any)
-        .select("id")
-        .eq("store_id", product.store_id)
-        .eq("status", "open")
-        .eq("opened_by", user.id)
-        .maybeSingle();
-
-      if (!register) {
-        const { data: fallbackRegister } = await supabase
-          .from("cash_registers" as any)
-          .select("id")
-          .eq("store_id", product.store_id)
-          .eq("status", "open")
-          .limit(1)
-          .maybeSingle();
-        register = fallbackRegister;
-      }
-      
-      const registerId = register ? (register as any).id : null;
-      const desc = `Compra de Peça Avulsa (Reparo Interno): ${manualPartName.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
-      const hasReceipt = !!receiptUrl;
-
-      if (registerId) {
-        await supabase.from("cash_entries" as any).insert({
-          cash_register_id: registerId,
-          store_id: product.store_id,
-          type: "saida",
-          amount: cost,
-          description: desc,
-          payment_method: "pix",
-          confirmed: hasReceipt,
-          receipt_url: receiptUrl || null,
-          created_by: user.id,
-        } as any);
-      }
-
-      await supabase.from("transactions").insert({
-        type: "expense_pj",
-        amount: cost,
-        net_amount: cost,
-        description: desc,
-        net_earnings: -cost,
-        category: "reparo",
-        payment_method: "pix",
-        status: hasReceipt ? "completed" : "pending",
-        store_id: product.store_id,
-        created_by: user.id,
-        receipt_url: receiptUrl || null,
-      } as any);
-
-      toast.success("Peça avulsa cadastrada, custo do aparelho atualizado e saída registrada!");
+      toast.success("Peça avulsa cadastrada e custo do aparelho atualizado!");
       setManualPartName("");
       setManualPartCost("");
       setManualPartSupplierId("");
@@ -584,15 +532,15 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
         } as any);
       }
 
-      // 6. Insert cash entry for stock parts cost (only if positive and cash register is open)
-      if (totalStockPartsCost > 0 && registerId) {
+      // 6. Insert cash entry for total parts cost (only if positive and cash register is open)
+      if (totalPartsCost > 0 && registerId) {
         const partsConfirmed = !!(product as any).parts_payment_voucher;
         await supabase.from("cash_entries" as any).insert({
           cash_register_id: registerId,
           store_id: product.store_id,
           type: "saida",
-          amount: totalStockPartsCost,
-          description: `Peças do Reparo (Estoque): ${product.name}`,
+          amount: totalPartsCost,
+          description: `Peças do Reparo (Total): ${product.name}`,
           payment_method: "pix",
           confirmed: partsConfirmed,
           receipt_url: (product as any).parts_payment_voucher || null,
@@ -601,10 +549,10 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
         await supabase.from("transactions").insert({
           type: "expense_pj",
-          amount: totalStockPartsCost,
-          net_amount: totalStockPartsCost,
-          description: `Peças do Reparo (Estoque): ${product.name}`,
-          net_earnings: -totalStockPartsCost,
+          amount: totalPartsCost,
+          net_amount: totalPartsCost,
+          description: `Peças do Reparo (Total): ${product.name}`,
+          net_earnings: -totalPartsCost,
           category: "reparo",
           payment_method: "pix",
           status: partsConfirmed ? "completed" : "pending",
