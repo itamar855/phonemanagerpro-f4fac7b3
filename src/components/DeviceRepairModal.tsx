@@ -74,9 +74,11 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const fileInputManualPartRef = useRef<HTMLInputElement>(null);
   const [uploadingVoucher, setUploadingVoucher] = useState<'device' | 'parts' | null>(null);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number | null>>({});
+  const [localProduct, setLocalProduct] = useState<any>(null);
 
   useEffect(() => {
     if (isOpen && product) {
+      setLocalProduct(product);
       fetchRepairData();
     } else {
       setActiveRepair(null);
@@ -91,6 +93,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       setManualPartReceipt(null);
       setAddMode('stock');
       setSuppliers([]);
+      setLocalProduct(null);
     }
   }, [isOpen, product]);
 
@@ -453,6 +456,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       clearInterval(progressInterval);
       setUploadProgress(prev => ({ ...prev, [type]: 100 }));
+      setLocalProduct((prev: any) => prev ? { ...prev, ...updatePayload } : null);
       toast.success("Comprovante enviado com sucesso!");
 
       setTimeout(() => {
@@ -477,10 +481,10 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     const baseDeviceCost = Math.max(0, Number(product.cost_price || 0) - totalPartsCost);
 
     const missing: string[] = [];
-    if (baseDeviceCost > 0 && !(product as any).device_payment_voucher) {
+    if (baseDeviceCost > 0 && !(localProduct as any)?.device_payment_voucher) {
       missing.push("Comprovante de Aquisição do Aparelho");
     }
-    if (totalPartsCost > 0 && !(product as any).parts_payment_voucher) {
+    if (totalPartsCost > 0 && !(localProduct as any)?.parts_payment_voucher) {
       missing.push("Comprovante de Pagamento das Peças");
     }
 
@@ -538,7 +542,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       // 5. Insert cash entry for device cost (only if positive and cash register is open)
       if (baseDeviceCost > 0 && registerId) {
-        const deviceConfirmed = !!(product as any).device_payment_voucher;
+        const deviceConfirmed = !!(localProduct as any)?.device_payment_voucher;
         await supabase.from("cash_entries" as any).insert({
           cash_register_id: registerId,
           store_id: product.store_id,
@@ -547,7 +551,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           description: `Custo de Aquisição: ${product.name}`,
           payment_method: "pix",
           confirmed: deviceConfirmed,
-          receipt_url: (product as any).device_payment_voucher || null,
+          receipt_url: (localProduct as any)?.device_payment_voucher || null,
           created_by: user.id,
         } as any);
 
@@ -562,13 +566,13 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           status: deviceConfirmed ? "completed" : "pending",
           store_id: product.store_id,
           created_by: user.id,
-          receipt_url: (product as any).device_payment_voucher || null,
+          receipt_url: (localProduct as any)?.device_payment_voucher || null,
         } as any);
       }
 
       // 6. Insert cash entry for total parts cost (only if positive and cash register is open)
       if (totalPartsCost > 0 && registerId) {
-        const partsConfirmed = !!(product as any).parts_payment_voucher;
+        const partsConfirmed = !!(localProduct as any)?.parts_payment_voucher;
         await supabase.from("cash_entries" as any).insert({
           cash_register_id: registerId,
           store_id: product.store_id,
@@ -577,7 +581,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           description: `Peças do Reparo (Total): ${product.name}`,
           payment_method: "pix",
           confirmed: partsConfirmed,
-          receipt_url: (product as any).parts_payment_voucher || null,
+          receipt_url: (localProduct as any)?.parts_payment_voucher || null,
           created_by: user.id,
         } as any);
 
@@ -592,7 +596,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           status: partsConfirmed ? "completed" : "pending",
           store_id: product.store_id,
           created_by: user.id,
-          receipt_url: (product as any).parts_payment_voucher || null,
+          receipt_url: (localProduct as any)?.parts_payment_voucher || null,
         } as any);
       }
 
@@ -908,14 +912,14 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                     {/* Comprovante do Aparelho */}
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-semibold text-muted-foreground">Comprovante do Aparelho</Label>
-                      {(product as any).device_payment_voucher ? (
+                      {localProduct?.device_payment_voucher ? (
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 text-xs text-green-600 bg-green-500/10 border border-green-500/20 p-2 rounded-lg font-medium">
                             <CheckCircle className="h-4 w-4 shrink-0" />
                             <span className="truncate">Enviado</span>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-7 text-[10px] flex-1" onClick={() => window.open((product as any).device_payment_voucher, "_blank")}>Ver</Button>
+                            <Button size="sm" variant="outline" className="h-7 text-[10px] flex-1" onClick={() => window.open(localProduct.device_payment_voucher, "_blank")}>Ver</Button>
                             <Button size="sm" variant="ghost" className="h-7 text-[10px] text-destructive flex-1" onClick={() => fileInputRef.current?.click()}>Alterar</Button>
                           </div>
                         </div>
@@ -937,14 +941,14 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                     {/* Comprovante das Peças */}
                     <div className="space-y-1.5">
                       <Label className="text-[10px] font-semibold text-muted-foreground">Comprovante das Peças</Label>
-                      {(product as any).parts_payment_voucher ? (
+                      {localProduct?.parts_payment_voucher ? (
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-1.5 text-xs text-green-600 bg-green-500/10 border border-green-500/20 p-2 rounded-lg font-medium">
                             <CheckCircle className="h-4 w-4 shrink-0" />
                             <span className="truncate">Enviado</span>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-7 text-[10px] flex-1" onClick={() => window.open((product as any).parts_payment_voucher, "_blank")}>Ver</Button>
+                            <Button size="sm" variant="outline" className="h-7 text-[10px] flex-1" onClick={() => window.open(localProduct.parts_payment_voucher, "_blank")}>Ver</Button>
                             <Button size="sm" variant="ghost" className="h-7 text-[10px] text-destructive flex-1" onClick={() => fileInputPartsRef.current?.click()}>Alterar</Button>
                           </div>
                         </div>
