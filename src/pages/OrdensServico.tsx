@@ -30,24 +30,26 @@ import { OsPhotoGallery } from "@/components/OsPhotoGallery";
 import { OsParts } from "@/components/OsParts";
 import { triggerWebhook } from "@/utils/webhookSender";
 import { logAction } from "@/utils/auditLogger";
+import { OSCard } from "@/components/features/os/OSCard";
+import { OSFormModal } from "@/components/features/os/OSFormModal";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
-const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condições descritas nesta OS.
-2. A loja não se responsabiliza por dados contidos no aparelho. Recomenda-se backup prévio.
-3. Em caso de não retirada do aparelho após 90 dias da conclusão do serviço, a loja poderá dispor do mesmo para cobrir custos.
-4. A garantia do serviço cobre apenas o defeito reparado e a peça substituída, pelo período de 90 dias.
-5. O orçamento inicial pode sofrer alterações após análise técnica, mediante aprovação do cliente.
-6. A loja não se responsabiliza por danos pré-existentes não descritos nesta OS.
-7. Serviços de diagnóstico podem ter custo mesmo que o reparo não seja efetuado.`;
+const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condiÃ§Ãµes descritas nesta OS.
+2. A loja nÃ£o se responsabiliza por dados contidos no aparelho. Recomenda-se backup prÃ©vio.
+3. Em caso de nÃ£o retirada do aparelho apÃ³s 90 dias da conclusÃ£o do serviÃ§o, a loja poderÃ¡ dispor do mesmo para cobrir custos.
+4. A garantia do serviÃ§o cobre apenas o defeito reparado e a peÃ§a substituÃ­da, pelo perÃ­odo de 90 dias.
+5. O orÃ§amento inicial pode sofrer alteraÃ§Ãµes apÃ³s anÃ¡lise tÃ©cnica, mediante aprovaÃ§Ã£o do cliente.
+6. A loja nÃ£o se responsabiliza por danos prÃ©-existentes nÃ£o descritos nesta OS.
+7. ServiÃ§os de diagnÃ³stico podem ter custo mesmo que o reparo nÃ£o seja efetuado.`;
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
   open:             { label: "Aberta",               color: "bg-blue-500/15 text-blue-400 border-blue-500/20",         icon: Clock       },
-  analyzing:        { label: "Em Análise",           color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
-  waiting_part:     { label: "Aguardando Peça",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20",   icon: Package     },
+  analyzing:        { label: "Em AnÃ¡lise",           color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
+  waiting_part:     { label: "Aguardando PeÃ§a",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20",   icon: Package     },
   repairing:        { label: "Em Reparo",            color: "bg-purple-500/15 text-purple-400 border-purple-500/20",   icon: Wrench      },
-  waiting_approval: { label: "Aguardando Aprovação", color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
+  waiting_approval: { label: "Aguardando AprovaÃ§Ã£o", color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
   ready:            { label: "Pronta p/ Retirada",   color: "bg-primary/15 text-primary border-primary/20",            icon: CheckCircle2 },
   delivered:        { label: "Entregue",             color: "bg-muted text-muted-foreground border-border",            icon: CheckCircle2 },
   cancelled:        { label: "Cancelada",            color: "bg-destructive/15 text-destructive border-destructive/20", icon: AlertCircle },
@@ -56,8 +58,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: typeof 
 const allStatuses = Object.keys(statusConfig);
 
 const paymentLabels: Record<string, string> = {
-  dinheiro: "Dinheiro", cartao_credito: "Cartão Crédito",
-  cartao_debito: "Cartão Débito", pix: "PIX", outro: "Outro",
+  dinheiro: "Dinheiro", cartao_credito: "CartÃ£o CrÃ©dito",
+  cartao_debito: "CartÃ£o DÃ©bito", pix: "PIX", outro: "Outro",
 };
 
 const createPendingCashEntry = async (
@@ -78,7 +80,7 @@ const createPendingCashEntry = async (
   let { data: register, error: regError } = await query.maybeSingle();
 
   if (regError) {
-    console.error("Erro ao buscar caixa do usuário (OS):", regError);
+    console.error("Erro ao buscar caixa do usuÃ¡rio (OS):", regError);
   }
 
   if (!register) {
@@ -117,11 +119,11 @@ const createPendingCashEntry = async (
     }
   } else {
     console.warn("Nenhum caixa aberto encontrado para storeId:", storeId);
-    toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor da OS não foi para o caixa!");
+    toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor da OS nÃ£o foi para o caixa!");
   }
 };
 
-// ── Gera PDF via jsPDF (importado dinamicamente) ──────────────────────────
+// â”€â”€ Gera PDF via jsPDF (importado dinamicamente) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const generateOSPdf = async (order: any, store: any, techName: string, publicUrl: string) => {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -130,7 +132,7 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
   const CW = W - M * 2; // content width
   let y = 0;
 
-  // ── REFINED PREMIUM PALETTE ──────────────────────────────────
+  // â”€â”€ REFINED PREMIUM PALETTE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const BLACK: [number, number, number] = [0, 0, 0];
   const DARK: [number, number, number] = [40, 40, 40];     // Principal values
   const MID: [number, number, number] = [80, 80, 80];      // Secondary info/Terms
@@ -145,9 +147,9 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
 
   const storeName = store?.name || "Assistencia Tecnica";
 
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  HEADER
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   doc.setFillColor(...BLACK);
   doc.rect(0, 0, W, 28, "F");
 
@@ -184,9 +186,9 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
 
   y = 32;
 
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  STATUS ROW
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const statusLabel = statusConfig[order.status]?.label ?? order.status;
   const dateStr = new Date(order.created_at).toLocaleString("pt-BR");
 
@@ -201,9 +203,9 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
 
   y += 13;
 
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  HELPERS
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const sectionBox = (title: string, contentFn: () => void) => {
     ensureSpace(35);
     const startY = y;
@@ -265,9 +267,9 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
     y += 4;
   };
 
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  CONTENT
-  // ══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   sectionBox("DADOS DO CLIENTE", () => {
     twoCol("Nome Completo", order.customer_name || "", "Telefone", order.customer_phone || "");
     if (order.customer_cpf) { divider(); fullField("CPF / Documento", order.customer_cpf); }
@@ -392,16 +394,16 @@ const generateOSPdf = async (order: any, store: any, techName: string, publicUrl
       doc.text(store.pdf_footer, W / 2, 290, { align: "center", maxWidth: CW });
     }
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(...SOFT);
-    doc.text(`${storeName}  |  ${new Date().toLocaleString("pt-BR")}  |  Cell Pro 360  |  Página ${i}/${pageCount}`, W / 2, 294, { align: "center" });
+    doc.text(`${storeName}  |  ${new Date().toLocaleString("pt-BR")}  |  Cell Pro 360  |  PÃ¡gina ${i}/${pageCount}`, W / 2, 294, { align: "center" });
   }
 
   return doc;
 };
 
-// ── Gera Cupom 80mm ──────────────────────────
+// â”€â”€ Gera Cupom 80mm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string) => {
   const { default: jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "mm", format: [80, 200] }); // Formato contínuo 80mm
+  const doc = new jsPDF({ unit: "mm", format: [80, 200] }); // Formato contÃ­nuo 80mm
   let y = 10;
   const W = 80;
   
@@ -423,11 +425,11 @@ const generateThermalPdf = async (order: any, store: any, techName: string, publ
   
   const line = () => { doc.line(5, y, W-5, y); y += 4; };
 
-  textC(store?.name || "Assistência Técnica", 12, true);
+  textC(store?.name || "AssistÃªncia TÃ©cnica", 12, true);
   if (store?.cnpj) textC(`CNPJ: ${store.cnpj}`, 8);
   if (store?.phone) textC(`Tel: ${store.phone}`, 8);
   line();
-  textC(`ORDEM DE SERVIÇO #${order.order_number}`, 10, true);
+  textC(`ORDEM DE SERVIÃ‡O #${order.order_number}`, 10, true);
   textC(new Date(order.created_at).toLocaleString("pt-BR"), 8);
   line();
   textL("Cliente", order.customer_name);
@@ -439,9 +441,9 @@ const generateThermalPdf = async (order: any, store: any, techName: string, publ
     textC("Nao testamos perifericos.", 7);
   }
   textL("Defeito", order.reported_defect);
-  textL("Serviço", order.requested_service);
+  textL("ServiÃ§o", order.requested_service);
   if (order.final_price) textL("Valor", formatCurrency(Number(order.final_price)));
-  else textL("Orçamento", formatCurrency(Number(order.estimated_price || 0)));
+  else textL("OrÃ§amento", formatCurrency(Number(order.estimated_price || 0)));
   line();
   textC("Acompanhe online:", 8);
   textC(publicUrl, 7);
@@ -598,7 +600,7 @@ const OrdensServico = () => {
     try {
       const storeIdToUse = activeStoreId === "all" ? form.store_id || stores[0]?.id : activeStoreId;
 
-      // Duplication check — 60 second window for same user + customer + device
+      // Duplication check â€” 60 second window for same user + customer + device
       const sixtySecondsAgo = new Date(Date.now() - 60000).toISOString();
       const { data: recentOS } = await supabase
         .from("service_orders")
@@ -611,7 +613,7 @@ const OrdensServico = () => {
         .limit(1);
 
       if (recentOS && recentOS.length > 0) {
-        toast.error("OS duplicada bloqueada! Uma OS idêntica foi criada há menos de 60 segundos.");
+        toast.error("OS duplicada bloqueada! Uma OS idÃªntica foi criada hÃ¡ menos de 60 segundos.");
         isSubmitting.current = false;
         setLoading(false);
         return;
@@ -665,7 +667,7 @@ const OrdensServico = () => {
       if (error) { 
         toast.error("Erro ao criar OS: " + error.message); 
       } else { 
-        toast.success("Ordem de Serviço criada!"); 
+        toast.success("Ordem de ServiÃ§o criada!"); 
         setDialogOpen(false); 
         resetForm(); 
         fetchData(); 
@@ -725,7 +727,7 @@ const OrdensServico = () => {
       const order = orders.find(o => o.id === orderId);
       if (order && (order as any).store_id) {
         const o = order as any;
-        const desc = `OS #${o.order_number} — ${o.requested_service} (${o.customer_name})`;
+        const desc = `OS #${o.order_number} â€” ${o.requested_service} (${o.customer_name})`;
         
         const cash = Number(o.payment_cash || 0);
         const card = Number(o.payment_card || 0);
@@ -747,7 +749,7 @@ const OrdensServico = () => {
             await createPendingCashEntry(o.store_id, user.id, amount, desc, "dinheiro");
             await supabase.from("transactions").insert({
               type: "income",
-              category: "Manutenção",
+              category: "ManutenÃ§Ã£o",
               amount,
               net_amount: amount,
               description: `${desc} [Dinheiro]`,
@@ -762,7 +764,7 @@ const OrdensServico = () => {
             await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
             await supabase.from("transactions").insert({
               type: "income",
-              category: "Manutenção",
+              category: "ManutenÃ§Ã£o",
               amount: cash,
               net_amount: cash,
               description: `${desc} [Dinheiro]`,
@@ -780,10 +782,10 @@ const OrdensServico = () => {
             expectedDate.setDate(expectedDate.getDate() + days);
             await supabase.from("transactions").insert({
               type: "income",
-              category: "Manutenção",
+              category: "ManutenÃ§Ã£o",
               amount: card,
               net_amount: card - (card * (fee / 100)),
-              description: `${desc} [Cartão]`,
+              description: `${desc} [CartÃ£o]`,
               store_id: o.store_id,
               created_by: user.id,
               destination_account_id: defaultAccountId,
@@ -799,7 +801,7 @@ const OrdensServico = () => {
             expectedDate.setDate(expectedDate.getDate() + days);
             await supabase.from("transactions").insert({
               type: "income",
-              category: "Manutenção",
+              category: "ManutenÃ§Ã£o",
               amount: pix,
               net_amount: pix - (pix * (fee / 100)),
               description: `${desc} [PIX]`,
@@ -814,7 +816,7 @@ const OrdensServico = () => {
             await createPendingCashEntry(o.store_id, user.id, other, desc, "outro");
             await supabase.from("transactions").insert({
               type: "income",
-              category: "Manutenção",
+              category: "ManutenÃ§Ã£o",
               amount: other,
               net_amount: other,
               description: `${desc} [Outro]`,
@@ -826,7 +828,7 @@ const OrdensServico = () => {
             });
           }
         }
-        toast.info("Lançamentos financeiros registrados.");
+        toast.info("LanÃ§amentos financeiros registrados.");
       }
     }
 
@@ -834,7 +836,7 @@ const OrdensServico = () => {
     fetchData();
     if (detailOrder?.id === orderId) setDetailOrder({ ...detailOrder, status: newStatus });
     
-    // Pequeno atraso para liberar o botão, evitando multi-clicks
+    // Pequeno atraso para liberar o botÃ£o, evitando multi-clicks
     setTimeout(() => {
       isSubmitting.current = false;
     }, 1000);
@@ -842,7 +844,7 @@ const OrdensServico = () => {
 
   const handleUpdateService = async () => {
     if (!user || !detailOrder) return;
-    if (!updateForm.justification) { toast.error("Informe o motivo da alteração!"); return; }
+    if (!updateForm.justification) { toast.error("Informe o motivo da alteraÃ§Ã£o!"); return; }
     setLoading(true);
 
     const updates: any = {};
@@ -866,7 +868,7 @@ const OrdensServico = () => {
     const { error } = await supabase.from("service_orders").update(updates).eq("id", detailOrder.id);
     if (error) { toast.error(error.message); }
     else {
-      toast.success("Serviço atualizado!");
+      toast.success("ServiÃ§o atualizado!");
       const updated = { ...detailOrder, ...updates };
       setDetailOrder(updated);
       fetchData();
@@ -882,7 +884,7 @@ const OrdensServico = () => {
     if (error) {
       toast.error("Erro ao excluir: " + error.message);
     } else {
-      toast.success("Ordem de Serviço removida!");
+      toast.success("Ordem de ServiÃ§o removida!");
       setDetailOrder(null);
       fetchData();
       logAction("DELETE_RECORD", "service_orders", id, null, { reason }, activeStoreId);
@@ -908,7 +910,7 @@ const OrdensServico = () => {
   const handleExportPdf = async (order: any) => {
     setPdfLoading(true);
     try {
-      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
+      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "AssistÃªncia TÃ©cnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
@@ -923,7 +925,7 @@ const OrdensServico = () => {
   const handleExportThermal = async (order: any) => {
     setPdfLoading(true);
     try {
-      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
+      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "AssistÃªncia TÃ©cnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateThermalPdf(order, storeObj, techName, publicUrl);
@@ -937,7 +939,7 @@ const OrdensServico = () => {
     if (!order.customer_phone) { toast.error("Cliente sem telefone cadastrado!"); return; }
     setPdfLoading(true);
     try {
-      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
+      const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "AssistÃªncia TÃ©cnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
@@ -956,7 +958,7 @@ const OrdensServico = () => {
 
       const phone = order.customer_phone.replace(/\D/g, "");
       const msg = encodeURIComponent(
-        `Olá ${order.customer_name}! 👋\n\nSua Ordem de Serviço #${order.order_number} está com status: *${statusConfig[order.status]?.label}*.\n\n📄 Acesse sua OS completa:\n${shareUrl}\n\n_${storeObj.name}_`
+        `OlÃ¡ ${order.customer_name}! ðŸ‘‹\n\nSua Ordem de ServiÃ§o #${order.order_number} estÃ¡ com status: *${statusConfig[order.status]?.label}*.\n\nðŸ“„ Acesse sua OS completa:\n${shareUrl}\n\n_${storeObj.name}_`
       );
       window.open(`https://wa.me/55${phone}?text=${msg}`, "_blank");
       toast.success("WhatsApp aberto!");
@@ -1024,7 +1026,7 @@ const OrdensServico = () => {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Ordens de Serviço</h1>
+          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Ordens de ServiÃ§o</h1>
           <p className="text-muted-foreground text-sm mt-0.5">{orders.length} ordens registradas</p>
         </div>
         {isAdmin && (
@@ -1045,236 +1047,27 @@ const OrdensServico = () => {
             </Select>
           </div>
         )}
-        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 h-10"><Plus className="h-4 w-4" /> Nova OS</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="font-display">Abrir Ordem de Serviço</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Cliente */}
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                  <User className="h-3 w-3" /> Dados do Cliente
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Nome *</Label>
-                    <Input value={form.customer_name} onChange={(e) => setForm(prev => ({ ...prev, customer_name: e.target.value }))} placeholder="Nome completo" required className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Telefone</Label>
-                    <Input value={form.customer_phone} onChange={(e) => setForm(prev => ({ ...prev, customer_phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">CPF</Label>
-                    <Input value={form.customer_cpf} onChange={(e) => setForm(prev => ({ ...prev, customer_cpf: e.target.value }))} placeholder="000.000.000-00" className="h-10" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Aparelho */}
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                  <Phone className="h-3 w-3" /> Dados do Aparelho
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Marca *</Label>
-                    <Select value={form.device_brand} onValueChange={(v) => setForm({ ...form, device_brand: v })}>
-                      <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {["iPhone","Samsung","Xiaomi","Motorola","Huawei","Outro"].map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Modelo *</Label>
-                    <Input value={form.device_model} onChange={(e) => setForm(prev => ({ ...prev, device_model: e.target.value }))} placeholder="iPhone 13 Pro" required className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">IMEI</Label>
-                    <Input value={form.device_imei} onChange={(e) => setForm(prev => ({ ...prev, device_imei: e.target.value }))} placeholder="352000000000000" className="h-10" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Cor</Label>
-                    <Input value={form.device_color} onChange={(e) => setForm(prev => ({ ...prev, device_color: e.target.value }))} placeholder="Preto" className="h-10" />
-                  </div>
-                  <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                    <Label className="text-xs">Senha / Padrão</Label>
-                    <div className="flex gap-1 mb-2">
-                      <button
-                        type="button"
-                        onClick={() => setPasswordType("text")}
-                        className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${passwordType === "text" ? "bg-primary text-white border-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
-                      >
-                        Senha
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPasswordType("pattern")}
-                        className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${passwordType === "pattern" ? "bg-primary text-white border-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
-                      >
-                        Padrão Android
-                      </button>
-                    </div>
-                    {passwordType === "text" ? (
-                      <Input value={form.device_password} onChange={(e) => setForm(prev => ({ ...prev, device_password: e.target.value }))} placeholder="****" className="h-10" />
-                    ) : (
-                      <AndroidPatternLock
-                        size={210}
-                        onPattern={(pattern, imgData) => {
-                          setForm({ ...form, device_password: pattern ? `Padrão: ${pattern}` : "" });
-                          setPatternImageData(imgData);
-                        }}
-                      />
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Acessórios</Label>
-                    <Input value={form.device_accessories} onChange={(e) => setForm(prev => ({ ...prev, device_accessories: e.target.value }))} placeholder="Carregador, capa" className="h-10" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/5 p-3 my-2">
-                  <div className="space-y-0.5 max-w-[85%]">
-                    <Label className="text-xs text-red-500 font-bold block cursor-pointer" htmlFor="device-is-off-switch">
-                      Aparelho está dando entrada Desligado
-                    </Label>
-                    <span className="text-[10px] text-muted-foreground block">
-                      Não temos como testar seus periféricos e afirmar que estão em perfeito funcionamento.
-                    </span>
-                  </div>
-                  <Switch 
-                    id="device-is-off-switch"
-                    checked={form.device_is_off}
-                    onCheckedChange={(checked) => handleDeviceOffChange(checked)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Condição Física</Label>
-                  <Textarea value={form.device_condition} onChange={(e) => setForm(prev => ({ ...prev, device_condition: e.target.value }))} placeholder="Descreva avarias existentes" className="min-h-[60px]" />
-                </div>
-              </div>
-
-              {/* Serviço */}
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                  <Wrench className="h-3 w-3" /> Serviço
-                </p>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Defeito Relatado *</Label>
-                  <Textarea value={form.reported_defect} onChange={(e) => setForm(prev => ({ ...prev, reported_defect: e.target.value }))} placeholder="Descreva o problema relatado pelo cliente" required className="min-h-[60px]" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Loja da OS</Label>
-                    <Select 
-                      value={form.store_id || (activeStoreId === "all" ? "" : activeStoreId)} 
-                      onValueChange={(v) => setForm(prev => ({ ...prev, store_id: v }))}
-                      disabled={activeStoreId !== "all"}
-                    >
-                      <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                      <SelectContent>
-                        {stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Previsão de Entrega</Label>
-                    <Input type="datetime-local" value={form.estimated_completion} onChange={(e) => setForm(prev => ({ ...prev, estimated_completion: e.target.value }))} className="h-10" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Serviço Solicitado *</Label>
-                  <Select value={form.requested_service} onValueChange={(v) => setForm(prev => ({ ...prev, requested_service: v }))}>
-                    <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o serviço" /></SelectTrigger>
-                    <SelectContent>
-                      {["Troca de Tela","Troca de Bateria","Reparo de Placa","Troca de Conector","Troca de Câmera","Desbloqueio","Formatação","Diagnóstico","Outro"].map((s) => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Valor Estimado (R$)</Label>
-                    <Input type="number" step="0.01" value={form.estimated_price} onChange={(e) => setForm(prev => ({ ...prev, estimated_price: e.target.value }))} placeholder="150.00" className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Técnico Responsável</Label>
-                    <Select value={form.technician_id} onValueChange={(v) => setForm(prev => ({ ...prev, technician_id: v }))}>
-                      <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                      <SelectContent>
-                        {profiles.map((p) => <SelectItem key={p.user_id} value={p.user_id}>{p.display_name ?? p.user_id}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Loja</Label>
-                    <Select value={form.store_id} onValueChange={(v) => setForm(prev => ({ ...prev, store_id: v }))}>
-                      <SelectTrigger className="h-10"><SelectValue placeholder="Selecione a loja" /></SelectTrigger>
-                      <SelectContent>{stores.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Checklist de Entrada */}
-              <OsChecklist
-                title="Checklist de Entrada"
-                data={form.entry_checklist}
-                onChange={(d) => setForm(prev => ({ ...prev, entry_checklist: d }))}
-                deviceIsOff={form.device_is_off}
-              />
-
-              {/* Termos */}
-              <div className="space-y-3 rounded-lg border border-border p-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Termos e Condições</p>
-                <div className="rounded bg-muted/50 p-3 max-h-32 overflow-y-auto">
-                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">{TERMS_TEXT}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch checked={form.terms_accepted} onCheckedChange={(v) => setForm(prev => ({ ...prev, terms_accepted: v }))} />
-                  <Label className="text-xs">Cliente aceita os termos acima</Label>
-                </div>
-              </div>
-
-              {form.device_is_off && (
-                <div className="flex items-start gap-2.5 rounded-lg border border-red-500/25 bg-red-500/5 p-3.5 my-2">
-                  <Checkbox 
-                    id="device-off-agreement"
-                    checked={deviceOffAgreed} 
-                    onCheckedChange={(v) => setDeviceOffAgreed(!!v)} 
-                    className="mt-0.5 border-red-500/50 data-[state=checked]:bg-red-500 data-[state=checked]:text-white"
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="device-off-agreement" className="text-xs leading-normal font-semibold text-red-500 cursor-pointer block">
-                      Declaração de Aparelho Desligado *
-                    </Label>
-                    <span className="text-[10.5px] text-muted-foreground block leading-relaxed">
-                      Concordo e declaro estar ciente de que o <strong>Aparelho está dando entrada Desligado (Não temos como testar seus periféricos e afirmar que estão em perfeito funcionamento)</strong>.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <SignatureCanvas onSave={setSignatureData} initialData={signatureData} />
-
-              <div className="space-y-1.5">
-                <Label className="text-xs">Observações Internas</Label>
-                <Textarea value={form.internal_notes} onChange={(e) => setForm(prev => ({ ...prev, internal_notes: e.target.value }))} placeholder="Notas internas (não aparecem para o cliente)..." className="min-h-[50px]" />
-              </div>
-
-              <Button type="submit" className="w-full h-11 font-semibold" disabled={loading || isSubmitting.current || !form.requested_service}>
-                {loading || isSubmitting.current ? "Criando OS... aguarde" : "Abrir Ordem de Serviço"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <OSFormModal
+          dialogOpen={dialogOpen}
+          setDialogOpen={setDialogOpen}
+          resetForm={resetForm}
+          handleSubmit={handleSubmit}
+          form={form}
+          setForm={setForm}
+          passwordType={passwordType}
+          setPasswordType={setPasswordType}
+          setPatternImageData={setPatternImageData}
+          handleDeviceOffChange={handleDeviceOffChange}
+          activeStoreId={activeStoreId}
+          stores={stores}
+          profiles={profiles}
+          signatureData={signatureData}
+          setSignatureData={setSignatureData}
+          deviceOffAgreed={deviceOffAgreed}
+          setDeviceOffAgreed={setDeviceOffAgreed}
+          loading={loading}
+          isSubmitting={isSubmitting.current}
+        />
       </div>
 
       {/* Status chips */}
@@ -1293,7 +1086,7 @@ const OrdensServico = () => {
       <div className="flex gap-2 w-full flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, IMEI, modelo ou nº da OS..." className="pl-9 h-10" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, IMEI, modelo ou nÂº da OS..." className="pl-9 h-10" />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Label className="text-xs text-muted-foreground shrink-0">De</Label>
@@ -1303,7 +1096,7 @@ const OrdensServico = () => {
             onChange={e => setFilterStartDate(e.target.value)}
             className="h-10 w-[145px]"
           />
-          <Label className="text-xs text-muted-foreground shrink-0">Até</Label>
+          <Label className="text-xs text-muted-foreground shrink-0">AtÃ©</Label>
           <Input
             type="date"
             value={filterEndDate}
@@ -1329,36 +1122,18 @@ const OrdensServico = () => {
       {/* List or Kanban */}
       {viewMode === "list" ? (
       <div className="space-y-2">
-        {filtered.length > 0 ? filtered.map((order: any) => {
-          const sc = statusConfig[order.status] || statusConfig.open;
-          return (
-            <Card key={order.id} className="border-border/50 shadow-lg shadow-black/10 cursor-pointer hover:border-primary/30 transition-colors" onClick={() => openDetail(order)}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-muted-foreground font-mono">#{order.order_number}</span>
-                      <p className="font-medium text-sm truncate">{order.customer_name}</p>
-                      <Badge className={`text-[10px] border ${sc.color}`}>{sc.label}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {order.device_brand} {order.device_model}{order.device_imei && ` · ${order.device_imei}`}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {order.requested_service} · {storeMap.get(order.store_id || "") || "—"}
-                      {order.technician_id && ` · ${profileMap.get(order.technician_id) ?? ""}`}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-display font-bold text-sm">{formatCurrency(Number(order.final_price || order.estimated_price || 0))}</p>
-                    {totalPaid(order) > 0 && <p className="text-[10px] text-primary">Pago: {formatCurrency(totalPaid(order))}</p>}
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{new Date(order.created_at).toLocaleDateString("pt-BR")}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        }) : (
+        {filtered.length > 0 ? filtered.map((order: any) => (
+          <OSCard
+            key={order.id}
+            order={order}
+            statusConfig={statusConfig}
+            storeMap={storeMap}
+            profileMap={profileMap}
+            formatCurrency={formatCurrency}
+            totalPaid={totalPaid}
+            onClick={() => openDetail(order)}
+          />
+        )) : (
           <Card className="border-border/50">
             <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <Wrench className="h-10 w-10 mb-3 opacity-30" />
@@ -1388,12 +1163,12 @@ const OrdensServico = () => {
               <DialogHeader>
                 <DialogTitle className="font-display flex items-center gap-2">
                   <span className="text-muted-foreground font-mono text-sm">#{detailOrder.order_number}</span>
-                  OS — {detailOrder.customer_name}
+                  OS â€” {detailOrder.customer_name}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
 
-                {/* Status + ações */}
+                {/* Status + aÃ§Ãµes */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`text-[10px] border ${statusConfig[detailOrder.status]?.color}`}>
@@ -1417,7 +1192,7 @@ const OrdensServico = () => {
                   </div>
                 </div>
 
-                {/* Link público */}
+                {/* Link pÃºblico */}
                 <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
                   <span className="text-[10px] text-muted-foreground flex-1 truncate">{getPublicUrl(detailOrder.id)}</span>
                   <Button className="h-6 text-[10px] bg-transparent hover:bg-muted"
@@ -1430,7 +1205,7 @@ const OrdensServico = () => {
                 <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
                   <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Cliente</p>
                   <p className="font-medium">{detailOrder.customer_name}</p>
-                  {detailOrder.customer_phone && <p>📞 {detailOrder.customer_phone}</p>}
+                  {detailOrder.customer_phone && <p>ðŸ“ž {detailOrder.customer_phone}</p>}
                   {detailOrder.customer_cpf && <p>CPF: {detailOrder.customer_cpf}</p>}
                 </div>
 
@@ -1440,28 +1215,28 @@ const OrdensServico = () => {
                   <p className="font-medium">{detailOrder.device_brand} {detailOrder.device_model}</p>
                   {detailOrder.device_imei && <p>IMEI: {detailOrder.device_imei}</p>}
                   {detailOrder.device_color && <p>Cor: {detailOrder.device_color}</p>}
-                  {detailOrder.device_condition && <p>Condição: {detailOrder.device_condition}</p>}
-                  {detailOrder.device_accessories && <p>Acessórios: {detailOrder.device_accessories}</p>}
+                  {detailOrder.device_condition && <p>CondiÃ§Ã£o: {detailOrder.device_condition}</p>}
+                  {detailOrder.device_accessories && <p>AcessÃ³rios: {detailOrder.device_accessories}</p>}
                   {detailOrder.device_is_off && (
                     <div className="mt-2 p-2.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[10px] font-bold leading-normal">
-                      ⚠️ APARELHO DEU ENTRADA DESLIGADO
+                      âš ï¸ APARELHO DEU ENTRADA DESLIGADO
                       <span className="block font-medium text-muted-foreground mt-0.5">
-                        Não foi possível testar os periféricos e afirmar que estão em perfeito funcionamento.
+                        NÃ£o foi possÃ­vel testar os perifÃ©ricos e afirmar que estÃ£o em perfeito funcionamento.
                       </span>
                     </div>
                   )}
                 </div>
 
-                {/* Serviço */}
+                {/* ServiÃ§o */}
                 <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
-                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Serviço</p>
+                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">ServiÃ§o</p>
                   <p><span className="text-muted-foreground">Defeito:</span> {detailOrder.reported_defect}</p>
-                  <p><span className="text-muted-foreground">Serviço:</span> {detailOrder.requested_service}</p>
-                  {detailOrder.technician_id && <p><span className="text-muted-foreground">Técnico:</span> {profileMap.get(detailOrder.technician_id) ?? "—"}</p>}
+                  <p><span className="text-muted-foreground">ServiÃ§o:</span> {detailOrder.requested_service}</p>
+                  {detailOrder.technician_id && <p><span className="text-muted-foreground">TÃ©cnico:</span> {profileMap.get(detailOrder.technician_id) ?? "â€”"}</p>}
                   <p><span className="text-muted-foreground">Estimado:</span> {formatCurrency(Number(detailOrder.estimated_price || 0))}</p>
                   {detailOrder.final_price && <p><span className="text-muted-foreground">Final:</span> <span className="font-bold text-primary">{formatCurrency(Number(detailOrder.final_price))}</span></p>}
-                  {detailOrder.estimated_completion && <p><span className="text-muted-foreground">Previsão:</span> {new Date(detailOrder.estimated_completion).toLocaleString("pt-BR")}</p>}
-                  {detailOrder.warranty_end_date && <p><span className="text-muted-foreground">Garantia até:</span> <span className="font-bold text-green-500">{new Date(detailOrder.warranty_end_date).toLocaleDateString("pt-BR")}</span></p>}
+                  {detailOrder.estimated_completion && <p><span className="text-muted-foreground">PrevisÃ£o:</span> {new Date(detailOrder.estimated_completion).toLocaleString("pt-BR")}</p>}
+                  {detailOrder.warranty_end_date && <p><span className="text-muted-foreground">Garantia atÃ©:</span> <span className="font-bold text-green-500">{new Date(detailOrder.warranty_end_date).toLocaleDateString("pt-BR")}</span></p>}
                 </div>
 
                 {/* Entry Checklist Viewer */}
@@ -1477,7 +1252,7 @@ const OrdensServico = () => {
                 {/* Galeria de Fotos */}
                 <OsPhotoGallery orderId={detailOrder.id} />
 
-                {/* Peças da OS */}
+                {/* PeÃ§as da OS */}
                 <OsParts orderId={detailOrder.id} storeId={detailOrder.store_id} />
 
                 {/* Pagamento atual */}
@@ -1485,7 +1260,7 @@ const OrdensServico = () => {
                   <div className="rounded-lg bg-muted/50 p-3 space-y-1 text-xs">
                     <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Pagamento Recebido</p>
                     {Number(detailOrder.payment_cash) > 0 && <p><span className="text-muted-foreground">Dinheiro:</span> {formatCurrency(Number(detailOrder.payment_cash))}</p>}
-                    {Number(detailOrder.payment_card) > 0 && <p><span className="text-muted-foreground">Cartão:</span> {formatCurrency(Number(detailOrder.payment_card))}</p>}
+                    {Number(detailOrder.payment_card) > 0 && <p><span className="text-muted-foreground">CartÃ£o:</span> {formatCurrency(Number(detailOrder.payment_card))}</p>}
                     {Number(detailOrder.payment_pix) > 0 && <p><span className="text-muted-foreground">PIX:</span> {formatCurrency(Number(detailOrder.payment_pix))}</p>}
                     {Number(detailOrder.payment_other) > 0 && <p><span className="text-muted-foreground">Outro:</span> {formatCurrency(Number(detailOrder.payment_other))}</p>}
                     <p className="font-bold text-primary">Total: {formatCurrency(totalPaid(detailOrder))}</p>
@@ -1512,29 +1287,29 @@ const OrdensServico = () => {
 
                 {/* Termos */}
                 <div className="rounded-lg border border-border p-3 text-xs">
-                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide mb-2">Termos e Condições</p>
+                  <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide mb-2">Termos e CondiÃ§Ãµes</p>
                   <div className="max-h-28 overflow-y-auto">
                     <p className="text-muted-foreground leading-relaxed whitespace-pre-line">{TERMS_TEXT}</p>
                   </div>
                   {detailOrder.terms_accepted && (
                     <div className="flex items-center gap-1 mt-2 text-primary font-medium">
                       <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
-                      <span className="text-[10px]">Cliente aceitou os termos de serviço</span>
+                      <span className="text-[10px]">Cliente aceitou os termos de serviÃ§o</span>
                     </div>
                   )}
                   {detailOrder.device_is_off && (
                     <div className="flex items-center gap-1 mt-1 text-red-500 font-bold">
                       <CheckCircle2 className="h-3.5 w-3.5 text-red-500" />
-                      <span className="text-[10px]">Cliente ciente: Aparelho entrou Desligado (sem teste de periféricos)</span>
+                      <span className="text-[10px]">Cliente ciente: Aparelho entrou Desligado (sem teste de perifÃ©ricos)</span>
                     </div>
                   )}
                 </div>
 
-                {/* Atualizar serviço */}
+                {/* Atualizar serviÃ§o */}
                 {detailOrder.status !== "cancelled" && (
                   <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
                     <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                      <DollarSign className="h-3.5 w-3.5" /> Atualizar Serviço
+                      <DollarSign className="h-3.5 w-3.5" /> Atualizar ServiÃ§o
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -1549,7 +1324,7 @@ const OrdensServico = () => {
                                onChange={e => setUpdateForm(f => ({ ...f, warranty_end_date: e.target.value }))} className="h-9 text-xs" />
                       </div>
                       <div className="space-y-1.5 col-span-2">
-                        <Label className="text-xs">Técnico Responsável</Label>
+                        <Label className="text-xs">TÃ©cnico ResponsÃ¡vel</Label>
                         <Select value={updateForm.technician_id} onValueChange={v => setUpdateForm(f => ({ ...f, technician_id: v }))}>
                           <SelectTrigger className="h-9"><SelectValue placeholder="Selecione" /></SelectTrigger>
                           <SelectContent>
@@ -1561,7 +1336,7 @@ const OrdensServico = () => {
 
                     <div className="pt-2">
                        <OsChecklist
-                         title="Checklist de Saída (Testes Pós-Reparo)"
+                         title="Checklist de SaÃ­da (Testes PÃ³s-Reparo)"
                          data={updateForm.exit_checklist}
                          onChange={(d) => setUpdateForm({ ...updateForm, exit_checklist: d })}
                        />
@@ -1574,7 +1349,7 @@ const OrdensServico = () => {
                         <Input type="number" step="0.01" value={updateForm.payment_cash} onChange={e => setUpdateForm(f => ({ ...f, payment_cash: e.target.value }))} placeholder="0.00" className="h-8 text-xs" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[10px] flex items-center gap-1"><CreditCard className="h-3 w-3" /> Cartão</Label>
+                        <Label className="text-[10px] flex items-center gap-1"><CreditCard className="h-3 w-3" /> CartÃ£o</Label>
                         <Input type="number" step="0.01" value={updateForm.payment_card} onChange={e => setUpdateForm(f => ({ ...f, payment_card: e.target.value }))} placeholder="0.00" className="h-8 text-xs" />
                       </div>
                       <div className="space-y-1">
@@ -1588,7 +1363,7 @@ const OrdensServico = () => {
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs">Obs. de Pagamento</Label>
-                      <Input value={updateForm.payment_notes} onChange={e => setUpdateForm(f => ({ ...f, payment_notes: e.target.value }))} placeholder="Ex: Parte em dinheiro, parte no cartão" className="h-9" />
+                      <Input value={updateForm.payment_notes} onChange={e => setUpdateForm(f => ({ ...f, payment_notes: e.target.value }))} placeholder="Ex: Parte em dinheiro, parte no cartÃ£o" className="h-9" />
                     </div>
 
                     <div className="space-y-1.5">
@@ -1604,7 +1379,7 @@ const OrdensServico = () => {
                       ) : existingReceiptUrl ? (
                         <div className="flex items-center gap-2 rounded bg-green-500/10 p-2 text-[10px] text-green-600 border border-green-500/20 font-medium">
                           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate flex-1">Comprovante já enviado</span>
+                          <span className="truncate flex-1">Comprovante jÃ¡ enviado</span>
                           <button onClick={() => setExistingReceiptUrl(null)} className="text-destructive hover:underline">Trocar</button>
                         </div>
                       ) : (
@@ -1633,18 +1408,18 @@ const OrdensServico = () => {
                     )}
 
                     <div className="space-y-1.5 pt-2">
-                      <Label className="text-xs font-semibold text-primary">Campo Obrigatório: Motivo da Alteração</Label>
+                      <Label className="text-xs font-semibold text-primary">Campo ObrigatÃ³rio: Motivo da AlteraÃ§Ã£o</Label>
                       <Input 
                         value={updateForm.justification} 
                         onChange={e => setUpdateForm(f => ({ ...f, justification: e.target.value }))} 
-                        placeholder="Ex: Atualização de preço, peça adicionada, técnico alterado..." 
+                        placeholder="Ex: AtualizaÃ§Ã£o de preÃ§o, peÃ§a adicionada, tÃ©cnico alterado..." 
                         required 
                         className="h-10 border-primary/40 shadow-sm"
                       />
                     </div>
 
                     <Button className="w-full h-10 font-bold" onClick={handleUpdateService} disabled={loading || !updateForm.justification}>
-                      {loading ? "Salvando..." : "Salvar Alterações e Justificar"}
+                      {loading ? "Salvando..." : "Salvar AlteraÃ§Ãµes e Justificar"}
                     </Button>
                   </div>
                 )}
@@ -1671,7 +1446,7 @@ const OrdensServico = () => {
                   </div>
                 )}
 
-                {/* Área Administrativa */}
+                {/* Ãrea Administrativa */}
                 {isAdmin && (
                   <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-4">
                     <p className="text-xs font-bold text-destructive uppercase tracking-wider flex items-center gap-2">
@@ -1684,7 +1459,7 @@ const OrdensServico = () => {
                         <Input 
                           value={justification} 
                           onChange={(e) => setJustification(e.target.value)} 
-                          placeholder="Motivo da transferência..." 
+                          placeholder="Motivo da transferÃªncia..." 
                           className="h-8 text-xs border-destructive/20" 
                         />
                         <Select 
@@ -1713,10 +1488,10 @@ const OrdensServico = () => {
                         }}
                         disabled={loading}
                       >
-                        <Trash2 className="h-3.5 w-3.5" /> Excluir Ordem de Serviço
+                        <Trash2 className="h-3.5 w-3.5" /> Excluir Ordem de ServiÃ§o
                       </Button>
                       <p className="text-[10px] text-center text-destructive/60 mt-2 italic">
-                        Esta ação é irreversível e removerá todos os registros vinculados.
+                        Esta aÃ§Ã£o Ã© irreversÃ­vel e removerÃ¡ todos os registros vinculados.
                       </p>
                     </div>
                   </div>
@@ -1732,12 +1507,12 @@ const OrdensServico = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" /> Confirmar Ação
+              <AlertCircle className="h-5 w-5" /> Confirmar AÃ§Ã£o
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              {actionType === "delete" ? "Esta ação excluirá a OS permanentemente." : "Você está alterando o status para uma fase crítica."}
+              {actionType === "delete" ? "Esta aÃ§Ã£o excluirÃ¡ a OS permanentemente." : "VocÃª estÃ¡ alterando o status para uma fase crÃ­tica."}
               <br />Por favor, informe uma justificativa:
             </p>
             <div className="space-y-1.5">

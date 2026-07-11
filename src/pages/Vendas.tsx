@@ -25,6 +25,11 @@ import type { Tables } from "@/integrations/supabase/types";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
 import { triggerWebhook } from "@/utils/webhookSender";
 import { logAction } from "@/utils/auditLogger";
+import { useCustomerManager } from "@/hooks/features/vendas/useCustomerManager";
+import { useCartManager } from "@/hooks/features/vendas/useCartManager";
+import { useVendas } from "@/hooks/features/vendas/useVendas";
+import { PdvFormModal } from "@/components/features/vendas/PdvFormModal";
+import { DetalhesVendaModal } from "@/components/features/vendas/DetalhesVendaModal";
 
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -48,107 +53,42 @@ type Customer = Tables<"customers">;
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };
 
-const createPendingCashEntry = async (storeId: string, userId: string, amount: number, description: string, paymentMethod: string, retroDate?: string, referenceKey?: string) => {
-  let query = supabase
-    .from("cash_registers" as any)
-    .select("id, store_id")
-    .eq("status", "open")
-    .eq("opened_by", userId);
-    
-  if (storeId && storeId !== "all") {
-    query = query.eq("store_id", storeId);
-  }
-
-  let { data: register, error: regError } = await query.maybeSingle();
-
-  if (regError) {
-    console.error("Erro ao buscar caixa do usuário:", regError);
-  }
-
-  if (!register) {
-    let fallbackQuery = supabase
-      .from("cash_registers" as any)
-      .select("id, store_id")
-      .eq("status", "open");
-      
-    if (storeId && storeId !== "all") {
-      fallbackQuery = fallbackQuery.eq("store_id", storeId);
-    }
-    
-    const { data: fallbackRegister, error: fallError } = await fallbackQuery.limit(1).maybeSingle();
-      
-    if (fallError) {
-      console.error("Erro ao buscar caixa fallback:", fallError);
-    }
-    register = fallbackRegister;
-  }
-
-  const registerId = register ? (register as any).id : null;
-
-  if (registerId) {
-    const actualStoreId = (register as any)?.store_id || (storeId !== "all" ? storeId : null);
-    const { error: insertError } = await supabase.from("cash_entries" as any).insert({
-      cash_register_id: registerId, store_id: actualStoreId,
-      type: "entrada", amount, description,
-      payment_method: paymentMethod, receipt_url: null, confirmed: false, created_by: userId,
-      ...(retroDate ? { created_at: new Date(retroDate + "T12:00:00").toISOString() } : {}),
-    });
-    
-    if (insertError) {
-      console.error("Erro ao inserir cash_entry:", insertError);
-      throw new Error(insertError.message);
-    }
-  } else {
-    console.warn("Nenhum caixa aberto encontrado para storeId:", storeId);
-    throw new Error("Nenhum caixa aberto na loja atual. Abra um caixa antes de registrar a venda!");
-  }
-};
+import { createPendingCashEntry, formatDescription } from "@/lib/services/salesService";
+// Note: cash_register_id is now delegated to salesService.ts to keep this component clean.
 
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
 
-const formatDescription = (desc: string | null) => {
-  if (!desc) return "";
-  const match = desc.match(/\[MISTO:(\{.*\})\]/);
-  if (match) {
-    try {
-      const parsed = JSON.parse(match[1]);
-      const parts = [];
-      if (parsed.dinheiro > 0) parts.push(`Dinheiro: R$ ${parsed.dinheiro}`);
-      if (parsed.pix > 0) parts.push(`PIX: R$ ${parsed.pix}`);
-      if (parsed.cartao_credito > 0) parts.push(`Cartão: R$ ${parsed.cartao_credito}`);
-      return desc.replace(match[0], `[Misto: ${parts.join(" | ")}]`);
-    } catch (e) {
-      return desc;
-    }
-  }
-  return desc;
-};
-
 const Vendas = () => {
   const { user, userRole, activeStoreId, setActiveStoreId } = useAuth();
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [products, setProducts] = useState<Tables<"products">[]>([]);
-  const [accessories, setAccessories] = useState<Accessory[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-  const [pdvSales, setPdvSales] = useState<any[]>([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [pdvOpen, setPdvOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [notaLoading, setNotaLoading] = useState<string | null>(null);
-  const [accSearch, setAccSearch] = useState("");
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const {
+    sales, setSales,
+    products, setProducts,
+    accessories, setAccessories,
+    stores, profiles, customers, setCustomers, bankAccounts,
+    pdvSales, setPdvSales,
+    loading, setLoading,
+    currentUserCommissionPercent,
+    fetchData
+  } = useVendas();
 
-  // Customer search state
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [showCustomerHistory, setShowCustomerHistory] = useState(false);
-  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
-  const [newCustomerForm, setNewCustomerForm] = useState(emptyCustomerForm);
-  const [customerSalesHistory, setCustomerSalesHistory] = useState<Sale[]>([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [notaLoading, setNotaLoading] = useState<string | null>(null);
+
+  const {
+    cart, setCart, accSearch, setAccSearch, pdvOpen, setPdvOpen, pdvPayment, setPdvPayment,
+    filteredAcc, addToCart, updateCartQty, updateCartPrice, resetPdv, handlePdvSubmit
+  } = useCartManager(accessories, activeStoreId, user, setLoading, fetchData, stores);
+
+  const {
+    customerSearch, setCustomerSearch,
+    customerResults, setCustomerResults,
+    selectedCustomer, setSelectedCustomer,
+    showCustomerHistory, setShowCustomerHistory,
+    showNewCustomerForm, setShowNewCustomerForm,
+    newCustomerForm, setNewCustomerForm,
+    customerSalesHistory, setCustomerSalesHistory,
+    selectCustomer, clearCustomer, handleCreateCustomer
+  } = useCustomerManager(customers, activeStoreId, user, setLoading, (c) => setCustomers(prev => [...prev, c]));
   const [justification, setJustification] = useState("");
   const [deleteItem, setDeleteItem] = useState<{ id: string, type: "sale" | "pdv" } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -183,15 +123,12 @@ const Vendas = () => {
   const [editNewCustomerForm, setEditNewCustomerForm] = useState(emptyCustomerForm);
   const searchRef = useRef<HTMLDivElement>(null);
   const isSubmitting = useRef(false);
-  const isPdvSubmitting = useRef(false);
 
   // Estado para edição de venda PDV (acessórios)
   const [editPdvSale, setEditPdvSale] = useState<any | null>(null);
   const [editPdvForm, setEditPdvForm] = useState({
     description: "", amount: "", payment_cash: "", payment_card: "", payment_pix: "", retro_date: "",
   });
-
-  const [pdvPayment, setPdvPayment] = useState({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: "" });
 
   const [form, setForm] = useState({
     product_id: "", sale_price: "", has_trade_in: false,
@@ -204,132 +141,11 @@ const Vendas = () => {
     retro_date: "", // Campo para data retroativa
   });
 
-  const fetchData = async () => {
-    console.log("[Vendas] fetchData chamada. activeStoreId:", activeStoreId, "userRole:", userRole, "user:", user?.id);
-    if (!activeStoreId) {
-      console.warn("[Vendas] activeStoreId é null/undefined, abortando fetchData");
-      return;
-    }
-    setLoading(true);
-
-    let salesQuery = supabase.from("sales").select("*");
-    let productsQuery = supabase.from("products").select("*");
-    let accQuery = supabase.from("accessories" as any).select("*").gt("quantity", 0);
-    let pdvQuery = supabase.from("transactions").select("*").eq("type", "income").eq("category", "acessorio");
-    let accountsQuery = supabase.from("store_bank_accounts").select("*");
-
-    if (activeStoreId !== "all") {
-      salesQuery = salesQuery.eq("store_id", activeStoreId);
-      productsQuery = productsQuery.eq("store_id", activeStoreId);
-      accQuery = accQuery.eq("store_id", activeStoreId);
-      pdvQuery = pdvQuery.eq("store_id", activeStoreId);
-      accountsQuery = accountsQuery.eq("store_id", activeStoreId);
-    }
-
-    const [salesRes, productsRes, storesRes, accRes, pdvRes, profilesRes, customersRes, accountsRes, currentRoleRes] = await Promise.all([
-      salesQuery.order("created_at", { ascending: false }),
-      productsQuery,
-      supabase.from("stores").select("*"),
-      accQuery,
-      pdvQuery.order("created_at", { ascending: false }),
-      supabase.from("profiles").select("*"),
-      supabase.from("customers").select("*").order("name"),
-      accountsQuery,
-      supabase.from("user_roles").select("commission_sales_percent, commission_on_sales").eq("user_id", user?.id).maybeSingle()
-    ]);
-
-    console.log("[Vendas] salesRes:", { error: salesRes.error, count: salesRes.data?.length, data: salesRes.data });
-    console.log("[Vendas] productsRes:", { error: productsRes.error, count: productsRes.data?.length });
-
-    let userCommPercent = "10";
-    if (currentRoleRes?.data) {
-      const data = currentRoleRes.data as any;
-      if (data.commission_on_sales === false) {
-        userCommPercent = "0";
-      } else {
-        userCommPercent = String(data.commission_sales_percent ?? 10);
-      }
-    }
-
-    if (salesRes.error) {
-      console.error("Erro ao buscar vendas:", salesRes.error);
-      toast.error(`Erro ao carregar vendas: ${salesRes.error.message}`);
-    }
-    if (productsRes.error) {
-      console.error("Erro ao buscar produtos:", productsRes.error);
-      toast.error(`Erro ao carregar produtos: ${productsRes.error.message}`);
-    }
-
-    setSales((salesRes.data as unknown as Sale[]) ?? []);
-    setProducts(productsRes.data ?? []);
-    setStores(storesRes.data ?? []);
-    setAccessories((accRes.data as unknown as Accessory[]) ?? []);
-    setPdvSales(pdvRes.data ?? []);
-    setProfiles(profilesRes.data ?? []);
-    setCustomers(customersRes.data ?? []);
-    setBankAccounts(accountsRes.data ?? []);
-    
-    // Atualizar valor inicial do form com a comissão do usuário logado
-    setForm(prev => ({ ...prev, commission_percent: userCommPercent }));
-    setCurrentUserCommissionPercent(userCommPercent);
-
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchData(); }, [activeStoreId]);
-
-  // Customer search
   useEffect(() => {
-    if (customerSearch.length < 2) { setCustomerResults([]); return; }
-    const q = customerSearch.toLowerCase();
-    setCustomerResults(
-      customers.filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        (c.phone && c.phone.includes(customerSearch)) ||
-        (c.cpf && c.cpf.includes(customerSearch))
-      ).slice(0, 5)
-    );
-  }, [customerSearch, customers]);
-
-  const selectCustomer = async (c: Customer) => {
-    setSelectedCustomer(c);
-    setCustomerSearch(c.name);
-    setCustomerResults([]);
-    setShowNewCustomerForm(false);
-    // Busca histórico de compras (apenas na loja atual, com guard para null)
-    const storeFilter = activeStoreId && activeStoreId !== "all" ? activeStoreId : null;
-    let histQuery = supabase.from("sales").select("*")
-      .or(`customer_id.eq.${c.id},customer_phone.eq.${c.phone ?? ""}`);
-    if (storeFilter) histQuery = histQuery.eq("store_id", storeFilter);
-    const { data } = await histQuery.order("created_at", { ascending: false }).limit(5);
-    setCustomerSalesHistory((data as unknown as Sale[]) ?? []);
-  };
-
-  const clearCustomer = () => {
-    setSelectedCustomer(null);
-    setCustomerSearch("");
-    setCustomerResults([]);
-    setCustomerSalesHistory([]);
-    setShowCustomerHistory(false);
-  };
-
-  const handleCreateCustomer = async () => {
-    if (!user || !newCustomerForm.name) return;
-    setLoading(true);
-    const { data, error } = await supabase.from("customers").insert({
-      name: newCustomerForm.name, phone: newCustomerForm.phone || null,
-      cpf: newCustomerForm.cpf || null, address: newCustomerForm.address || null,
-      email: newCustomerForm.email || null, created_by: user.id,
-    }).select().single();
-    if (error) { toast.error(error.message); setLoading(false); return; }
-    toast.success("Cliente cadastrado!");
-    await fetchData();
-    setSelectedCustomer(data as Customer);
-    setCustomerSearch((data as Customer).name);
-    setShowNewCustomerForm(false);
-    setNewCustomerForm(emptyCustomerForm);
-    setLoading(false);
-  };
+    if (currentUserCommissionPercent) {
+      setForm(prev => ({ ...prev, commission_percent: currentUserCommissionPercent }));
+    }
+  }, [currentUserCommissionPercent]);
 
   const handleCreateCustomerForEdit = async () => {
     if (!user || !editNewCustomerForm.name) return;
@@ -420,25 +236,12 @@ const Vendas = () => {
   const pdvRemaining = cartTotal - pdvCash - pdvCard - pdvPix;
   const pdvTroco = pdvCash > cartTotal && pdvCard === 0 && pdvPix === 0 ? pdvCash - cartTotal : 0;
 
-  const addToCart = (acc: Accessory) => {
-    setCart(prev => {
-      const ex = prev.find(i => i.acc.id === acc.id);
-      if (ex) return prev.map(i => i.acc.id === acc.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { acc, qty: 1, price: acc.sale_price ?? acc.cost_price }];
-    });
-  };
-  const updateCartQty = (id: string, qty: number) => qty <= 0 ? setCart(p => p.filter(i => i.acc.id !== id)) : setCart(p => p.map(i => i.acc.id === id ? { ...i, qty } : i));
-  const updateCartPrice = (id: string, price: number) => setCart(p => p.map(i => i.acc.id === id ? { ...i, price } : i));
-  const filteredAcc = accessories.filter(a => a.name.toLowerCase().includes(accSearch.toLowerCase()) || (a.brand && a.brand.toLowerCase().includes(accSearch.toLowerCase())));
-
-  // Guarda comissão carregada do usuário atual
-  const [currentUserCommissionPercent, setCurrentUserCommissionPercent] = useState("10");
+  // Note: currentUserCommissionPercent is managed by the useVendas hook
 
   const resetForm = () => {
     setForm({ product_id: "", sale_price: "", has_trade_in: false, trade_in_device_name: "", trade_in_device_brand: "iPhone", trade_in_device_model: "", trade_in_device_imei: "", trade_in_value: "", payment_cash: "", payment_card: "", payment_pix: "", notes: "", commission_percent: currentUserCommissionPercent, discount: "0", warranty_days: "90", installments: "1", destination_account_id: "", retro_date: "" });
     clearCustomer();
   };
-  const resetPdv = () => { setCart([]); setPdvPayment({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: activeStoreId || "" }); setAccSearch(""); };
 
   // ── Submit venda ──────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -681,117 +484,7 @@ const Vendas = () => {
     }
   };
 
-  const handlePdvSubmit = async (gerarNotinha = false) => {
-    if (!user || cart.length === 0 || !activeStoreId) return;
-    if (loading || isPdvSubmitting.current) return;
-    
-    const storeToUse = (activeStoreId === "all" && pdvPayment.store_id) ? pdvPayment.store_id : activeStoreId;
-    if (storeToUse === "all") {
-      toast.error("Por favor, selecione a Loja da Venda antes de registrar!");
-      return;
-    }
-    
-    isPdvSubmitting.current = true;
-    setLoading(true);
-    try {
-      // 1. Atualizar estoque de cada item
-      for (const item of cart) {
-        const { error: accError } = await supabase
-          .from("accessories" as any)
-          .update({ quantity: item.acc.quantity - item.qty })
-          .eq("id", item.acc.id);
-        
-        if (accError) throw new Error(`Erro ao atualizar estoque de ${item.acc.name}: ${accError.message}`);
-      }
-
-      const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
-      let txIdForNote: string | undefined = undefined;
-
-       const cashAmount = pdvCash - pdvTroco;
-      const paymentsCount = [cashAmount > 0, pdvCard > 0, pdvPix > 0].filter(Boolean).length;
-
-      if (paymentsCount > 1) {
-        // Mixed payment consolidation
-        const descMisto = `${desc} [MISTO:{"dinheiro":${cashAmount > 0 ? cashAmount : 0},"pix":${pdvPix},"cartao_credito":${pdvCard}}]`;
-        const { data: tx, error: txError } = await supabase.from("transactions").insert({
-          type: "income", category: "acessorio", amount: cartTotal, description: descMisto, store_id: storeToUse, created_by: user.id
-        }).select().single();
-        if (txError) throw txError;
-        if (tx) txIdForNote = tx.id;
-        if (cashAmount > 0) await createPendingCashEntry(storeToUse, user.id, cashAmount, `${desc} (Parte em Dinheiro)`, "dinheiro");
-        if (pdvCard > 0) await createPendingCashEntry(storeToUse, user.id, pdvCard, `${desc} (Parte em Cartão)`, "cartao_credito");
-        if (pdvPix > 0) await createPendingCashEntry(storeToUse, user.id, pdvPix, `${desc} (Parte em PIX)`, "pix");
-      } else {
-        if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
-          const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: storeToUse, created_by: user.id }).select().single();
-          if (txError) throw txError;
-          txIdForNote = tx?.id;
-          await createPendingCashEntry(storeToUse, user.id, cartTotal, desc, "dinheiro");
-        } else {
-          if (pdvCash > 0) {
-            if (cashAmount > 0) {
-              const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: storeToUse, created_by: user.id }).select().single();
-              if (txError) throw txError;
-              if (!txIdForNote && tx) txIdForNote = tx.id;
-              await createPendingCashEntry(storeToUse, user.id, cashAmount, desc, "dinheiro");
-            }
-          }
-          if (pdvCard > 0) {
-            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: storeToUse, created_by: user.id }).select().single();
-            if (txError) throw txError;
-            if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(storeToUse, user.id, pdvCard, desc, "cartao_credito");
-          }
-          if (pdvPix > 0) {
-            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: storeToUse, created_by: user.id }).select().single();
-            if (txError) throw txError;
-            if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(storeToUse, user.id, pdvPix, desc, "pix");
-          }
-        }
-      }
-
-      if (gerarNotinha && txIdForNote) {
-        try {
-          const store = storeMap.get(storeToUse) as any;
-          const numeroNota = `PDV-${txIdForNote.slice(0, 8).toUpperCase()}`;
-          const data: NotaFiscalData = {
-            numeroNota,
-            dataVenda: new Date().toLocaleString("pt-BR"),
-            lojaNome: store?.name ?? "Loja",
-            lojaCnpj: store?.cnpj,
-            lojaEndereco: store?.address,
-            lojaTelefone: store?.phone,
-            lojaWhatsapp: store?.whatsapp,
-            lojaInstagram: store?.instagram,
-            lojaLogoUrl: store?.logo_url,
-            clienteNome: pdvPayment.customer || undefined,
-            clienteCpf: pdvPayment.cpfCnpj || undefined,
-            produtoNome: "Venda Rápida (Acessórios)",
-            produtoMarca: "",
-            observacoes: cart.map(i => `${i.qty}x ${i.acc.name} (${formatCurrency(i.price)})`).join("\n"),
-            valorVenda: cartTotal,
-            valorDinheiro: pdvCash > 0 ? pdvCash : undefined,
-            valorCartao: pdvCard > 0 ? pdvCard : undefined,
-            valorPix: pdvPix > 0 ? pdvPix : undefined,
-          };
-          const doc = await gerarNotaFiscalInterna(data);
-          doc.save(`notinha-${numeroNota}.pdf`);
-          toast.success("Notinha gerada com sucesso!");
-        } catch (e) {
-          console.error(e);
-          toast.error("Venda registrada, mas falha ao gerar notinha.");
-        }
-      }
-
-      toast.success("Venda rápida registrada!"); setPdvOpen(false); resetPdv(); fetchData();
-    } catch (err: any) { 
-      toast.error(err.message || "Erro"); 
-    } finally {
-      isPdvSubmitting.current = false;
-      setLoading(false);
-    }
-  };
+  // handlePdvSubmit extraído para useCartManager
 
   const handleDeleteSale = async (item: { id: string, type: "sale" | "pdv" }, reason: string) => {
     setLoading(true);
@@ -1333,102 +1026,24 @@ const Vendas = () => {
         </Button>
       </div>
       <div className="flex justify-end gap-2">
-          {/* PDV */}
-          <Dialog open={pdvOpen} onOpenChange={o => { setPdvOpen(o); if (!o) resetPdv(); }}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 h-10 border bg-transparent text-foreground hover:bg-muted" disabled={activeStoreId === "all"}>
-                <Zap className="h-4 w-4 text-yellow-500" /> PDV Rápido
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90dvh] overflow-y-auto">
-              <DialogHeader><DialogTitle className="font-display flex items-center gap-2"><Zap className="h-4 w-4 text-yellow-500" /> PDV — Venda Rápida</DialogTitle></DialogHeader>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input value={accSearch} onChange={e => setAccSearch(e.target.value)} placeholder="Buscar acessório..." className="pl-9 h-10" />
-                  </div>
-                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                    {filteredAcc.length > 0 ? filteredAcc.map(a => (
-                      <div key={a.id} className="flex items-center justify-between rounded-lg border border-border/50 p-3 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors" onClick={() => addToCart(a)}>
-                        <div><p className="text-sm font-medium">{a.name}</p><p className="text-[10px] text-muted-foreground">{a.brand && `${a.brand} · `}Estoque: {a.quantity}</p></div>
-                        <div className="text-right"><p className="text-sm font-bold text-primary">{formatCurrency(a.sale_price ?? a.cost_price)}</p><p className="text-[10px] text-muted-foreground">+ Adicionar</p></div>
-                      </div>
-                    )) : <p className="text-xs text-muted-foreground text-center py-8">Nenhum acessório disponível</p>}
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Carrinho</p>
-                  {cart.length === 0 ? (
-                    <div className="flex items-center justify-center h-32 text-muted-foreground text-xs border border-dashed border-border rounded-lg">Clique nos produtos para adicionar</div>
-                  ) : (
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {cart.map(item => (
-                        <div key={item.acc.id} className="rounded-lg border border-border/50 p-2.5 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium truncate flex-1">{item.acc.name}</p>
-                            <Button className="h-6 w-6 p-0 bg-transparent text-destructive hover:bg-destructive/10 border-0 shadow-none shrink-0" onClick={() => updateCartQty(item.acc.id, 0)}><Trash2 className="h-3 w-3" /></Button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1">
-                              <Button className="h-7 w-7 p-0 border bg-transparent text-foreground hover:bg-muted" onClick={() => updateCartQty(item.acc.id, item.qty - 1)}>-</Button>
-                              <span className="text-sm font-bold w-6 text-center">{item.qty}</span>
-                              <Button className="h-7 w-7 p-0 border bg-transparent text-foreground hover:bg-muted" onClick={() => updateCartQty(item.acc.id, item.qty + 1)}>+</Button>
-                            </div>
-                            <Input type="number" step="0.01" value={item.price} onChange={e => updateCartPrice(item.acc.id, parseFloat(e.target.value) || 0)} className="h-7 text-xs w-24" />
-                            <span className="text-sm font-bold text-primary ml-auto">{formatCurrency(item.price * item.qty)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {cart.length > 0 && (
-                    <div className="space-y-3 pt-2 border-t border-border">
-                      <div className="flex justify-between items-center"><span className="font-semibold">Total</span><span className="font-display font-bold text-lg text-primary">{formatCurrency(cartTotal)}</span></div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Loja</Label>
-                        <Select value={pdvPayment.store_id} onValueChange={v => setPdvPayment({ ...pdvPayment, store_id: v })}>
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>{stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Cliente / Empresa (Opcional)</Label>
-                          <Input value={pdvPayment.customer} onChange={e => setPdvPayment({ ...pdvPayment, customer: e.target.value })} placeholder="Nome do cliente/empresa" className="h-9" />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">CPF / CNPJ (Opcional)</Label>
-                          <Input value={pdvPayment.cpfCnpj} onChange={e => setPdvPayment({ ...pdvPayment, cpfCnpj: e.target.value })} placeholder="000.000.000-00" className="h-9" />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[["cash","Dinheiro"], ["card","Cartão"], ["pix","PIX"]].map(([k, l]) => (
-                          <div key={k} className="space-y-1">
-                            <Label className="text-[10px]">{l}</Label>
-                            <Input type="number" step="0.01" value={(pdvPayment as any)[k]} onChange={e => setPdvPayment({ ...pdvPayment, [k]: e.target.value })} placeholder="0.00" className="h-9 text-xs" />
-                          </div>
-                        ))}
-                      </div>
-                      <div className={`flex justify-between text-sm font-bold rounded-lg p-2 ${Math.abs(pdvRemaining) < 0.01 ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
-                        <span>{pdvTroco > 0 ? "Troco" : "Restante"}</span>
-                        <span>{formatCurrency(pdvTroco > 0 ? pdvTroco : pdvRemaining)}</span>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Button className="w-full h-10 font-semibold" onClick={() => handlePdvSubmit(false)} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
-                          {loading ? "Registrando..." : `Finalizar — ${formatCurrency(cartTotal)}`}
-                        </Button>
-                        <Button variant="outline" className="w-full h-10 font-semibold border-primary/50 text-primary hover:bg-primary/5" onClick={() => handlePdvSubmit(true)} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
-                          <FileText className="h-4 w-4 mr-2" />
-                          Finalizar e Gerar Notinha
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <PdvFormModal
+            pdvOpen={pdvOpen}
+            setPdvOpen={setPdvOpen}
+            resetPdv={resetPdv}
+            activeStoreId={activeStoreId}
+            accSearch={accSearch}
+            setAccSearch={setAccSearch}
+            filteredAcc={filteredAcc}
+            addToCart={addToCart}
+            cart={cart}
+            updateCartQty={updateCartQty}
+            updateCartPrice={updateCartPrice}
+            pdvPayment={pdvPayment}
+            setPdvPayment={setPdvPayment}
+            stores={stores}
+            handlePdvSubmit={handlePdvSubmit}
+            loading={loading}
+          />
 
           {/* Nova Venda */}
           <Dialog open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (!open) resetForm(); }}>
@@ -1906,172 +1521,15 @@ const Vendas = () => {
         )}
       </div>
       {/* Sale Detail View Dialog */}
-      <Dialog open={!!selectedViewSale} onOpenChange={open => { if (!open) setSelectedViewSale(null); }}>
-        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-          {selectedViewSale && (() => {
-            const product = productMap.get(selectedViewSale.product_id) as any;
-            const store = storeMap.get(selectedViewSale.store_id) as any;
-            const sellerName = selectedViewSale.seller_id ? profileMap.get(selectedViewSale.seller_id) : null;
-            const totalPaid = Number(selectedViewSale.payment_cash) + Number(selectedViewSale.payment_card) + Number(selectedViewSale.payment_pix) + (selectedViewSale.has_trade_in ? Number(selectedViewSale.trade_in_value) : 0);
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle className="font-display flex items-center gap-2">
-                    <Eye className="h-4 w-4 text-primary" />
-                    Detalhes da Venda
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-1">
-
-                  {/* Produto */}
-                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
-                    <p className="text-xs font-semibold text-primary uppercase tracking-wide flex items-center gap-1.5"><Smartphone className="h-3.5 w-3.5" /> Aparelho</p>
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-bold text-base">{product?.name || "—"}</p>
-                        {product?.brand && <p className="text-xs text-muted-foreground">{product.brand}{product?.model ? ` · ${product.model}` : ""}</p>}
-                        {product?.color && <p className="text-xs text-muted-foreground">Cor: {product.color}</p>}
-                        {product?.storage && <p className="text-xs text-muted-foreground">Armazenamento: {product.storage}</p>}
-                      </div>
-                      {product?.imei && (
-                        <div className="text-right">
-                          <p className="text-[10px] text-muted-foreground">IMEI</p>
-                          <p className="font-mono text-xs bg-muted px-2 py-0.5 rounded border border-border">{product.imei}</p>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                      <Store className="h-3 w-3" /> {store?.name || "—"}
-                    </p>
-                  </div>
-
-                  {/* Cliente */}
-                  {(selectedViewSale.customer_name || selectedViewSale.customer_phone || selectedViewSale.customer_cpf) && (
-                    <div className="rounded-xl border border-border bg-card p-4 space-y-1.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><UserIcon className="h-3.5 w-3.5" /> Cliente</p>
-                      {selectedViewSale.customer_name && <p className="font-semibold text-sm">{selectedViewSale.customer_name}</p>}
-                      {selectedViewSale.customer_phone && <p className="text-xs text-muted-foreground">{selectedViewSale.customer_phone}</p>}
-                      {selectedViewSale.customer_cpf && <p className="text-xs text-muted-foreground">CPF: {selectedViewSale.customer_cpf}</p>}
-                      {selectedViewSale.customer_address && <p className="text-xs text-muted-foreground flex items-start gap-1"><MapPin className="h-3 w-3 mt-0.5 shrink-0" />{selectedViewSale.customer_address}</p>}
-                    </div>
-                  )}
-
-                  {/* Valores */}
-                  <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5" /> Financeiro</p>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Valor de venda</span>
-                        <span className="font-bold text-primary">{formatCurrency(Number(selectedViewSale.sale_price))}</span>
-                      </div>
-                      {Number(selectedViewSale.discount) > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-muted-foreground">Desconto</span>
-                          <span className="text-yellow-500 font-semibold">-{formatCurrency(Number(selectedViewSale.discount))}</span>
-                        </div>
-                      )}
-                      <div className="border-t border-border/50 pt-1.5 space-y-1">
-                        {Number(selectedViewSale.payment_cash) > 0 && (
-                          <div className="flex justify-between text-xs">
-                            <span className="flex items-center gap-1 text-muted-foreground"><Banknote className="h-3 w-3" /> Dinheiro</span>
-                            <span>{formatCurrency(Number(selectedViewSale.payment_cash))}</span>
-                          </div>
-                        )}
-                        {Number(selectedViewSale.payment_card) > 0 && (
-                          <div className="flex justify-between text-xs">
-                            <span className="flex items-center gap-1 text-muted-foreground"><CreditCard className="h-3 w-3" /> Cartão{selectedViewSale.installments && selectedViewSale.installments > 1 ? ` (${selectedViewSale.installments}x)` : ""}</span>
-                            <span>{formatCurrency(Number(selectedViewSale.payment_card))}</span>
-                          </div>
-                        )}
-                        {Number(selectedViewSale.payment_pix) > 0 && (
-                          <div className="flex justify-between text-xs">
-                            <span className="flex items-center gap-1 text-muted-foreground"><QrCode className="h-3 w-3" /> PIX</span>
-                            <span>{formatCurrency(Number(selectedViewSale.payment_pix))}</span>
-                          </div>
-                        )}
-                        {selectedViewSale.has_trade_in && Number(selectedViewSale.trade_in_value) > 0 && (
-                          <div className="flex justify-between text-xs">
-                            <span className="flex items-center gap-1 text-muted-foreground"><ArrowLeftRight className="h-3 w-3" /> Troca</span>
-                            <span>{formatCurrency(Number(selectedViewSale.trade_in_value))}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex justify-between text-xs pt-1 border-t border-border/50">
-                        <span className="font-medium">Total pago</span>
-                        <span className="font-bold">{formatCurrency(totalPaid)}</span>
-                      </div>
-                      {Number(selectedViewSale.commission_value) > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="flex items-center gap-1 text-muted-foreground"><Percent className="h-3 w-3" /> Comissão</span>
-                          <span className="text-yellow-500">{formatCurrency(Number(selectedViewSale.commission_value))}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Trade-in */}
-                  {selectedViewSale.has_trade_in && selectedViewSale.trade_in_device_name && (
-                    <div className="rounded-xl border border-primary/20 bg-card p-4 space-y-1.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><ArrowLeftRight className="h-3.5 w-3.5" /> Aparelho na Troca</p>
-                      <p className="font-semibold text-sm">{selectedViewSale.trade_in_device_name}</p>
-                      {selectedViewSale.trade_in_device_brand && <p className="text-xs text-muted-foreground">{selectedViewSale.trade_in_device_brand}{selectedViewSale.trade_in_device_model ? ` · ${selectedViewSale.trade_in_device_model}` : ""}</p>}
-                      {selectedViewSale.trade_in_device_imei && <p className="font-mono text-xs bg-muted px-2 py-0.5 rounded border border-border w-fit">IMEI: {selectedViewSale.trade_in_device_imei}</p>}
-                      <p className="text-xs font-semibold text-primary">Valor abatido: {formatCurrency(Number(selectedViewSale.trade_in_value))}</p>
-                    </div>
-                  )}
-
-                  {/* Garantia + Info */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-border bg-card p-3 text-center">
-                      <Shield className="h-4 w-4 text-blue-500 mx-auto mb-1" />
-                      <p className="text-xs text-muted-foreground">Garantia</p>
-                      <p className="font-bold text-sm">{selectedViewSale.warranty_days || 90} dias</p>
-                    </div>
-                    <div className="rounded-xl border border-border bg-card p-3 text-center">
-                      <CalendarDays className="h-4 w-4 text-primary mx-auto mb-1" />
-                      <p className="text-xs text-muted-foreground">Data da venda</p>
-                      <p className="font-bold text-sm">{new Date(selectedViewSale.created_at).toLocaleDateString("pt-BR")}</p>
-                    </div>
-                  </div>
-
-                  {sellerName && (
-                    <p className="text-xs text-muted-foreground text-center">Vendedor: <span className="font-semibold text-foreground">{sellerName}</span></p>
-                  )}
-
-                  {/* Observações */}
-                  {selectedViewSale.notes && (
-                    <div className="rounded-xl border border-border bg-card p-4">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-1.5"><StickyNote className="h-3.5 w-3.5" /> Observações</p>
-                      <p className="text-sm text-muted-foreground">{selectedViewSale.notes}</p>
-                    </div>
-                  )}
-
-                  {/* Ações */}
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      className="flex-1 h-9 text-xs gap-1.5 border border-border bg-transparent text-foreground hover:bg-muted"
-                      onClick={() => handleGerarNota(selectedViewSale, false)}
-                      disabled={notaLoading === selectedViewSale.id}
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      {notaLoading === selectedViewSale.id ? "Gerando..." : "Baixar Comprovante"}
-                    </Button>
-                    {selectedViewSale.customer_phone && (
-                      <Button
-                        className="flex-1 h-9 text-xs gap-1.5 text-green-500 border border-green-500/30 bg-transparent hover:bg-green-500/10"
-                        onClick={() => handleGerarNota(selectedViewSale, true)}
-                        disabled={notaLoading === selectedViewSale.id}
-                      >
-                        <MessageCircle className="h-3.5 w-3.5" />WhatsApp
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
+      <DetalhesVendaModal
+        selectedViewSale={selectedViewSale}
+        setSelectedViewSale={setSelectedViewSale}
+        productMap={productMap}
+        storeMap={storeMap}
+        profileMap={profileMap}
+        handleGerarNota={handleGerarNota}
+        notaLoading={notaLoading}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
