@@ -138,7 +138,8 @@ const Vendas = () => {
     payment_pix: "", notes: "", commission_percent: "10",
     discount: "0", warranty_days: "90", installments: "1",
     destination_account_id: "",
-    retro_date: "", // Campo para data retroativa
+    retro_date: "",
+    trade_in_devices: [] as any[],
   });
 
   useEffect(() => {
@@ -217,7 +218,7 @@ const Vendas = () => {
   });
 
   const discount = parseFloat(form.discount) || 0;
-  const tradeInVal = parseFloat(form.trade_in_value) || 0;
+  const tradeInVal = form.has_trade_in ? (form.trade_in_devices?.reduce((acc: number, d: any) => acc + (parseFloat(d.value) || 0), 0) || 0) : 0;
   const cashVal = parseFloat(form.payment_cash) || 0;
   const cardVal = parseFloat(form.payment_card) || 0;
   const pixVal = parseFloat(form.payment_pix) || 0;
@@ -239,7 +240,7 @@ const Vendas = () => {
   // Note: currentUserCommissionPercent is managed by the useVendas hook
 
   const resetForm = () => {
-    setForm({ product_id: "", sale_price: "", has_trade_in: false, trade_in_device_name: "", trade_in_device_brand: "iPhone", trade_in_device_model: "", trade_in_device_imei: "", trade_in_value: "", payment_cash: "", payment_card: "", payment_pix: "", notes: "", commission_percent: currentUserCommissionPercent, discount: "0", warranty_days: "90", installments: "1", destination_account_id: "", retro_date: "" });
+    setForm({ product_id: "", sale_price: "", has_trade_in: false, trade_in_device_name: "", trade_in_device_brand: "iPhone", trade_in_device_model: "", trade_in_device_imei: "", trade_in_value: "", payment_cash: "", payment_card: "", payment_pix: "", notes: "", commission_percent: currentUserCommissionPercent, discount: "0", warranty_days: "90", installments: "1", destination_account_id: "", retro_date: "", trade_in_devices: [] });
     clearCustomer();
   };
 
@@ -266,24 +267,47 @@ const Vendas = () => {
       }
 
       let tradeInProductId: string | null = null;
-      if (form.has_trade_in && form.trade_in_device_name) {
-        let existingTradeIn = null;
+      let tradeInDevicesList: any[] = [];
+      if (form.has_trade_in) {
+        if (form.trade_in_devices && form.trade_in_devices.length > 0) {
+          tradeInDevicesList = form.trade_in_devices;
+        } else if (form.trade_in_device_name) {
+          tradeInDevicesList = [{
+            name: form.trade_in_device_name,
+            brand: form.trade_in_device_brand,
+            model: form.trade_in_device_model,
+            imei: form.trade_in_device_imei,
+            value: form.trade_in_value
+          }];
+        }
+      }
 
-        if (form.trade_in_device_imei) {
+      const tradeInDetailsText: string[] = [];
+
+      for (let i = 0; i < tradeInDevicesList.length; i++) {
+        const device = tradeInDevicesList[i];
+        if (!device.name) continue;
+
+        let existingTradeIn = null;
+        const deviceVal = parseFloat(device.value) || 0;
+
+        if (device.imei) {
           const { data: existingProduct } = await supabase
             .from("products")
             .select("*")
-            .eq("imei", form.trade_in_device_imei)
+            .eq("imei", device.imei)
             .maybeSingle();
           existingTradeIn = existingProduct;
         }
+
+        let currentProductId = null;
 
         if (existingTradeIn) {
           const { data: updatedTip, error: tiErr } = await supabase
             .from("products")
             .update({
               status: "in_stock",
-              cost_price: tradeInVal,
+              cost_price: deviceVal,
               store_id: selectedProduct.store_id,
               sale_price: null
             })
@@ -291,18 +315,32 @@ const Vendas = () => {
             .select("id")
             .maybeSingle();
 
-          if (tiErr) { toast.error(tiErr.message); return; }
-          tradeInProductId = updatedTip?.id || existingTradeIn.id;
+          if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
+          currentProductId = updatedTip?.id || existingTradeIn.id;
         } else {
           const { data: tip, error: tiErr } = await supabase.from("products").insert({
-            name: form.trade_in_device_name, brand: form.trade_in_device_brand,
-            model: form.trade_in_device_model || "N/A", imei: form.trade_in_device_imei || null,
-            cost_price: tradeInVal, store_id: selectedProduct.store_id,
+            name: device.name, brand: device.brand || "Genérico",
+            model: device.model || "N/A", imei: device.imei || null,
+            cost_price: deviceVal, store_id: selectedProduct.store_id,
             created_by: user.id, status: "in_stock",
+            product_type: "celular",
+            condition: "used"
           }).select("id").single();
-          if (tiErr) { toast.error(tiErr.message); return; }
-          tradeInProductId = tip.id;
+          if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
+          currentProductId = tip.id;
         }
+
+        if (i === 0) {
+          tradeInProductId = currentProductId;
+        }
+
+        tradeInDetailsText.push(`${device.name} (${device.brand} ${device.model || ""}) IMEI: ${device.imei || "N/A"} - Valor: R$ ${deviceVal.toFixed(2)}`);
+      }
+
+      let finalNotes = form.notes || "";
+      if (tradeInDetailsText.length > 0) {
+        const tradeInNotesStr = `[Aparelhos na Troca: ${tradeInDetailsText.join(" | ")}]`;
+        finalNotes = finalNotes ? `${finalNotes} ${tradeInNotesStr}` : tradeInNotesStr;
       }
 
       // 1. Baixa do produto do estoque (UPDATE direto - RLS desabilitada na tabela products)
@@ -326,16 +364,20 @@ const Vendas = () => {
         } else {
           toast.error("Erro ao baixar produto do estoque: " + (updateError?.message || "Produto indisponível."));
         }
+        isSubmitting.current = false;
+        setLoading(false);
         return;
       }
+
+      const firstDevice = tradeInDevicesList[0] || null;
 
       const { data: saleData, error: saleError } = await supabase.from("sales").insert({
         product_id: form.product_id, store_id: selectedProduct.store_id,
         sale_price: salePriceAfterDiscount, has_trade_in: form.has_trade_in,
-        trade_in_device_name: form.has_trade_in ? form.trade_in_device_name || null : null,
-        trade_in_device_brand: form.has_trade_in ? form.trade_in_device_brand || null : null,
-        trade_in_device_model: form.has_trade_in ? form.trade_in_device_model || null : null,
-        trade_in_device_imei: form.has_trade_in ? form.trade_in_device_imei || null : null,
+        trade_in_device_name: form.has_trade_in && firstDevice ? firstDevice.name || null : null,
+        trade_in_device_brand: form.has_trade_in && firstDevice ? firstDevice.brand || null : null,
+        trade_in_device_model: form.has_trade_in && firstDevice ? firstDevice.model || null : null,
+        trade_in_device_imei: form.has_trade_in && firstDevice ? firstDevice.imei || null : null,
         trade_in_value: form.has_trade_in ? tradeInVal : 0, trade_in_product_id: tradeInProductId,
         payment_cash: cashVal, payment_card: cardVal, payment_pix: pixVal,
         customer_id: customerId,
@@ -343,7 +385,7 @@ const Vendas = () => {
         customer_phone: selectedCustomer?.phone ?? null,
         customer_cpf: selectedCustomer?.cpf ?? null,
         customer_address: selectedCustomer?.address ?? null,
-        notes: form.notes || null, commission_percent: commissionPercent,
+        notes: finalNotes || null, commission_percent: commissionPercent,
         commission_value: commissionValue, created_by: user.id,
         seller_id: user.id, discount: discount,
         warranty_days: parseInt(form.warranty_days) || 90,
@@ -1207,27 +1249,132 @@ const Vendas = () => {
                     <Smartphone className="h-4 w-4 text-muted-foreground" />
                     <div><p className="text-sm font-medium">Aparelho na troca</p><p className="text-[11px] text-muted-foreground">Cliente entrega como parte do pagamento</p></div>
                   </div>
-                  <Switch checked={form.has_trade_in} onCheckedChange={v => setForm({ ...form, has_trade_in: v })} />
+                  <Switch checked={form.has_trade_in} onCheckedChange={v => setForm({ ...form, has_trade_in: v, trade_in_devices: v ? [{ name: "", brand: "iPhone", model: "", imei: "", value: "" }] : [] })} />
                 </div>
 
                 {form.has_trade_in && (
-                  <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                    <p className="text-xs font-semibold text-primary">Dados do aparelho na troca</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5"><Label className="text-xs">Nome</Label><Input value={form.trade_in_device_name} onChange={e => setForm({ ...form, trade_in_device_name: e.target.value })} placeholder="iPhone 11 64GB" className="h-10" required={form.has_trade_in} /></div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Marca</Label>
-                        <Select value={form.trade_in_device_brand} onValueChange={v => setForm({ ...form, trade_in_device_brand: v })}>
-                          <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                          <SelectContent>{["iPhone","Samsung","Xiaomi","Outro"].map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
-                        </Select>
+                  <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                      <p className="text-xs font-semibold text-primary">Aparelhos na Troca</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] gap-1 border-primary/30 text-primary hover:bg-primary/10 bg-background shadow-none"
+                        onClick={() => {
+                          const devices = form.trade_in_devices || [];
+                          setForm({
+                            ...form,
+                            trade_in_devices: [...devices, { name: "", brand: "iPhone", model: "", imei: "", value: "" }]
+                          });
+                        }}
+                      >
+                        <Plus className="h-3 w-3" /> Adicionar Aparelho
+                      </Button>
+                    </div>
+
+                    {(form.trade_in_devices || []).map((device, index) => (
+                      <div key={index} className="space-y-3 p-2.5 rounded-md border border-border/50 bg-background/50 relative">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Aparelho #{index + 1}</p>
+                          {(form.trade_in_devices || []).length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                const devices = [...(form.trade_in_devices || [])];
+                                devices.splice(index, 1);
+                                setForm({ ...form, trade_in_devices: devices });
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Nome *</Label>
+                            <Input
+                              value={device.name}
+                              onChange={e => {
+                                const devices = [...(form.trade_in_devices || [])];
+                                devices[index].name = e.target.value;
+                                setForm({ ...form, trade_in_devices: devices });
+                              }}
+                              placeholder="Ex: iPhone 11 64GB"
+                              className="h-10 bg-background"
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Marca</Label>
+                            <Select
+                              value={device.brand}
+                              onValueChange={v => {
+                                const devices = [...(form.trade_in_devices || [])];
+                                devices[index].brand = v;
+                                setForm({ ...form, trade_in_devices: devices });
+                              }}
+                            >
+                              <SelectTrigger className="h-10 bg-background"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {["iPhone", "Samsung", "Xiaomi", "Outro"].map(b => (
+                                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Modelo</Label>
+                            <Input
+                              value={device.model}
+                              onChange={e => {
+                                const devices = [...(form.trade_in_devices || [])];
+                                devices[index].model = e.target.value;
+                                setForm({ ...form, trade_in_devices: devices });
+                              }}
+                              placeholder="Ex: A2221"
+                              className="h-10 bg-background"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">IMEI</Label>
+                            <Input
+                              value={device.imei}
+                              onChange={e => {
+                                const devices = [...(form.trade_in_devices || [])];
+                                devices[index].imei = e.target.value;
+                                setForm({ ...form, trade_in_devices: devices });
+                              }}
+                              placeholder="Opcional"
+                              className="h-10 bg-background"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Valor da troca (R$) *</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={device.value}
+                            onChange={e => {
+                              const devices = [...(form.trade_in_devices || [])];
+                              devices[index].value = e.target.value;
+                              setForm({ ...form, trade_in_devices: devices });
+                            }}
+                            placeholder="0.00"
+                            className="h-10 bg-background"
+                            required
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5"><Label className="text-xs">Modelo</Label><Input value={form.trade_in_device_model} onChange={e => setForm({ ...form, trade_in_device_model: e.target.value })} placeholder="A2221" className="h-10" /></div>
-                      <div className="space-y-1.5"><Label className="text-xs">IMEI</Label><Input value={form.trade_in_device_imei} onChange={e => setForm({ ...form, trade_in_device_imei: e.target.value })} placeholder="Opcional" className="h-10" /></div>
-                    </div>
-                    <div className="space-y-1.5"><Label className="text-xs">Valor da troca (R$)</Label><Input type="number" step="0.01" value={form.trade_in_value} onChange={e => setForm({ ...form, trade_in_value: e.target.value })} placeholder="1500.00" required={form.has_trade_in} className="h-10" /></div>
+                    ))}
                   </div>
                 )}
 
