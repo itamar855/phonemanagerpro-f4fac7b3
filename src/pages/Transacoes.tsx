@@ -526,7 +526,7 @@ const Transacoes = () => {
             </div>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl font-black text-green-600 tracking-tighter">
-                {formatCurrency(transactions.filter(t => t.type === 'sale' || t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0))}
+                {formatCurrency(filteredTransactions.filter(t => t.type === 'sale' || t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0))}
               </span>
             </div>
           </CardContent>
@@ -540,7 +540,7 @@ const Transacoes = () => {
             </div>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl font-black text-orange-600 tracking-tighter">
-                {formatCurrency(transactions.filter(t => t.type === 'expense_pj' || t.type === 'expense_pf' || t.type === 'pro_labore').reduce((acc, t) => acc + Number(t.amount || 0), 0))}
+                {formatCurrency(filteredTransactions.filter(t => t.type === 'expense_pj' || t.type === 'expense_pf' || t.type === 'pro_labore').reduce((acc, t) => acc + Number(t.amount || 0), 0))}
               </span>
             </div>
           </CardContent>
@@ -555,8 +555,8 @@ const Transacoes = () => {
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-2xl font-black text-primary tracking-tighter">
                 {formatCurrency(
-                  transactions.filter(t => t.type === 'sale' || t.type === 'income').reduce((acc, t) => acc + Number(t.amount || 0), 0) -
-                  transactions.filter(t => t.type === 'expense_pj' || t.type === 'expense_pf' || t.type === 'pro_labore').reduce((acc, t) => acc + Number(t.amount || 0), 0)
+                  filteredTransactions.filter(t => t.type === 'sale' || t.type === 'income').reduce((acc, t) => acc + Number(t.amount || 0), 0) -
+                  filteredTransactions.filter(t => t.type === 'expense_pj' || t.type === 'expense_pf' || t.type === 'pro_labore').reduce((acc, t) => acc + Number(t.amount || 0), 0)
                 )}
               </span>
             </div>
