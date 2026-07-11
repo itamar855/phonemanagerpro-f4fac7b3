@@ -455,6 +455,23 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
   const handleFinishRepair = async () => {
     if (!activeRepair || !product || !user) return;
+
+    const totalPartsCost = repairItems.reduce((acc, item) => acc + Number(item.unit_cost || 0), 0);
+    const baseDeviceCost = Math.max(0, Number(product.cost_price || 0) - totalPartsCost);
+
+    const missing: string[] = [];
+    if (baseDeviceCost > 0 && !(product as any).device_payment_voucher) {
+      missing.push("Comprovante de Aquisição do Aparelho");
+    }
+    if (totalPartsCost > 0 && !(product as any).parts_payment_voucher) {
+      missing.push("Comprovante de Pagamento das Peças");
+    }
+
+    if (missing.length > 0) {
+      alert(`Para concluir o reparo, você precisa fazer o upload dos seguintes comprovantes:\n\n${missing.map(m => `- ${m}`).join("\n")}`);
+      return;
+    }
+
     setLoading(true);
 
     try {

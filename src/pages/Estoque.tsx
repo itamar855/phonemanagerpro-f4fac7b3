@@ -682,11 +682,40 @@ const Estoque = () => {
   const handleDeleteProduct = async (id: string, reason: string) => {
     const productToDelete = products.find(p => p.id === id);
     if (!productToDelete) return;
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) toast.error(error.message);
-    else { 
+    setLoading(true);
+    try {
+      // 1. Delete references in product_history
+      await supabase.from("product_history" as any).delete().eq("product_id", id);
+      
+      // 2. Set trade_in_product_id references in sales to null
+      await supabase.from("sales").update({ trade_in_product_id: null } as any).eq("trade_in_product_id", id);
+
+      // 3. Delete sales referencing this product
+      await supabase.from("sales").delete().eq("product_id", id);
+
+      // 4. Delete references in product_repair_items (where this product was used as a part)
+      await supabase.from("product_repair_items" as any).delete().eq("part_product_id", id);
+
+      // 5. For repairs of this product, delete repair items first, then the repair
+      const { data: repairs } = await (supabase.from("product_repairs" as any).select("id").eq("product_id", id) as any);
+      if (repairs && repairs.length > 0) {
+        const repairIds = repairs.map(r => r.id);
+        await supabase.from("product_repair_items" as any).delete().in("repair_id", repairIds);
+        await supabase.from("product_repairs" as any).delete().in("id", repairIds);
+      }
+
+      // 6. Finally delete the product
+      const { error } = await supabase.from("products").delete().eq("id", id);
+      if (error) throw error;
+
       logAction("DELETE_RECORD", "products", id, productToDelete, { reason }, productToDelete?.store_id);
-      toast.success("Aparelho removido!"); fetchData(); 
+      toast.success("Aparelho removido!");
+      fetchData();
+    } catch (error: any) {
+      console.error("Erro ao deletar produto:", error);
+      toast.error("Erro ao deletar produto: " + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
