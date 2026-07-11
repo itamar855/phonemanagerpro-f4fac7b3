@@ -263,21 +263,21 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                         </Badge>
                       )}
                     </div>
-                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                       {(() => {
                         const repairCost = repairCostsMap.get(p.id) || 0;
                         const baseDeviceCost = Number(p.cost_price || 0) - repairCost;
                         return (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Custo</p>
+                          <div className="text-right">
+                            <p className="text-[10px] text-muted-foreground">Custo</p>
                             <p className="font-display font-bold text-sm">{formatCurrency(baseDeviceCost)}</p>
                             {repairCost > 0 && (
-                              <p className="text-xs font-bold text-emerald-500 font-display">
+                              <p className="text-[11px] font-bold text-emerald-500 font-display">
                                 +{formatCurrency(repairCost)}
                               </p>
                             )}
                             {margin !== null && (
-                              <p className={`text-[10px] font-medium mt-1 border-t border-border/30 pt-0.5 ${margin >= 0 ? "text-primary" : "text-destructive"}`}>
+                              <p className={`text-[10px] font-semibold mt-1 border-t border-border/30 pt-0.5 ${margin >= 0 ? "text-emerald-500" : "text-destructive"}`}>
                                 Margem: {margin >= 0 ? "+" : ""}{formatCurrency(margin)}
                               </p>
                             )}
@@ -285,51 +285,55 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                         );
                       })()}
                       {p.sale_price !== null && p.sale_price !== undefined && (
-                        <div className="text-right mt-1">
+                        <div className="text-right border-t border-border/30 pt-1.5 w-full">
                           <p className="text-[10px] text-muted-foreground">Venda</p>
-                          <p className="font-display font-bold text-xs text-primary">{formatCurrency(Number(p.sale_price))}</p>
+                          <p className="font-display font-bold text-sm text-primary">{formatCurrency(Number(p.sale_price))}</p>
                         </div>
                       )}
-                      {p.status === "in_stock" && stores.length > 1 && (
-                        <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted"
-                          onClick={() => { setTransferProduct(p); setTransferDialogOpen(true); }}>
-                          <ArrowRightLeft className="h-3 w-3" /> Transferir
-                        </Button>
-                      )}
-                      <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted" onClick={() => loadHistory(p)}>
-                        Ver Histórico
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2.5 border-t border-border/30 w-full">
+                    {p.status === "in_stock" && stores.length > 1 && (
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-border bg-background shadow-none"
+                        onClick={() => { setTransferProduct(p); setTransferDialogOpen(true); }}>
+                        <ArrowRightLeft className="h-3 w-3" /> Transferir
                       </Button>
-                      {(p.status === "in_stock" || p.status === "repair") && (
-                        <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted"
-                          onClick={() => { setRepairProduct(p as any); setRepairModalOpen(true); }}>
-                          <Wrench className="h-3.5 w-3.5" /> Reparo
-                        </Button>
-                      )}
-                      {(p.status === "in_stock" || p.status === "repair") && (
-                        <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted"
-                          onClick={() => {
-                            setDefectsProduct(p);
-                            setDefectsList(p.defects || []);
-                            setCustomDefect("");
-                            setDefectsDialogOpen(true);
-                          }}>
-                          <AlertTriangle className="h-3.5 w-3.5" /> Defeitos
-                          {p.defects && p.defects.length > 0 && (
-                            <span className="ml-0.5 px-1 py-0.5 text-[8px] bg-destructive text-destructive-foreground rounded-full leading-none font-bold">
-                              {p.defects.length}
-                            </span>
-                          )}
-                        </Button>
-                      )}
-                      <div className="flex gap-1 mt-1">
-                        <Button className="h-7 w-7 p-0 bg-transparent text-foreground hover:bg-muted" onClick={() => openEditProduct(p)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button className="h-7 w-7 p-0 bg-transparent text-destructive hover:bg-destructive/10"
-                          onClick={() => { setDeleteId(p.id); setDeleteType("product"); setJustification(""); setDeleteDialogOpen(true); }}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                    )}
+                    <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-border bg-background shadow-none" onClick={() => loadHistory(p)}>
+                      Histórico
+                    </Button>
+                    {(p.status === "in_stock" || p.status === "repair") && (
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-primary/20 text-primary hover:bg-primary/5 bg-primary/5 shadow-none"
+                        onClick={() => { setRepairProduct(p as any); setRepairModalOpen(true); }}>
+                        <Wrench className="h-3 w-3" /> Reparo
+                      </Button>
+                    )}
+                    {(p.status === "in_stock" || p.status === "repair") && (
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-destructive/20 text-destructive hover:bg-destructive/5 bg-destructive/5 shadow-none"
+                        onClick={() => {
+                          setDefectsProduct(p);
+                          setDefectsList(p.defects || []);
+                          setCustomDefect("");
+                          setDefectsDialogOpen(true);
+                        }}>
+                        <AlertTriangle className="h-3 w-3" /> Defeitos
+                        {p.defects && p.defects.length > 0 && (
+                          <span className="ml-0.5 px-1 py-0.5 text-[8px] bg-destructive text-destructive-foreground rounded-full leading-none font-bold">
+                            {p.defects.length}
+                          </span>
+                        )}
+                      </Button>
+                    )}
+                    <div className="flex-1 min-w-[8px]" />
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 border-border bg-background shadow-none text-muted-foreground hover:text-foreground" onClick={() => openEditProduct(p)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 border-destructive/20 text-destructive hover:bg-destructive/5 bg-background shadow-none"
+                        onClick={() => { setDeleteId(p.id); setDeleteType("product"); setJustification(""); setDeleteDialogOpen(true); }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
