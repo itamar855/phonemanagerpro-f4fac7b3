@@ -79,7 +79,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
       setLoading(true);
       const { data: itemsData, error: itemsError } = await supabase
         .from("service_order_items" as any)
-        .select(`*, products (name, brand, model)`)
+        .select(`*, products (name, brand, model, parts_payment_voucher)`)
         .eq("service_order_id", orderId);
 
       if (itemsError) throw itemsError;
@@ -215,7 +215,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (prodError) throw prodError;
 
-      // 3. Insert into service_order_items with receipt and supplier
+      // 3. Insert into service_order_items with supplier
       const { error: itemError } = await supabase
         .from("service_order_items" as any)
         .insert({
@@ -224,7 +224,6 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           quantity: 1,
           unit_price: salePrice,
           unit_cost: costPrice,
-          receipt_url: receiptUrl,
           supplier_id: resolvedSupplierId,
           supplier_name: supplierName,
         });
@@ -346,6 +345,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
               onClick={() => setAddMode("new")}
               className={`flex-1 text-[10px] py-1.5 rounded-md font-medium transition-all ${addMode === "new" ? "bg-background shadow border border-border/50 text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
+              ➕ Peça Avulsa
             </button>
           </div>
 
@@ -517,9 +517,9 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                 {(item as any).supplier_name && (
                   <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 Fornecedor: {(item as any).supplier_name}</p>
                 )}
-                {(item as any).receipt_url && (
+                {((item as any).receipt_url || (item as any).products?.parts_payment_voucher) && (
                   <a
-                    href={(item as any).receipt_url}
+                    href={(item as any).receipt_url || (item as any).products?.parts_payment_voucher}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-[10px] text-primary underline flex items-center gap-0.5 mt-0.5"
