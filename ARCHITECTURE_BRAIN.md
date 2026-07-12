@@ -194,4 +194,4 @@ As seguintes regras e convenções de interface do usuário foram adotadas para 
 4. **Animações e Micro-Interações:**
    - Adicionada classe utilitária `.active-hig-feedback` para botões com escala elástica (`active:scale-[0.98]`) e curvas de transição de mola.
 
-*(Mantenha este documento atualizado a cada feature relevante criada ou correção feita.)*
+*(Mantenha este documento atualizado a cada feature relevante criada ou correção feita. Coloque Identificação tambem de data ou commit, para identificar de quaando foi feito a alteração, e sempre que possivel revise esse documento para deixá-lo mais clean, sempre tomando cuidado para nao deletar informações importantes, e sempre alimentando ele com êxito e falhas, aprendizados e tudo que for relevante para o projeto.)*

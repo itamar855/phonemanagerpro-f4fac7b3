@@ -263,7 +263,6 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
             {(() => {
               const primaryPaths = ["/", "/vendas", "/estoque", "/ordens-servico"];
               const primaryNavItems = filteredNavItems.filter(item => primaryPaths.includes(item.path));
-              const secondaryNavItems = filteredNavItems.filter(item => !primaryPaths.includes(item.path));
 
               return (
                 <>
@@ -296,78 +295,83 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                     <MoreHorizontal className="h-5 w-5" />
                     <span className="text-[10px] font-medium leading-none">Mais</span>
                   </button>
-
-                  {/* Mobile Drawer (iOS Sheet Style) */}
-                  {menuOpen && (
-                    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50 backdrop-blur-sm transition-all duration-300">
-                      <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
-                      <div className="relative bg-card rounded-t-2xl border-t border-border p-4 max-h-[75vh] overflow-y-auto z-10 animate-in slide-in-from-bottom duration-200">
-                        <div className="flex justify-between items-center pb-3 border-b border-border/50 mb-3">
-                          <span className="font-display font-bold text-sm">Mais Módulos</span>
-                          <button 
-                            onClick={() => setMenuOpen(false)}
-                            className="h-8 w-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 active:scale-95"
-                          >
-                            <X className="h-4 w-4 text-muted-foreground" />
-                          </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 gap-1">
-                          {secondaryNavItems.map((item) => {
-                            const Icon = item.icon || Smartphone;
-                            const isActive = location.pathname === item.path;
-                            return (
-                              <Link
-                                key={item.path}
-                                to={item.path}
-                                onClick={() => setMenuOpen(false)}
-                                className={cn(
-                                  "flex items-center gap-3 px-3 py-3 h-11 rounded-lg text-sm font-medium transition-all",
-                                  isActive
-                                    ? "bg-primary/10 text-primary font-semibold"
-                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50 active:bg-muted"
-                                )}
-                              >
-                                <Icon className="h-4.5 w-4.5 shrink-0" />
-                                <span className="flex-1 text-left">{item.label}</span>
-                                <span className="text-xs text-muted-foreground/30">→</span>
-                              </Link>
-                            );
-                          })}
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-2">
-                          <div className="flex gap-2">
-                            <Button
-                              className="flex-1 h-11 px-3 justify-center bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40"
-                              variant="outline"
-                              onClick={toggleTheme}
-                            >
-                              {theme === "dark" ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
-                              {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
-                            </Button>
-                            <Link to="/instalar" className="flex-1" onClick={() => setMenuOpen(false)}>
-                              <Button className="w-full h-11 px-3 bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40" variant="outline">
-                                <Download className="h-4 w-4 mr-2" /> Instalar
-                              </Button>
-                            </Link>
-                          </div>
-                          <Button
-                            className="h-11 w-full justify-center bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20"
-                            onClick={() => { setMenuOpen(false); signOut(); }}
-                          >
-                            <LogOut className="h-4 w-4 mr-2" />
-                            Sair da Conta
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </>
               );
             })()}
           </div>
         </nav>
+
+        {/* Mobile Drawer (iOS Sheet Style) */}
+        {menuOpen && (() => {
+          const primaryPaths = ["/", "/vendas", "/estoque", "/ordens-servico"];
+          const secondaryNavItems = filteredNavItems.filter(item => !primaryPaths.includes(item.path));
+
+          return (
+            <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-all duration-300">
+              <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
+              <div className="relative bg-card rounded-t-2xl border-t border-border p-4 pb-8 max-h-[70vh] overflow-y-auto z-10 shadow-2xl">
+                <div className="flex justify-between items-center pb-3 border-b border-border/50 mb-3">
+                  <span className="font-display font-bold text-sm">Mais Módulos</span>
+                  <button 
+                    onClick={() => setMenuOpen(false)}
+                    className="h-8 w-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 active:scale-95"
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-1">
+                  {secondaryNavItems.map((item) => {
+                    const Icon = item.icon || Smartphone;
+                    const isActive = location.pathname === item.path;
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setMenuOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-3 h-11 rounded-lg text-sm font-medium transition-all",
+                          isActive
+                            ? "bg-primary/10 text-primary font-semibold"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50 active:bg-muted"
+                        )}
+                      >
+                        <Icon className="h-4.5 w-4.5 shrink-0" />
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <span className="text-xs text-muted-foreground/30">→</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1 h-11 px-3 justify-center bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40"
+                      variant="outline"
+                      onClick={toggleTheme}
+                    >
+                      {theme === "dark" ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                      {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+                    </Button>
+                    <Link to="/instalar" className="flex-1" onClick={() => setMenuOpen(false)}>
+                      <Button className="w-full h-11 px-3 bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40" variant="outline">
+                        <Download className="h-4 w-4 mr-2" /> Instalar
+                      </Button>
+                    </Link>
+                  </div>
+                  <Button
+                    className="h-11 w-full justify-center bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20"
+                    onClick={() => { setMenuOpen(false); signOut(); }}
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sair da Conta
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
