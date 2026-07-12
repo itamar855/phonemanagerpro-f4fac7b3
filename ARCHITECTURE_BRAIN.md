@@ -179,4 +179,19 @@ Esta seção serve como memória persistente de features implementadas, bugs cor
 - **ADR-004 (Discrepância types.ts vs Banco Real):** O arquivo `src/integrations/supabase/types.ts` gerado automaticamente declara a coluna `register_id` na tabela `cash_entries`, porém o banco PostgreSQL real utiliza `cash_register_id`. O código contorna isso com `as any` casts. **NUNCA** altere o código-fonte para seguir o `types.ts` neste ponto sem antes confirmar via `SELECT column_name FROM information_schema.columns WHERE table_name = 'cash_entries'` no SQL Editor do Supabase. Um teste de regressão (`schema-validation.test.ts`) garante que nenhum arquivo use o nome errado.
 - **ADR-005 (Múltiplos Métodos de Pagamento em Vendas):** A constraint `cash_entries_payment_method_check` no banco bloqueia a inserção direta de `payment_method = 'misto'`. Por isso, qualquer venda do PDV ou de Aparelhos com mais de uma forma de pagamento deve gerar **múltiplas linhas** em `cash_entries` (uma para cada método: `dinheiro`, `pix`, `cartao_credito`), mantendo a integridade no banco, mas pode gerar **apenas uma linha** na tabela `transactions` agregada como `MISTO` para fins de exibição e impressão de cupom fiscal.
 
+---
+
+## 11. Diretrizes de UI/UX (Apple Human Interface Guidelines - HIG)
+
+As seguintes regras e convenções de interface do usuário foram adotadas para garantir elegância, clareza e alta usabilidade móvel/desktop:
+1. **Navegação Móvel Eficiente (Bottom Tab Bar):**
+   - Substituída a navegação móvel de scroll horizontal por uma **Barra de Abas Inferior fixa com exatamente 5 posições**: Dashboard, Vendas, Estoque, OS e "Mais".
+   - A aba "Mais" abre um Drawer (gaveta inferior estilo Action Sheet do iOS) contendo as opções adicionais, mantendo a tela organizada e sem sobrecarga cognitiva.
+2. **Alvos de Toque (Touch Targets):**
+   - Botões, abas e links móveis devem manter uma altura interativa mínima de **44x44 pt** (usar `h-11` no Tailwind) para evitar cliques incorretos.
+3. **Resiliência e Profundidade Visual:**
+   - Efeitos de transparência e blur de fundo (`backdrop-blur-md bg-card/95`) são utilizados em barras fixas e modais de sobreposição para expressar camadas e profundidade física.
+4. **Animações e Micro-Interações:**
+   - Adicionada classe utilitária `.active-hig-feedback` para botões com escala elástica (`active:scale-[0.98]`) e curvas de transição de mola.
+
 *(Mantenha este documento atualizado a cada feature relevante criada ou correção feita.)*

@@ -151,3 +151,13 @@
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* iOS style active feedback and elastic spring transitions */
+.active-hig-feedback {
+  transition: transform 0.15s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.15s ease;
+}
+.active-hig-feedback:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+

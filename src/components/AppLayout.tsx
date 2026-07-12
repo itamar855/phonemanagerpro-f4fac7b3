@@ -5,7 +5,8 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Package, ArrowUpDown, ShoppingBag, Store, Landmark, PiggyBank,
-  LogOut, Smartphone, Wrench, Users, Sun, Moon, UserCircle, FileText, Download, Brain, Settings, Activity, ChevronDown, Wallet, MessageSquare, ShieldCheck
+  LogOut, Smartphone, Wrench, Users, Sun, Moon, UserCircle, FileText, Download, Brain, Settings, Activity, ChevronDown, Wallet, MessageSquare, ShieldCheck,
+  MoreHorizontal, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [activeStoreName, setActiveStoreName] = useState<string>("");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     supabase.from("stores").select("id, name").then(({ data }) => {
@@ -147,7 +149,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           ) : null}
         </div>
 
-        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto pt-2">
           {filteredNavItems.map((item) => {
             const Icon = item.icon || Smartphone;
             return (
@@ -155,13 +157,13 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 active:scale-[0.98]",
                   location.pathname === item.path
-                    ? "bg-primary/15 text-primary shadow-sm"
-                    : "text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                    ? "bg-primary/10 text-primary shadow-sm font-semibold"
+                    : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
                 )}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="h-4.5 w-4.5" />
                 {item.label}
               </Link>
             );
@@ -255,33 +257,115 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           {children}
         </main>
 
-        {/* Mobile bottom nav */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t border-border safe-bottom z-50">
-          <div className="flex overflow-x-auto scrollbar-none py-1 px-1">
-            {filteredNavItems.map((item) => {
-              const isActive = location.pathname === item.path;
-              const Icon = item.icon || Smartphone;
+        {/* Mobile bottom nav (Apple HIG layout) */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border/50 safe-bottom z-40">
+          <div className="grid grid-cols-5 py-1 px-1 h-16 items-center">
+            {(() => {
+              const primaryPaths = ["/", "/vendas", "/estoque", "/ordens-servico"];
+              const primaryNavItems = filteredNavItems.filter(item => primaryPaths.includes(item.path));
+              const secondaryNavItems = filteredNavItems.filter(item => !primaryPaths.includes(item.path));
+
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={cn(
-                    "flex flex-col items-center gap-1 px-3 py-3 rounded-xl transition-all duration-200 min-w-[72px] shrink-0",
-                    isActive
-                      ? "text-primary"
-                      : "text-muted-foreground active:scale-95"
+                <>
+                  {primaryNavItems.map((item) => {
+                    const isActive = location.pathname === item.path;
+                    const Icon = item.icon || Smartphone;
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        className={cn(
+                          "flex flex-col items-center justify-center gap-1 h-full rounded-xl transition-all active:scale-95 text-center",
+                          isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span className="text-[10px] font-medium leading-none">{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                  
+                  <button
+                    type="button"
+                    onClick={() => setMenuOpen(true)}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-1 h-full rounded-xl transition-all active:scale-95 text-center",
+                      menuOpen ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                    <span className="text-[10px] font-medium leading-none">Mais</span>
+                  </button>
+
+                  {/* Mobile Drawer (iOS Sheet Style) */}
+                  {menuOpen && (
+                    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50 backdrop-blur-sm transition-all duration-300">
+                      <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
+                      <div className="relative bg-card rounded-t-2xl border-t border-border p-4 max-h-[75vh] overflow-y-auto z-10 animate-in slide-in-from-bottom duration-200">
+                        <div className="flex justify-between items-center pb-3 border-b border-border/50 mb-3">
+                          <span className="font-display font-bold text-sm">Mais Módulos</span>
+                          <button 
+                            onClick={() => setMenuOpen(false)}
+                            className="h-8 w-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 active:scale-95"
+                          >
+                            <X className="h-4 w-4 text-muted-foreground" />
+                          </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-1">
+                          {secondaryNavItems.map((item) => {
+                            const Icon = item.icon || Smartphone;
+                            const isActive = location.pathname === item.path;
+                            return (
+                              <Link
+                                key={item.path}
+                                to={item.path}
+                                onClick={() => setMenuOpen(false)}
+                                className={cn(
+                                  "flex items-center gap-3 px-3 py-3 h-11 rounded-lg text-sm font-medium transition-all",
+                                  isActive
+                                    ? "bg-primary/10 text-primary font-semibold"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50 active:bg-muted"
+                                )}
+                              >
+                                <Icon className="h-4.5 w-4.5 shrink-0" />
+                                <span className="flex-1 text-left">{item.label}</span>
+                                <span className="text-xs text-muted-foreground/30">→</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                        
+                        <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <Button
+                              className="flex-1 h-11 px-3 justify-center bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40"
+                              variant="outline"
+                              onClick={toggleTheme}
+                            >
+                              {theme === "dark" ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                              {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+                            </Button>
+                            <Link to="/instalar" className="flex-1" onClick={() => setMenuOpen(false)}>
+                              <Button className="w-full h-11 px-3 bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40" variant="outline">
+                                <Download className="h-4 w-4 mr-2" /> Instalar
+                              </Button>
+                            </Link>
+                          </div>
+                          <Button
+                            className="h-11 w-full justify-center bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20"
+                            onClick={() => { setMenuOpen(false); signOut(); }}
+                          >
+                            <LogOut className="h-4 w-4 mr-2" />
+                            Sair da Conta
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                >
-                  <div className={cn(
-                    "rounded-xl p-1.5 transition-colors",
-                    isActive && "bg-primary/15"
-                  )}>
-                    <Icon className="h-6 w-6" />
-                  </div>
-                  <span className="text-[11px] font-semibold leading-none">{item.label}</span>
-                </Link>
+                </>
               );
-            })}
+            })()}
           </div>
         </nav>
       </div>
