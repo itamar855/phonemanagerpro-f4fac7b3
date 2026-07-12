@@ -42,6 +42,8 @@ interface CashRegister {
   difference: number | null;
   difference_reason?: string | null;
   closing_note?: string | null;
+  opening_receipt_url?: string | null;
+  closing_receipt_url?: string | null;
   status: "open" | "closed";
   profiles?: { display_name: string };
   stores?: { name: string };
