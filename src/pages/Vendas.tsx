@@ -1556,7 +1556,7 @@ const Vendas = () => {
                         )}
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">{new Date(tx.created_at).toLocaleDateString("pt-BR")}</p>
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex flex-wrap gap-2 mt-2">
                         {(userRole === "admin" || userRole === "gerente") && (
                           <Button
                             className="h-7 px-2 text-[10px] gap-1 border border-yellow-500/40 bg-yellow-500/5 text-yellow-600 dark:text-yellow-500 hover:bg-yellow-500/10 shadow-none"
@@ -1615,7 +1615,7 @@ const Vendas = () => {
                       <p className="text-[10px] text-muted-foreground mt-1">
                         {sale.customer_name ? `Cliente: ${sale.customer_name}` : "Venda avulsa"}{sale.seller_id && profileMap.get(sale.seller_id) ? ` · Vendedor: ${profileMap.get(sale.seller_id)}` : ""} · {new Date(sale.created_at).toLocaleDateString("pt-BR")}
                       </p>
-                      <div className="flex gap-2 mt-2" onClick={e => e.stopPropagation()}>
+                      <div className="flex flex-wrap gap-2 mt-2" onClick={e => e.stopPropagation()}>
                         <Button className="h-7 px-2 text-[10px] gap-1 border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 shadow-none"
                           onClick={() => setSelectedViewSale(sale)}>
                           <Eye className="h-3 w-3" />Ver detalhes

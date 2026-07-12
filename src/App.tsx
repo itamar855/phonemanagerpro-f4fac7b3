@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import DebugPanel from "@/components/DebugPanel";
 import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -92,8 +91,6 @@ const App = () => (
                 <Route path="/auditoria" element={<ProtectedRoute><Auditoria /></ProtectedRoute>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
-              {/* Painel de debug - visível apenas para admins */}
-              <DebugPanel />
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>
