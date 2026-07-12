@@ -58,6 +58,7 @@ const Caixa = () => {
   const [registersHistory, setRegistersHistory] = useState<CashRegister[]>([]);
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const selectedRegisterIdRef = useRef<string | null>(null);
   
   // Dialogs
   const [openDialog, setOpenDialog] = useState(false);
@@ -165,30 +166,48 @@ const Caixa = () => {
       setAllOpenRegisters(mappedOpenData);
     }
 
-    // Se for Vendedor/Gerente, o caixa padrão deve ser o dele especificamente nesta loja selecionada
-    const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
-    const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+    // Se houver um caixa selecionado manualmente, priorizamos ele
+    let regToUse: CashRegister | null = null;
+    const selectedId = selectedRegisterIdRef.current;
 
-    if (userRole !== "admin") {
-      // Vendedores/Gerentes sempre veem o próprio caixa da loja selecionada se existir, ou null
-      setCurrentRegister(userOwnedReg || null);
-    } else {
-      // Administradores:
-      if (storeId !== "all") {
-        const isCurrentlyManagingOpen = currentRegister ? mappedOpenData.find((r: any) => r.id === currentRegister.id) : null;
-        // Se mudou de loja e não estávamos gerenciando outro caixa aberto especificamente nessa nova loja:
-        if (!isCurrentlyManagingOpen || currentRegister.store_id !== storeId) {
-          setCurrentRegister(userOwnedReg || activeOne || null);
-        }
-      } else if (currentRegister) {
-        // No modo "Todas as Unidades", atualizamos os dados se o caixa ainda estiver aberto
-        const updatedReg = mappedOpenData.find(r => r.id === currentRegister.id);
-        if (updatedReg) setCurrentRegister(updatedReg);
+    if (userRole === "admin") {
+      const activeReg = selectedId 
+        ? mappedOpenData.find(r => r.id === selectedId)
+        : (currentRegister ? mappedOpenData.find(r => r.id === currentRegister.id) : null);
+
+      // Se mudou de loja, limpamos a seleção manual para evitar conflitos
+      const isDifferentStore = activeReg && storeId !== "all" && activeReg.store_id !== storeId;
+      const targetReg = isDifferentStore ? null : activeReg;
+
+      if (isDifferentStore) {
+        selectedRegisterIdRef.current = null;
       }
+
+      if (targetReg) {
+        setCurrentRegister(targetReg);
+        regToUse = targetReg;
+      } else {
+        if (storeId !== "all") {
+          const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
+          const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+          const defaultReg = userOwnedReg || activeOne || null;
+          setCurrentRegister(defaultReg);
+          regToUse = defaultReg;
+        } else {
+          setCurrentRegister(null);
+          regToUse = null;
+        }
+      }
+    } else {
+      // Vendedores/Gerentes sempre veem o próprio caixa da loja selecionada se existir, ou null
+      const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
+      const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+      const defaultReg = userOwnedReg || activeOne || null;
+      setCurrentRegister(defaultReg);
+      regToUse = defaultReg;
     }
 
-    // Identifica qual caixa as entradas devem carregar
-    const regToUse = currentRegister || (userRole !== "admin" ? (userOwnedReg || activeOne) : activeOne);
+    // regToUse já foi computado acima
     
     if (regToUse) {
        const { data: entriesData, error: entriesError } = await supabase
@@ -477,6 +496,7 @@ const Caixa = () => {
     toast.success("Caixa fechado!");
     logAction("DELETE_RECORD" as any, "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
     setCloseDialog(false);
+    selectedRegisterIdRef.current = null;
     setCurrentRegister(null);
     fetchRegister(activeStoreId);
   };
@@ -648,6 +668,7 @@ const Caixa = () => {
               allOpenRegisters.map(reg => (
                 <Card key={reg.id} className="overflow-hidden border-primary/20 hover:border-primary/40 transition-all cursor-pointer group"
                   onClick={() => {
+                    selectedRegisterIdRef.current = reg.id;
                     setCurrentRegister(reg);
                     setActiveTab("current");
                   }}>
