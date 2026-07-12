@@ -1057,6 +1057,31 @@ const Caixa = () => {
                 </div>
               )}
 
+              {(viewRegister.opening_receipt_url || viewRegister.closing_receipt_url) && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {viewRegister.opening_receipt_url && (
+                    <a 
+                      href={viewRegister.opening_receipt_url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:underline font-semibold bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20"
+                    >
+                      📂 Comprovante de Abertura
+                    </a>
+                  )}
+                  {viewRegister.closing_receipt_url && (
+                    <a 
+                      href={viewRegister.closing_receipt_url} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20"
+                    >
+                      📂 Comprovante de Fechamento
+                    </a>
+                  )}
+                </div>
+              )}
+
               <div className="mt-6 border rounded-lg overflow-hidden">
                 <div className="bg-muted px-4 py-2 border-b">
                   <h3 className="text-sm font-semibold">Lançamentos ({historyEntries.length})</h3>
@@ -1072,8 +1097,20 @@ const Caixa = () => {
                         <div className="min-w-0 flex-1 mr-2">
                           <p className="font-medium truncate">{(entry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
                           <p className="text-muted-foreground">
-                            {entry.payment_method === "misto" ? getMistoLabel(entry.description) : (paymentLabels[entry.payment_method || ""] || "Outro")} · {new Date(entry.created_at).toLocaleTimeString("pt-BR")}
+                            {entry.payment_method === "misto" ? getMistoLabel(entry.description) : (paymentLabels[entry.payment_method || ""] || "Outro")} · {new Date(entry.created_at).toLocaleString("pt-BR")}
                           </p>
+                          {entry.receipt_url && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <a 
+                                href={entry.receipt_url} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="inline-flex items-center gap-1 text-[10px] text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20"
+                              >
+                                📎 Comprovante
+                              </a>
+                            </div>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className={`font-bold ${["entrada","abertura"].includes(entry.type) ? "text-primary" : "text-destructive"}`}>
