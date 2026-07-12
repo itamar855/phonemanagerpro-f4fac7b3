@@ -399,13 +399,17 @@ const Caixa = () => {
   const expectedCash = Number(currentRegister?.opening_amount || 0) + cashIn - cashOut;
 
   const totalPix = confirmedEntries.reduce((s, e) => {
-    if (e.payment_method === "pix") return s + Number(e.amount);
-    if (e.payment_method === "misto") return s + Number(getMistoValues(e.description).pix || 0);
+    const isOutflow = ["saida", "sangria"].includes(e.type || "");
+    const coef = isOutflow ? -1 : 1;
+    if (e.payment_method === "pix") return s + (coef * Number(e.amount));
+    if (e.payment_method === "misto") return s + (coef * Number(getMistoValues(e.description).pix || 0));
     return s;
   }, 0);
   const totalCard = confirmedEntries.reduce((s, e) => {
-    if (["cartao_credito", "cartao_debito"].includes(e.payment_method)) return s + Number(e.amount);
-    if (e.payment_method === "misto") return s + Number(getMistoValues(e.description).cartao_credito || 0);
+    const isOutflow = ["saida", "sangria"].includes(e.type || "");
+    const coef = isOutflow ? -1 : 1;
+    if (["cartao_credito", "cartao_debito"].includes(e.payment_method)) return s + (coef * Number(e.amount));
+    if (e.payment_method === "misto") return s + (coef * Number(getMistoValues(e.description).cartao_credito || 0));
     return s;
   }, 0);
   const totalTotal = expectedCash + totalPix + totalCard;
