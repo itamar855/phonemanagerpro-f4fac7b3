@@ -16,6 +16,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible, CollapsibleTrigger, CollapsibleContent,
+} from "@/components/ui/collapsible";
 
 const COLORS = ["hsl(152, 60%, 45%)", "hsl(38, 92%, 50%)", "hsl(0, 62%, 50%)", "hsl(220, 25%, 50%)", "hsl(280, 50%, 50%)"];
 
@@ -372,20 +375,31 @@ const Dashboard = () => {
       </div>
 
       {can("estoque") && (lowStockStores.length > 0 || lowStockAcc.length > 0) && (
-        <div className="space-y-2">
-          {lowStockStores.map(s => (
-            <div key={s.name} className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-              <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-              <p className="text-xs"><span className="font-semibold">{s.name}</span>: estoque baixo — apenas <span className="font-bold text-destructive">{s.count}</span> aparelhos</p>
-            </div>
-          ))}
-          {lowStockAcc.map(a => (
-            <div key={a.name} className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
-              <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
-              <p className="text-xs"><span className="font-semibold">{a.name}</span>: apenas <span className="font-bold text-yellow-500">{a.qty}</span> unidades (mín: {a.min})</p>
-            </div>
-          ))}
-        </div>
+        <Collapsible className="border border-yellow-500/20 bg-yellow-500/5 rounded-xl overflow-hidden shadow-sm">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full flex items-center justify-between p-3 h-auto text-yellow-600 dark:text-yellow-500 hover:bg-yellow-500/10 active:scale-95 active-hig-feedback shadow-none">
+              <div className="flex items-center gap-2 text-xs font-semibold">
+                <AlertTriangle className="h-4 w-4" />
+                <span>Existem {lowStockStores.length + lowStockAcc.length} alertas de estoque baixo</span>
+              </div>
+              <span className="text-xs font-medium underline">Ver Detalhes</span>
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="px-4 pb-3 space-y-2 pt-1 border-t border-yellow-500/10">
+            {lowStockStores.map(s => (
+              <div key={s.name} className="flex items-center gap-2 text-xs py-1 border-b border-border/20 last:border-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                <p className="text-muted-foreground"><span className="font-semibold text-foreground">{s.name}</span>: estoque baixo — apenas <span className="font-bold text-red-500">{s.count}</span> aparelhos</p>
+              </div>
+            ))}
+            {lowStockAcc.map(a => (
+              <div key={a.name} className="flex items-center gap-2 text-xs py-1 border-b border-border/20 last:border-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                <p className="text-muted-foreground"><span className="font-semibold text-foreground">{a.name}</span>: apenas <span className="font-bold text-yellow-500">{a.qty}</span> unidades (mín: {a.min})</p>
+              </div>
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       {/* 📊 FINANCEIRO CONSOLIDADO */}
