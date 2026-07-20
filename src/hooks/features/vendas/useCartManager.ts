@@ -64,6 +64,7 @@ export const useCartManager = (
 
       const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
       let txIdForNote: string | undefined = undefined;
+      const pdvMetadata = { cart: cart.map(i => ({ id: i.acc.id, qty: i.qty })) };
 
       const cashAmount = pdvCash - pdvTroco;
       const paymentsCount = [cashAmount > 0, pdvCard > 0, pdvPix > 0].filter(Boolean).length;
@@ -72,39 +73,39 @@ export const useCartManager = (
         // Mixed payment consolidation
         const descMisto = `${desc} [MISTO:{"dinheiro":${cashAmount > 0 ? cashAmount : 0},"pix":${pdvPix},"cartao_credito":${pdvCard}}]`;
         const { data: tx, error: txError } = await supabase.from("transactions").insert({
-          type: "income", category: "acessorio", amount: cartTotal, description: descMisto, store_id: storeToUse, created_by: user.id
+          type: "income", category: "acessorio", amount: cartTotal, description: descMisto, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata
         }).select().single();
         if (txError) throw txError;
         if (tx) txIdForNote = tx.id;
-        if (cashAmount > 0) await createPendingCashEntry(storeToUse, user.id, cashAmount, `${desc} (Parte em Dinheiro)`, "dinheiro");
-        if (pdvCard > 0) await createPendingCashEntry(storeToUse, user.id, pdvCard, `${desc} (Parte em Cartão)`, "cartao_credito");
-        if (pdvPix > 0) await createPendingCashEntry(storeToUse, user.id, pdvPix, `${desc} (Parte em PIX)`, "pix");
+        if (cashAmount > 0) await createPendingCashEntry(storeToUse, user.id, cashAmount, `${desc} (Parte em Dinheiro)`, "dinheiro", undefined, txIdForNote);
+        if (pdvCard > 0) await createPendingCashEntry(storeToUse, user.id, pdvCard, `${desc} (Parte em Cartão)`, "cartao_credito", undefined, txIdForNote);
+        if (pdvPix > 0) await createPendingCashEntry(storeToUse, user.id, pdvPix, `${desc} (Parte em PIX)`, "pix", undefined, txIdForNote);
       } else {
         if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
-          const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: storeToUse, created_by: user.id }).select().single();
+          const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
           if (txError) throw txError;
           txIdForNote = tx?.id;
-          await createPendingCashEntry(storeToUse, user.id, cartTotal, desc, "dinheiro");
+          await createPendingCashEntry(storeToUse, user.id, cartTotal, desc, "dinheiro", undefined, txIdForNote);
         } else {
           if (pdvCash > 0) {
             if (cashAmount > 0) {
-              const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: storeToUse, created_by: user.id }).select().single();
+              const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
               if (txError) throw txError;
               if (!txIdForNote && tx) txIdForNote = tx.id;
-              await createPendingCashEntry(storeToUse, user.id, cashAmount, desc, "dinheiro");
+              await createPendingCashEntry(storeToUse, user.id, cashAmount, desc, "dinheiro", undefined, tx?.id);
             }
           }
           if (pdvCard > 0) {
-            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: storeToUse, created_by: user.id }).select().single();
+            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
             if (txError) throw txError;
             if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(storeToUse, user.id, pdvCard, desc, "cartao_credito");
+            await createPendingCashEntry(storeToUse, user.id, pdvCard, desc, "cartao_credito", undefined, tx?.id);
           }
           if (pdvPix > 0) {
-            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: storeToUse, created_by: user.id }).select().single();
+            const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
             if (txError) throw txError;
             if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(storeToUse, user.id, pdvPix, desc, "pix");
+            await createPendingCashEntry(storeToUse, user.id, pdvPix, desc, "pix", undefined, tx?.id);
           }
         }
       }

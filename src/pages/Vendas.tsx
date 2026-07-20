@@ -442,7 +442,7 @@ const Vendas = () => {
           ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
         });
         if (txError) throw txError;
-        await createPendingCashEntry(selectedProduct.store_id, user.id, salePriceAfterDiscount, desc, "dinheiro", form.retro_date);
+        await createPendingCashEntry(selectedProduct.store_id, user.id, salePriceAfterDiscount, desc, "dinheiro", form.retro_date, (saleData as any).id);
       } else {
         const paymentsList = [
           { name: "dinheiro", val: cashVal },
@@ -469,9 +469,9 @@ const Vendas = () => {
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
           });
           if (txError) throw txError;
-          if (cashVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, `${desc} (Parte em Dinheiro)`, "dinheiro", form.retro_date);
-          if (cardVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, `${desc} (Parte em Cartão)`, "cartao_credito", form.retro_date);
-          if (pixVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, `${desc} (Parte em PIX)`, "pix", form.retro_date);
+          if (cashVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, `${desc} (Parte em Dinheiro)`, "dinheiro", form.retro_date, (saleData as any).id);
+          if (cardVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, `${desc} (Parte em Cartão)`, "cartao_credito", form.retro_date, (saleData as any).id);
+          if (pixVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, `${desc} (Parte em PIX)`, "pix", form.retro_date, (saleData as any).id);
         } else {
           // Single payment type
           if (cashVal > 0) {
@@ -483,7 +483,7 @@ const Vendas = () => {
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
             });
             if (txError1) throw txError1;
-            await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date);
+            await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date, (saleData as any).id);
           }
           if (cardVal > 0) {
             const fee = (acc && Number(acc.credit_fee_percent)) || 0;
@@ -496,7 +496,7 @@ const Vendas = () => {
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
             });
             if (txError2) throw txError2;
-            await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date);
+            await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date, (saleData as any).id);
           }
           if (pixVal > 0) {
             const fee = (acc && Number(acc.pix_fee_percent)) || 0;
@@ -509,7 +509,7 @@ const Vendas = () => {
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
             });
             if (txError3) throw txError3;
-            await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date);
+            await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date, (saleData as any).id);
           }
         }
       }
@@ -531,21 +531,45 @@ const Vendas = () => {
   const handleDeleteSale = async (item: { id: string, type: "sale" | "pdv" }, reason: string) => {
     setLoading(true);
     try {
+      // 1. Excluir comprovantes fisicos e cash_entries vinculadas pelo novo reference_id
+      const { data: entriesToDel } = await supabase.from("cash_entries").select("receipt_url").eq("reference_id", item.id).not("receipt_url", "is", null);
+      if (entriesToDel && entriesToDel.length > 0) {
+        for (const entry of entriesToDel) {
+          if (entry.receipt_url) {
+            const path = entry.receipt_url.split("/comprovantes/")[1];
+            if (path) await supabase.storage.from("comprovantes").remove([path]);
+          }
+        }
+      }
+      await supabase.from("cash_entries").delete().eq("reference_id", item.id);
+
       if (item.type === "pdv") {
         const pdvSale = pdvSales.find(s => s.id === item.id);
         if (!pdvSale) return;
         
+        // Restaurar estoque dos acessórios via metadata
+        const { data: pdvTx } = await supabase.from("transactions").select("metadata").eq("id", item.id).maybeSingle();
+        const meta = pdvTx?.metadata as any;
+        if (meta && meta.cart && Array.isArray(meta.cart)) {
+          for (const cartItem of meta.cart) {
+             const { data: acc } = await supabase.from("accessories").select("quantity").eq("id", cartItem.id).maybeSingle();
+             if (acc) {
+               await supabase.from("accessories").update({ quantity: Number(acc.quantity) + Number(cartItem.qty) }).eq("id", cartItem.id);
+             }
+          }
+        }
+
         // Excluir de transactions
         const { error: txError } = await supabase.from("transactions").delete().eq("id", pdvSale.id);
         if (txError) throw txError;
         
-        // Excluir de cash_entries baseado na descrição
+        // Fallback: Excluir cash_entries por descrição para vendas legadas
         if (pdvSale.description) {
            await supabase.from("cash_entries").delete().eq("description", pdvSale.description);
         }
         
         logAction("DELETE_RECORD", "transactions", pdvSale.id, pdvSale, { reason }, pdvSale.store_id);
-        toast.success("Venda PDV removida com sucesso!");
+        toast.success("Venda PDV cancelada! Estoque, financeiro e arquivos revertidos.");
       } else {
         const sale = sales.find(s => s.id === item.id);
         if (!sale) return;
@@ -563,11 +587,10 @@ const Vendas = () => {
         
         // 4. Apagar a venda
         const { error } = await supabase.from("sales").delete().eq("id", sale.id);
-        
         if (error) throw error;
         
         logAction("DELETE_RECORD", "sales", sale.id, sale, { reason }, sale.store_id);
-        toast.success("Venda removida e produto retornou ao estoque!");
+        toast.success("Venda cancelada! Aparelho devolvido ao estoque, financeiro e arquivos revertidos.");
       }
       fetchData();
     } catch (error: any) {
