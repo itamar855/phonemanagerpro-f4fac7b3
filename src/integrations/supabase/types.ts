@@ -310,6 +310,7 @@ export type Database = {
           id: string
           payment_method: string | null
           receipt_url: string | null
+          reference_id: string | null
           reference_key: string | null
           register_id: string
           type: string
@@ -323,6 +324,7 @@ export type Database = {
           id?: string
           payment_method?: string | null
           receipt_url?: string | null
+          reference_id?: string | null
           reference_key?: string | null
           register_id: string
           type: string
@@ -336,6 +338,7 @@ export type Database = {
           id?: string
           payment_method?: string | null
           receipt_url?: string | null
+          reference_id?: string | null
           reference_key?: string | null
           register_id?: string
           type?: string
@@ -1763,6 +1766,7 @@ export type Database = {
           product_id: string | null
           receipt_url: string | null
           reconciled: boolean | null
+          metadata: Json | null
           reference_key: string | null
           source_account_id: string | null
           store_id: string | null
@@ -1781,6 +1785,7 @@ export type Database = {
           product_id?: string | null
           receipt_url?: string | null
           reconciled?: boolean | null
+          metadata?: Json | null
           reference_key?: string | null
           source_account_id?: string | null
           store_id?: string | null
@@ -1799,6 +1804,7 @@ export type Database = {
           product_id?: string | null
           receipt_url?: string | null
           reconciled?: boolean | null
+          metadata?: Json | null
           reference_key?: string | null
           source_account_id?: string | null
           store_id?: string | null
