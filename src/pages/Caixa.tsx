@@ -64,6 +64,7 @@ const Caixa = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [entryDialog, setEntryDialog] = useState(false);
   const [closeDialog, setCloseDialog] = useState(false);
+  const [blockCloseDialog, setBlockCloseDialog] = useState(false);
   const [sangriaDialog, setSangriaDialog] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(false);
   const [justDialogOpened, setJustDialogOpened] = useState(false);
@@ -477,6 +478,15 @@ const Caixa = () => {
 
   const handleCloseRegister = async () => {
     if (!currentRegister) return;
+
+    const hasFinancialError = Math.abs(difference) > 0.01;
+    const hasPendingEntries = pendingCount > 0;
+    
+    if ((hasFinancialError || hasPendingEntries) && userRole !== "admin") {
+      setBlockCloseDialog(true);
+      return;
+    }
+
     if (Math.abs(difference) > 5 && !closeForm.reason) {
       toast.error("Informe o motivo da diferença!");
       return;
@@ -485,7 +495,7 @@ const Caixa = () => {
     let receiptUrl: string | null = null;
     if (closeForm.receipt) receiptUrl = await uploadReceipt(closeForm.receipt, `fechamento/${currentRegister.id}-${Date.now()}`);
 
-    await supabase.from("cash_registers" as any).update({
+    const { error: updateError } = await supabase.from("cash_registers" as any).update({
       closing_amount: closingAmount, expected_amount: totalTotal, difference,
       difference_reason: closeForm.reason || null,
       closing_note: closeForm.note || null,
@@ -493,8 +503,14 @@ const Caixa = () => {
       status: "closed", closed_at: new Date().toISOString(),
     }).eq("id", currentRegister.id);
 
+    if (updateError) {
+      toast.error("Erro ao fechar o caixa: " + updateError.message);
+      setLoading(false);
+      return;
+    }
+
     toast.success("Caixa fechado!");
-    logAction("DELETE_RECORD" as any, "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
+    logAction("UPDATE_RECORD" as any, "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
     setCloseDialog(false);
     selectedRegisterIdRef.current = null;
     setCurrentRegister(null);
@@ -755,7 +771,13 @@ const Caixa = () => {
                         <Button className="h-9 text-[11px] bg-transparent border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500/10" onClick={() => setSangriaDialog(true)}>Sangria</Button>
                       )}
                       <Button className="h-9 text-[11px] bg-transparent border border-border text-foreground hover:bg-muted" onClick={() => setEntryDialog(true)}>Lançamento</Button>
-                      <Button className="h-9 text-[11px] bg-destructive hover:bg-destructive/90 text-white" onClick={() => setCloseDialog(true)}>Fechar Caixa</Button>
+                      <Button className="h-9 text-[11px] bg-destructive hover:bg-destructive/90 text-white" onClick={() => {
+                        if (pendingCount > 0 && userRole !== "admin") {
+                          setBlockCloseDialog(true);
+                        } else {
+                          setCloseDialog(true);
+                        }
+                      }}>Fechar Caixa</Button>
                     </div>
                   </div>
                 </CardContent>
@@ -1152,6 +1174,25 @@ const Caixa = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={blockCloseDialog} onOpenChange={setBlockCloseDialog}>
+        <DialogContent>
+          <DialogTitle className="text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" /> Fechamento Bloqueado
+          </DialogTitle>
+          <div className="space-y-4 mt-2 text-sm">
+            <p>Você não pode fechar o caixa pois existem pendências ou divergências financeiras:</p>
+            <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+              {pendingCount > 0 && <li>Existem <strong>{pendingCount}</strong> lançamentos pendentes de confirmação.</li>}
+              {Math.abs(difference) > 0.01 && <li>Há uma diferença de caixa no valor de <strong>{formatCurrency(difference)}</strong>.</li>}
+            </ul>
+            <p className="font-semibold text-primary mt-4">Apenas um administrador pode forçar o fechamento neste estado.</p>
+          </div>
+          <div className="flex justify-end mt-4">
+            <Button onClick={() => setBlockCloseDialog(false)}>Entendi</Button>
+          </div>
         </DialogContent>
       </Dialog>
 
