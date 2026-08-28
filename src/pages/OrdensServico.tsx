@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import {
   Plus, Wrench, Search, Clock, CheckCircle2, AlertCircle, Package,
   Phone, User, FileText, MessageCircle, Banknote, CreditCard, QrCode, DollarSign,
-  Printer, ChevronRight, ChevronLeft, Camera, Upload, Receipt, Shield, Trash2, Store
+  Printer, ChevronRight, ChevronLeft, Camera, Upload, Receipt, Shield, Trash2, Store, Copy
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { KanbanBoard } from "@/components/KanbanBoard";
@@ -968,6 +968,58 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
+  const handleDuplicateOS = (order: any) => {
+    if (!order) return;
+
+    const isPattern = typeof order.device_password === "string" && order.device_password.startsWith("Padrão: ");
+    if (isPattern) {
+      setPasswordType("pattern");
+    } else {
+      setPasswordType("text");
+    }
+
+    const priceToUse = order.final_price 
+      ? String(order.final_price) 
+      : order.estimated_price 
+        ? String(order.estimated_price) 
+        : "";
+
+    setForm({
+      customer_name: order.customer_name || "",
+      customer_phone: order.customer_phone || "",
+      customer_cpf: order.customer_cpf || "",
+      device_brand: order.device_brand || "iPhone",
+      device_model: order.device_model || "",
+      device_imei: order.device_imei || "",
+      device_color: order.device_color || "",
+      device_condition: order.device_condition || "",
+      device_password: order.device_password || "",
+      device_accessories: order.device_accessories || "",
+      reported_defect: order.reported_defect || "",
+      requested_service: order.requested_service || "",
+      store_id: order.store_id || (activeStoreId !== "all" ? activeStoreId : ""),
+      estimated_price: priceToUse,
+      estimated_completion: "",
+      technician_id: order.technician_id || "",
+      terms_accepted: order.terms_accepted || false,
+      internal_notes: order.internal_notes 
+        ? `[Duplicada da OS #${order.order_number}] ${order.internal_notes}` 
+        : `[Duplicada da OS #${order.order_number}]`,
+      entry_checklist: order.entry_checklist || ({} as ChecklistData),
+      device_is_off: !!order.device_is_off,
+    });
+
+    if (order.device_is_off) {
+      setDeviceOffAgreed(true);
+    } else {
+      setDeviceOffAgreed(false);
+    }
+
+    setDetailOrder(null);
+    setDialogOpen(true);
+    toast.info(`Dados da OS #${order.order_number} duplicados no formulário. Revise os campos e confirme para gerar a nova OS/Orçamento.`);
+  };
+
   const filtered = orders.filter((o: any) => {
     // Filtro por data
     if (filterStartDate) {
@@ -1177,6 +1229,10 @@ const OrdensServico = () => {
                     <span className="text-xs text-muted-foreground">{new Date(detailOrder.created_at).toLocaleString("pt-BR")}</span>
                   </div>
                   <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+                    <Button className="h-8 px-3 text-[10px] gap-1 border bg-transparent text-primary border-primary/30 hover:bg-primary/10"
+                      onClick={() => handleDuplicateOS(detailOrder)}>
+                      <Copy className="h-3 w-3" /> Duplicar OS
+                    </Button>
                     <Button className="h-8 px-3 text-[10px] gap-1 border bg-transparent text-foreground hover:bg-muted"
                       onClick={() => handleExportPdf(detailOrder)} disabled={pdfLoading}>
                       <FileText className="h-3 w-3" /> PDF A4
