@@ -6,13 +6,14 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Package, ArrowUpDown, ShoppingBag, Store, Landmark, PiggyBank,
   LogOut, Smartphone, Wrench, Users, Sun, Moon, UserCircle, FileText, Download, Brain, Settings, Activity, ChevronDown, Wallet, MessageSquare, ShieldCheck,
-  MoreHorizontal, X
+  MoreHorizontal, X, KeyRound
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import ChangePasswordModal from "./ChangePasswordModal";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", permission: "dashboard" },
@@ -41,6 +42,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [activeStoreName, setActiveStoreName] = useState<string>("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   useEffect(() => {
     supabase.from("stores").select("id, name").then(({ data }) => {
@@ -195,6 +197,13 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
               </Button>
             </Link>
           </div>
+          <Button
+            className="h-9 px-3 w-full justify-start bg-transparent text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+            onClick={() => setChangePasswordOpen(true)}
+          >
+            <KeyRound className="h-4 w-4 mr-2" />
+            Alterar Senha
+          </Button>
           <Button
             className="h-9 px-3 w-full justify-start bg-transparent text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
             onClick={signOut}
@@ -361,6 +370,14 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                     </Link>
                   </div>
                   <Button
+                    className="h-11 w-full justify-center bg-muted/20 text-foreground border border-border/50 hover:bg-muted/40"
+                    variant="outline"
+                    onClick={() => { setMenuOpen(false); setChangePasswordOpen(true); }}
+                  >
+                    <KeyRound className="h-4 w-4 mr-2 text-primary" />
+                    Alterar Minha Senha
+                  </Button>
+                  <Button
                     className="h-11 w-full justify-center bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20"
                     onClick={() => { setMenuOpen(false); signOut(); }}
                   >
@@ -373,6 +390,8 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           );
         })()}
       </div>
+
+      <ChangePasswordModal open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
     </div>
   );
 };

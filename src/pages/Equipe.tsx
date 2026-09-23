@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Users, Shield, ShieldCheck, User, Plus, Phone, Store, Trash2, ChevronDown, Check, AlertTriangle } from "lucide-react";
+import { Users, Shield, ShieldCheck, User, Plus, Phone, Store, Trash2, ChevronDown, Check, AlertTriangle, KeyRound } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -89,6 +89,8 @@ const Equipe = () => {
   const [justification, setJustification] = useState("");
   const [editSalesCommission, setEditSalesCommission] = useState("10");
   const [editServicesCommission, setEditServicesCommission] = useState("10");
+  const [newMemberPassword, setNewMemberPassword] = useState("");
+  const [memberPasswordLoading, setMemberPasswordLoading] = useState(false);
 
   const fetchData = async () => {
     const [profilesRes, rolesRes, storesRes, memberStoresRes] = await Promise.all([
@@ -149,6 +151,39 @@ const Equipe = () => {
     setEditSalesCommission(String(member.commission_sales_percent ?? 10));
     setEditServicesCommission(String(member.commission_services_percent ?? 10));
     setJustification("");
+    setNewMemberPassword("");
+  };
+
+  const handleAdminChangePassword = async () => {
+    if (!selectedMember || !newMemberPassword) return;
+    if (newMemberPassword.length < 6) {
+      toast.error("A nova senha deve ter no mínimo 6 caracteres.");
+      return;
+    }
+    setMemberPasswordLoading(true);
+    try {
+      const response = await supabase.functions.invoke("admin-change-password", {
+        body: {
+          user_id: selectedMember.user_id,
+          new_password: newMemberPassword,
+        },
+      });
+
+      if (response.error) {
+        let errorMsg = response.error.message;
+        try {
+          const body = await response.error.context?.json();
+          if (body?.error) errorMsg = body.error;
+        } catch (_) {}
+        toast.error(errorMsg || "Erro ao alterar senha do membro");
+      } else {
+        toast.success(response.data?.message || "Senha atualizada com sucesso!");
+        setNewMemberPassword("");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao alterar senha do membro");
+    }
+    setMemberPasswordLoading(false);
   };
 
   const handleRoleChange = async () => {
@@ -495,6 +530,36 @@ const Equipe = () => {
                   {newRole === "admin" && (
                     <p className="text-[11px] text-muted-foreground">Administradores têm acesso total ao sistema.</p>
                   )}
+                </div>
+
+                {/* Alterar Senha do Membro (Admin) */}
+                <div className="border border-border/80 rounded-xl p-3.5 bg-muted/20 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                    <KeyRound className="h-3.5 w-3.5 text-primary" />
+                    <span>Redefinir Senha do Membro</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Defina uma nova senha para este colaborador. Ele usará essa senha no próximo login.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      placeholder="Nova senha (mínimo 6 caracteres)"
+                      value={newMemberPassword}
+                      onChange={(e) => setNewMemberPassword(e.target.value)}
+                      className="h-10 bg-background text-sm"
+                      minLength={6}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 shrink-0 font-semibold border-primary/40 hover:bg-primary/10 text-primary"
+                      disabled={memberPasswordLoading || !newMemberPassword || newMemberPassword.length < 6}
+                      onClick={handleAdminChangePassword}
+                    >
+                      {memberPasswordLoading ? "Alterando..." : "Atualizar Senha"}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5 p-3 rounded-lg bg-primary/5 border border-primary/20">
