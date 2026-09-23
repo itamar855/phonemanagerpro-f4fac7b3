@@ -228,12 +228,26 @@ const Equipe = () => {
     setLoading(true);
 
     try {
-      await supabase.from("user_roles").delete().eq("user_id", memberToDelete.user_id);
-      await supabase.from("profiles").delete().eq("user_id", memberToDelete.user_id);
-      logAction("DELETE_RECORD" as any, "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
-      toast.success("Membro removido com sucesso!");
-      setMemberToDelete(null);
-      fetchData();
+      const response = await supabase.functions.invoke("delete-user", {
+        body: {
+          user_id: memberToDelete.user_id,
+          reason,
+        },
+      });
+
+      if (response.error) {
+        let errorMsg = response.error.message;
+        try {
+          const body = await response.error.context?.json();
+          if (body?.error) errorMsg = body.error;
+        } catch (_) {}
+        toast.error(errorMsg || "Erro ao remover membro");
+      } else {
+        logAction("DELETE_RECORD" as any, "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
+        toast.success(response.data?.message || "Membro removido com sucesso!");
+        setMemberToDelete(null);
+        fetchData();
+      }
     } catch (err: any) {
       toast.error(err.message || "Erro ao remover membro");
     }
@@ -257,9 +271,14 @@ const Equipe = () => {
       });
 
       if (response.error) {
-        toast.error(response.error.message || "Erro ao criar usuário");
+        let errorMsg = response.error.message;
+        try {
+          const body = await response.error.context?.json();
+          if (body?.error) errorMsg = body.error;
+        } catch (_) {}
+        toast.error(errorMsg || "Erro ao criar usuário");
       } else {
-        toast.success("Usuário criado com sucesso!");
+        toast.success("Usuário cadastrado com sucesso!");
         setCreateDialogOpen(false);
         setCreateForm({ email: "", password: "", display_name: "", phone: "", role: "vendedor", store_id: "" });
         fetchData();
