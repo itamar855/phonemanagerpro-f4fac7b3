@@ -723,46 +723,76 @@ const OrdensServico = () => {
       new_status: newStatus, created_by: user.id, notes: reason || null,
     } as any);
 
+    if (newStatus === "cancelled") {
+      // Reverter peças vinculadas de volta para in_stock
+      const { data: items } = await supabase
+        .from("service_order_items" as any)
+        .select("product_id")
+        .eq("service_order_id", orderId);
+      if (items && items.length > 0) {
+        const prodIds = items.map((i: any) => i.product_id).filter(Boolean);
+        if (prodIds.length > 0) {
+          await supabase
+            .from("products")
+            .update({ status: "in_stock" })
+            .in("id", prodIds)
+            .eq("status", "sold");
+        }
+      }
+    }
+
     if (newStatus === "delivered") {
-      const order = orders.find(o => o.id === orderId);
+      // Busca dados mais recentes diretamente do banco
+      const { data: freshOrder } = await supabase.from("service_orders").select("*").eq("id", orderId).maybeSingle();
+      const order = freshOrder || orders.find(o => o.id === orderId);
       if (order && (order as any).store_id) {
         const o = order as any;
         const desc = `OS #${o.order_number} — ${o.requested_service} (${o.customer_name})`;
-        
-        const cash = Number(o.payment_cash || 0);
-        const card = Number(o.payment_card || 0);
-        const pix = Number(o.payment_pix || 0);
-        const other = Number(o.payment_other || 0);
 
-        // Busca a primeira conta cadastrada para a loja
-        const { data: accounts } = await supabase
-          .from("store_bank_accounts")
-          .select("*")
-          .eq("store_id", o.store_id);
-        
-        const account = accounts && accounts.length > 0 ? accounts[0] : null;
-        const defaultAccountId = account?.id || null;
-        
-        if (cash === 0 && card === 0 && pix === 0 && other === 0) {
-          const amount = Number(o.final_price || o.estimated_price || 0);
-          if (amount > 0) {
-            await createPendingCashEntry(o.store_id, user.id, amount, desc, "dinheiro");
-            await supabase.from("transactions").insert({
-              type: "income",
-              category: "Manutenção",
-              amount,
-              net_amount: amount,
-              description: `${desc} [Dinheiro]`,
-              store_id: o.store_id,
-              created_by: user.id,
-              expected_settlement_date: new Date().toISOString(),
-              reconciled: false,
-            });
-          }
-        } else {
-          if (cash > 0) {
-            await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
-            await supabase.from("transactions").insert({
+        // Idempotência: verificar se já existem transações para esta OS para não duplicar receita
+        const { data: existingTx } = await supabase
+          .from("transactions")
+          .select("id")
+          .eq("store_id", o.store_id)
+          .like("description", `OS #${o.order_number} —%`)
+          .limit(1);
+
+        if (!existingTx || existingTx.length === 0) {
+          const cash = Number(o.payment_cash || 0);
+          const card = Number(o.payment_card || 0);
+          const pix = Number(o.payment_pix || 0);
+          const other = Number(o.payment_other || 0);
+
+          // Busca a primeira conta cadastrada para a loja
+          const { data: accounts } = await supabase
+            .from("store_bank_accounts")
+            .select("*")
+            .eq("store_id", o.store_id);
+          
+          const account = accounts && accounts.length > 0 ? accounts[0] : null;
+          const defaultAccountId = account?.id || null;
+          
+          if (cash === 0 && card === 0 && pix === 0 && other === 0) {
+            const amount = Number(o.final_price || o.estimated_price || 0);
+            if (amount > 0) {
+              const defaultMethod = o.payment_method || "dinheiro";
+              await createPendingCashEntry(o.store_id, user.id, amount, desc, defaultMethod);
+              await supabase.from("transactions").insert({
+                type: "income",
+                category: "Manutenção",
+                amount,
+                net_amount: amount,
+                description: `${desc} [${defaultMethod.toUpperCase()}]`,
+                store_id: o.store_id,
+                created_by: user.id,
+                expected_settlement_date: new Date().toISOString(),
+                reconciled: false,
+              });
+            }
+          } else {
+            if (cash > 0) {
+              await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
+              await supabase.from("transactions").insert({
               type: "income",
               category: "Manutenção",
               amount: cash,
@@ -831,6 +861,7 @@ const OrdensServico = () => {
         toast.info("Lançamentos financeiros registrados.");
       }
     }
+  }
 
     toast.success(`Status: ${statusConfig[newStatus]?.label}`);
     fetchData();
@@ -878,8 +909,23 @@ const OrdensServico = () => {
   };
 
   const handleDeleteOS = async (id: string, reason: string) => {
-    
     setLoading(true);
+    // Reverter peças vinculadas de volta para in_stock antes de excluir a OS
+    const { data: items } = await supabase
+      .from("service_order_items" as any)
+      .select("product_id")
+      .eq("service_order_id", id);
+    if (items && items.length > 0) {
+      const prodIds = items.map((i: any) => i.product_id).filter(Boolean);
+      if (prodIds.length > 0) {
+        await supabase
+          .from("products")
+          .update({ status: "in_stock" })
+          .in("id", prodIds)
+          .eq("status", "sold");
+      }
+    }
+
     const { error } = await supabase.from("service_orders").delete().eq("id", id);
     if (error) {
       toast.error("Erro ao excluir: " + error.message);
@@ -1122,38 +1168,48 @@ const OrdensServico = () => {
         />
       </div>
 
-      {/* Status chips */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <Button className={`h-7 px-3 text-xs shrink-0 ${filterStatus === "all" ? "bg-primary text-primary-foreground" : "bg-transparent border border-border text-foreground hover:bg-muted"}`} onClick={() => setFilterStatus("all")}>
-          Todas ({orders.length})
+      {/* Status chips com rolagem suave e pílulas táteis */}
+      <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 scrollbar-none touch-pan-x scroll-smooth">
+        <Button 
+          variant={filterStatus === "all" ? "default" : "outline"}
+          className={`h-8 px-3.5 text-xs shrink-0 rounded-full active:scale-95 transition-all ${filterStatus === "all" ? "font-semibold shadow-sm" : "border-border/70 hover:bg-muted text-muted-foreground"}`} 
+          onClick={() => setFilterStatus("all")}
+        >
+          Todas <span className="ml-1.5 text-[10px] opacity-80 font-mono">({orders.length})</span>
         </Button>
         {allStatuses.filter((s) => statusCounts[s]).map((s) => (
-          <Button key={s} className={`h-7 px-3 text-xs shrink-0 ${filterStatus === s ? "bg-primary text-primary-foreground" : "bg-transparent border border-border text-foreground hover:bg-muted"}`} onClick={() => setFilterStatus(s)}>
-            {statusConfig[s].label} ({statusCounts[s]})
+          <Button 
+            key={s} 
+            variant={filterStatus === s ? "default" : "outline"}
+            className={`h-8 px-3.5 text-xs shrink-0 rounded-full active:scale-95 transition-all ${filterStatus === s ? "font-semibold shadow-sm" : "border-border/70 hover:bg-muted text-muted-foreground"}`} 
+            onClick={() => setFilterStatus(s)}
+          >
+            {statusConfig[s].label} <span className="ml-1.5 text-[10px] opacity-80 font-mono">({statusCounts[s]})</span>
           </Button>
         ))}
       </div>
 
       {/* Search + Date Filter */}
-      <div className="flex gap-2 w-full flex-wrap">
+      <div className="flex gap-2 w-full flex-wrap items-center">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, IMEI, modelo ou nº da OS..." className="pl-9 h-10" />
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Label className="text-xs text-muted-foreground shrink-0">De</Label>
+        <div className="flex items-center gap-1.5 flex-wrap">
           <Input
             type="date"
             value={filterStartDate}
             onChange={e => setFilterStartDate(e.target.value)}
-            className="h-10 w-[145px]"
+            className="h-10 w-[135px] text-xs"
+            title="Data inicial"
           />
-          <Label className="text-xs text-muted-foreground shrink-0">Até</Label>
+          <span className="text-xs text-muted-foreground">até</span>
           <Input
             type="date"
             value={filterEndDate}
             onChange={e => setFilterEndDate(e.target.value)}
-            className="h-10 w-[145px]"
+            className="h-10 w-[135px] text-xs"
+            title="Data final"
           />
           {(filterStartDate || filterEndDate) && (
             <Button
@@ -1166,14 +1222,14 @@ const OrdensServico = () => {
             </Button>
           )}
         </div>
-        <Button className={`px-4 h-10 border text-xs gap-2 ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted"}`} onClick={() => setViewMode(v => v === "list" ? "kanban" : "list")}>
+        <Button className={`px-4 h-10 border text-xs gap-2 shrink-0 ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted"}`} onClick={() => setViewMode(v => v === "list" ? "kanban" : "list")}>
           {viewMode === "list" ? "Ver Kanban" : "Ver Lista"}
         </Button>
       </div>
 
       {/* List or Kanban */}
       {viewMode === "list" ? (
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {filtered.length > 0 ? filtered.map((order: any) => (
           <OSCard
             key={order.id}
@@ -1184,6 +1240,7 @@ const OrdensServico = () => {
             formatCurrency={formatCurrency}
             totalPaid={totalPaid}
             onClick={() => openDetail(order)}
+            onWhatsApp={handleSendWhatsApp}
           />
         )) : (
           <Card className="border-border/50">
@@ -1209,7 +1266,7 @@ const OrdensServico = () => {
 
       {/* Detail Dialog */}
       <Dialog open={!!detailOrder} onOpenChange={(open) => !open && setDetailOrder(null)}>
-        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
+        <DialogContent className="max-w-xl max-h-[92dvh] overflow-y-auto p-4 sm:p-6">
           {detailOrder && (
             <>
               <DialogHeader>
@@ -1220,30 +1277,47 @@ const OrdensServico = () => {
               </DialogHeader>
               <div className="space-y-4">
 
-                {/* Status + ações */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
+                {/* Status + ações em grid tátil */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <Badge className={`text-[10px] border ${statusConfig[detailOrder.status]?.color}`}>
                       {statusConfig[detailOrder.status]?.label}
                     </Badge>
                     <span className="text-xs text-muted-foreground">{new Date(detailOrder.created_at).toLocaleString("pt-BR")}</span>
                   </div>
-                  <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-                    <Button className="h-8 px-3 text-[10px] gap-1 border bg-transparent text-primary border-primary/30 hover:bg-primary/10"
-                      onClick={() => handleDuplicateOS(detailOrder)}>
-                      <Copy className="h-3 w-3" /> Duplicar OS
+
+                  {/* Grid de Ações Rápidas no Mobile */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full pt-1">
+                    <Button 
+                      type="button"
+                      className="h-9 px-2 text-xs gap-1.5 border bg-transparent text-primary border-primary/30 hover:bg-primary/10 active:scale-95 transition-transform"
+                      onClick={() => handleDuplicateOS(detailOrder)}
+                    >
+                      <Copy className="h-3.5 w-3.5" /> Duplicar OS
                     </Button>
-                    <Button className="h-8 px-3 text-[10px] gap-1 border bg-transparent text-foreground hover:bg-muted"
-                      onClick={() => handleExportPdf(detailOrder)} disabled={pdfLoading}>
-                      <FileText className="h-3 w-3" /> PDF A4
+                    <Button 
+                      type="button"
+                      className="h-9 px-2 text-xs gap-1.5 border bg-transparent text-foreground hover:bg-muted active:scale-95 transition-transform"
+                      onClick={() => handleExportPdf(detailOrder)} 
+                      disabled={pdfLoading}
+                    >
+                      <FileText className="h-3.5 w-3.5" /> PDF A4
                     </Button>
-                    <Button className="h-8 px-3 text-[10px] gap-1 border bg-transparent text-foreground hover:bg-muted"
-                      onClick={() => handleExportThermal(detailOrder)} disabled={pdfLoading}>
-                      <Printer className="h-3 w-3" /> Cupom 80mm
+                    <Button 
+                      type="button"
+                      className="h-9 px-2 text-xs gap-1.5 border bg-transparent text-foreground hover:bg-muted active:scale-95 transition-transform"
+                      onClick={() => handleExportThermal(detailOrder)} 
+                      disabled={pdfLoading}
+                    >
+                      <Printer className="h-3.5 w-3.5" /> Cupom 80mm
                     </Button>
-                    <Button className="h-8 px-3 text-[10px] gap-1 border bg-transparent text-green-500 border-green-500/30 hover:bg-green-500/10"
-                      onClick={() => handleSendWhatsApp(detailOrder)} disabled={pdfLoading}>
-                      <MessageCircle className="h-3 w-3" /> WhatsApp
+                    <Button 
+                      type="button"
+                      className="h-9 px-2 text-xs gap-1.5 border bg-transparent text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 active:scale-95 transition-transform font-medium"
+                      onClick={() => handleSendWhatsApp(detailOrder)} 
+                      disabled={pdfLoading}
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
                     </Button>
                   </div>
                 </div>
@@ -1463,20 +1537,22 @@ const OrdensServico = () => {
                       </div>
                     )}
 
-                    <div className="space-y-1.5 pt-2">
-                      <Label className="text-xs font-semibold text-primary">Campo Obrigatório: Motivo da Alteração</Label>
-                      <Input 
-                        value={updateForm.justification} 
-                        onChange={e => setUpdateForm(f => ({ ...f, justification: e.target.value }))} 
-                        placeholder="Ex: Atualização de preço, peça adicionada, técnico alterado..." 
-                        required 
-                        className="h-10 border-primary/40 shadow-sm"
-                      />
-                    </div>
+                    <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm -mx-3 -mb-3 p-3.5 border-t border-primary/20 rounded-b-lg shadow-lg z-10 space-y-2 mt-4">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-semibold text-primary">Campo Obrigatório: Motivo da Alteração</Label>
+                        <Input 
+                          value={updateForm.justification} 
+                          onChange={e => setUpdateForm(f => ({ ...f, justification: e.target.value }))} 
+                          placeholder="Ex: Atualização de preço, peça adicionada, técnico alterado..." 
+                          required 
+                          className="h-9 text-xs border-primary/40 bg-background shadow-sm"
+                        />
+                      </div>
 
-                    <Button className="w-full h-10 font-bold" onClick={handleUpdateService} disabled={loading || !updateForm.justification}>
-                      {loading ? "Salvando..." : "Salvar Alterações e Justificar"}
-                    </Button>
+                      <Button className="w-full h-11 font-bold shadow-md active:scale-[0.99] transition-transform" onClick={handleUpdateService} disabled={loading || !updateForm.justification}>
+                        {loading ? "Salvando..." : "Salvar Alterações e Justificar"}
+                      </Button>
+                    </div>
                   </div>
                 )}
 
@@ -1486,8 +1562,11 @@ const OrdensServico = () => {
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Atualizar Status</p>
                     <div className="flex flex-wrap gap-2">
                       {allStatuses.filter((s) => s !== detailOrder.status).map((s) => (
-                        <Button key={s} className="text-xs h-8 bg-transparent border border-border text-foreground hover:bg-muted"
-                          onClick={() => updateStatus(detailOrder.id, s, detailOrder.status)}>
+                        <Button 
+                          key={s} 
+                          className="text-xs h-9 px-3 bg-transparent border border-border text-foreground hover:bg-muted active:scale-95 transition-transform"
+                          onClick={() => updateStatus(detailOrder.id, s, detailOrder.status)}
+                        >
                           {statusConfig[s].label}
                         </Button>
                       ))}

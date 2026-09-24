@@ -1,11 +1,14 @@
-import React from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
   Eye, Smartphone, Store, User as UserIcon, MapPin, Wallet, Banknote,
   CreditCard, QrCode, ArrowLeftRight, Percent, Shield, CalendarDays,
-  StickyNote, FileText, MessageCircle
+  StickyNote, FileText, MessageCircle, ReceiptText
 } from "lucide-react";
+import { emitInvoice } from "@/lib/services/fiscalService";
+import { toast } from "sonner";
 
 interface DetalhesVendaModalProps {
   selectedViewSale: any | null;
@@ -29,6 +32,40 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
   handleGerarNota,
   notaLoading
 }) => {
+  const navigate = useNavigate();
+  const [emitindoFiscal, setEmitindoFiscal] = useState(false);
+
+  const handleEmitirFiscal = async (sale: any, product: any) => {
+    try {
+      setEmitindoFiscal(true);
+      const saleNet = Number(sale.sale_price) - (Number(sale.discount) || 0);
+      const items = [{
+        name: product?.name || "Aparelho Celular",
+        ncm: "8517.13.00",
+        cfop: "5102",
+        quantity: 1,
+        unit_price: saleNet,
+        total_price: saleNet,
+      }];
+      const inv = await emitInvoice({
+        storeId: sale.store_id,
+        type: "nfce",
+        saleId: sale.id,
+        customerName: sale.customer_name || "Consumidor Final",
+        customerCpfCnpj: sale.customer_cpf || undefined,
+        totalAmount: saleNet,
+        items,
+        userId: "venda-modal",
+      });
+      toast.success(`NFC-e nº ${inv.number} autorizada pela SEFAZ com sucesso!`);
+      setSelectedViewSale(null);
+      navigate("/notas-fiscais");
+    } catch (e: any) {
+      toast.error("Erro ao emitir nota fiscal: " + e.message);
+    } finally {
+      setEmitindoFiscal(false);
+    }
+  };
   return (
     <Dialog open={!!selectedViewSale} onOpenChange={open => { if (!open) setSelectedViewSale(null); }}>
       <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
@@ -171,24 +208,34 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
                 )}
 
                 {/* Ações */}
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    className="flex-1 h-9 text-xs gap-1.5 border border-border bg-transparent text-foreground hover:bg-muted"
-                    onClick={() => handleGerarNota(selectedViewSale, false)}
-                    disabled={notaLoading === selectedViewSale.id}
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    {notaLoading === selectedViewSale.id ? "Gerando..." : "Baixar Comprovante"}
-                  </Button>
-                  {selectedViewSale.customer_phone && (
+                <div className="flex flex-col gap-2 pt-1">
+                  <div className="flex gap-2">
                     <Button
-                      className="flex-1 h-9 text-xs gap-1.5 text-green-500 border border-green-500/30 bg-transparent hover:bg-green-500/10"
-                      onClick={() => handleGerarNota(selectedViewSale, true)}
+                      className="flex-1 h-9 text-xs gap-1.5 border border-border bg-transparent text-foreground hover:bg-muted"
+                      onClick={() => handleGerarNota(selectedViewSale, false)}
                       disabled={notaLoading === selectedViewSale.id}
                     >
-                      <MessageCircle className="h-3.5 w-3.5" />WhatsApp
+                      <FileText className="h-3.5 w-3.5" />
+                      {notaLoading === selectedViewSale.id ? "Gerando..." : "Baixar Comprovante"}
                     </Button>
-                  )}
+                    {selectedViewSale.customer_phone && (
+                      <Button
+                        className="flex-1 h-9 text-xs gap-1.5 text-green-500 border border-green-500/30 bg-transparent hover:bg-green-500/10"
+                        onClick={() => handleGerarNota(selectedViewSale, true)}
+                        disabled={notaLoading === selectedViewSale.id}
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />WhatsApp
+                      </Button>
+                    )}
+                  </div>
+                  <Button
+                    className="w-full h-9 text-xs gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20"
+                    onClick={() => handleEmitirFiscal(selectedViewSale, product)}
+                    disabled={emitindoFiscal}
+                  >
+                    <ReceiptText className="h-3.5 w-3.5" />
+                    {emitindoFiscal ? "Transmitindo para SEFAZ..." : "Emitir NFC-e Oficial (SEFAZ)"}
+                  </Button>
                 </div>
               </div>
             </>

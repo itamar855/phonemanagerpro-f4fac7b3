@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Package, ArrowUpDown, ShoppingBag, Store, Landmark, PiggyBank,
   LogOut, Smartphone, Wrench, Users, Sun, Moon, UserCircle, FileText, Download, Brain, Settings, Activity, ChevronDown, Wallet, MessageSquare, ShieldCheck,
-  MoreHorizontal, X, KeyRound
+  MoreHorizontal, X, KeyRound, ReceiptText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ const navItems = [
   { label: "CRM de Leads", icon: MessageSquare, path: "/leads" },
   { label: "Transações", icon: ArrowUpDown, path: "/transacoes", permission: "transacoes" },
   { label: "Relatórios", icon: FileText, path: "/relatorios", permission: "relatorios" },
+  { label: "Notas Fiscais", icon: ReceiptText, path: "/notas-fiscais", permission: "fiscal" },
   { label: "Lojas", icon: Store, path: "/lojas", permission: "lojas" },
   { label: "Equipe", icon: Users, path: "/equipe", permission: "equipe" },
   { label: "Contas", icon: Landmark, path: "/contas", permission: "contas" },

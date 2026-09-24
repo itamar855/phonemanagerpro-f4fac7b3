@@ -30,6 +30,8 @@ import FinancasPF from "./pages/FinancasPF";
 import Leads from "./pages/Leads";
 import Avaliacao from "./pages/Avaliacao";
 import TesteMeta from "./pages/TesteMeta";
+import NotasFiscais from "./pages/NotasFiscais";
+import ConfiguracoesFiscais from "./pages/ConfiguracoesFiscais";
 
 // Inicializar debug logger (registra listeners globais de erro)
 import "@/utils/debugLogger";
@@ -79,6 +81,8 @@ const App = () => (
                 <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
                 <Route path="/caixa" element={<ProtectedRoute><Caixa /></ProtectedRoute>} />
                 <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
+                <Route path="/configuracoes-fiscais" element={<ProtectedRoute><ConfiguracoesFiscais /></ProtectedRoute>} />
+                <Route path="/notas-fiscais" element={<ProtectedRoute><NotasFiscais /></ProtectedRoute>} />
                 <Route path="/financas-pf" element={<ProtectedRoute><FinancasPF /></ProtectedRoute>} />
                 <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
                 <Route path="/assistente-ia" element={<ProtectedRoute><AIAssistant /></ProtectedRoute>} />

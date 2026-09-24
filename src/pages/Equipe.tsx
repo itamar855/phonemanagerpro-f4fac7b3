@@ -40,6 +40,7 @@ const MODULES = [
   { key: "clientes", label: "Clientes" },
   { key: "transacoes", label: "Transações" },
   { key: "relatorios", label: "Relatórios" },
+  { key: "fiscal", label: "Notas Fiscais" },
   { key: "lojas", label: "Lojas" },
   { key: "equipe", label: "Equipe" },
   { key: "contas", label: "Contas" },

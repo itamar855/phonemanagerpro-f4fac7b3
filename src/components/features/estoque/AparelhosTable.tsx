@@ -265,15 +265,18 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                     </div>
                     <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                       {(() => {
-                        const repairCost = repairCostsMap.get(p.id) || 0;
-                        const baseDeviceCost = Number(p.cost_price || 0) - repairCost;
+                        const totalCost = Number(p.cost_price || 0);
+                        const hasOrig = p.original_cost_price !== null && p.original_cost_price !== undefined;
+                        const baseDeviceCost = hasOrig ? Number(p.original_cost_price) : Math.max(0, totalCost - (repairCostsMap.get(p.id) || 0));
+                        const repairCost = Math.max(0, totalCost - baseDeviceCost);
+
                         return (
                           <div className="text-right">
-                            <p className="text-[10px] text-muted-foreground">Custo</p>
-                            <p className="font-display font-bold text-sm">{formatCurrency(baseDeviceCost)}</p>
+                            <p className="text-[10px] text-muted-foreground">Custo Total</p>
+                            <p className="font-display font-bold text-sm">{formatCurrency(totalCost)}</p>
                             {repairCost > 0 && (
-                              <p className="text-[11px] font-bold text-emerald-500 font-display">
-                                +{formatCurrency(repairCost)}
+                              <p className="text-[10px] text-muted-foreground font-medium">
+                                Base: {formatCurrency(baseDeviceCost)} <span className="text-emerald-500 font-bold">+{formatCurrency(repairCost)}</span>
                               </p>
                             )}
                             {margin !== null && (

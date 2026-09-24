@@ -281,9 +281,11 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
             <Textarea value={form.internal_notes} onChange={(e) => setForm((prev: any) => ({ ...prev, internal_notes: e.target.value }))} placeholder="Notas internas (não aparecem para o cliente)..." className="min-h-[50px]" />
           </div>
 
-          <Button type="submit" className="w-full h-11 font-semibold" disabled={loading || isSubmitting || !form.requested_service}>
-            {loading || isSubmitting ? "Criando OS... aguarde" : "Abrir Ordem de Serviço"}
-          </Button>
+          <div className="sticky bottom-0 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-3 sm:p-4 bg-background/95 backdrop-blur-sm border-t border-border z-10 shadow-lg">
+            <Button type="submit" className="w-full h-11 font-bold shadow-md active:scale-[0.99] transition-transform" disabled={loading || isSubmitting || !form.requested_service}>
+              {loading || isSubmitting ? "Criando OS... aguarde" : "Abrir Ordem de Serviço"}
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

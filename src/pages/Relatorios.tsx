@@ -519,40 +519,66 @@ const Relatorios = () => {
       q(supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end)),
       supabase.from("products").select("*"),
       q(supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end)),
-      q(supabase.from("service_orders").select("*").eq("status", "delivered").gte("created_at", start).lte("created_at", end)),
+      q(supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)),
     ]);
     const sales = salesRes.data ?? [];
     const products = productsRes.data ?? [];
     const tx = txRes.data ?? [];
     const os = osRes.data ?? [];
     const productMap = new Map(products.map((p: any) => [p.id, p]));
+
+    // Fetch peças usadas nas OSs entregues no período
+    let osItems: any[] = [];
+    if (os.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("service_order_items" as any)
+        .select("service_order_id, unit_cost, quantity")
+        .in("service_order_id", os.map((o: any) => o.id));
+      osItems = itemsData ?? [];
+    }
+
     const receitaAparelhos = sales.reduce((s: number, x: any) => s + Number(x.sale_price), 0);
     const receitaOS = os.reduce((s: number, x: any) => s + Number(x.final_price || x.estimated_price || 0), 0);
     const accSales = tx.filter((t: any) => t.type === "income" && t.category === "acessorio");
     const receitaAcessorios = accSales.reduce((s: number, t: any) => s + Number(t.amount), 0);
+
     const cmvAparelhos = sales.reduce((s: number, x: any) => s + Number((productMap.get(x.product_id) as any)?.cost_price || 0), 0);
     const cmvAcessorios = tx.filter((t: any) => t.type === "expense_pj" && t.category === "acessorio").reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const cmvPecasOS = osItems.reduce((sum: number, item: any) => sum + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
+
     const totalReceita = receitaAparelhos + receitaAcessorios + receitaOS;
-    const totalCmv = cmvAparelhos + cmvAcessorios;
-    const despesasPJ = tx.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio").reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const totalCmv = cmvAparelhos + cmvAcessorios + cmvPecasOS;
+    // Exclui 'reparo' de despesas PJ para evitar duplicidade de dedução com cmvPecasOS
+    const despesasPJ = tx.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio" && t.category !== "reparo").reduce((s: number, t: any) => s + Number(t.amount), 0);
     const despesasPF = tx.filter((t: any) => t.type === "expense_pf").reduce((s: number, t: any) => s + Number(t.amount), 0);
     const proLabore = tx.filter((t: any) => t.type === "pro_labore").reduce((s: number, t: any) => s + Number(t.amount), 0);
     const lucroBruto = totalReceita - totalCmv;
     const totalDespesas = despesasPJ + despesasPF + proLabore;
     const lucroLiquido = lucroBruto - totalDespesas;
-    setDre({ receitaAparelhos, receitaAcessorios, receitaOS, totalReceita, cmvAparelhos, cmvAcessorios, totalCmv, lucroBruto, despesasPJ, despesasPF, proLabore, totalDespesas, lucroLiquido, qtdVendasAparelhos: sales.length, qtdVendasAcessorios: accSales.length });
+    setDre({ receitaAparelhos, receitaAcessorios, receitaOS, totalReceita, cmvAparelhos, cmvAcessorios, cmvPecasOS, totalCmv, lucroBruto, despesasPJ, despesasPF, proLabore, totalDespesas, lucroLiquido, qtdVendasAparelhos: sales.length, qtdVendasAcessorios: accSales.length, qtdOS: os.length });
+
     const now = new Date();
     const mMap: Record<string, any> = {};
     for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); mMap[MONTHS[d.getMonth()].substring(0, 3)] = { receita: 0, despesa: 0 }; }
     sales.forEach((s: any) => { const k = MONTHS[new Date(s.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].receita += Number(s.sale_price); });
+    os.forEach((o: any) => { const k = MONTHS[new Date(o.delivered_at || o.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].receita += Number(o.final_price || o.estimated_price || 0); });
     tx.forEach((t: any) => { if (t.type !== "sale" && t.type !== "income") { const k = MONTHS[new Date(t.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].despesa += Number(t.amount); } });
     setMonthlyData(Object.entries(mMap).map(([name, d]) => ({ name, receita: d.receita, despesa: d.despesa, lucro: d.receita - d.despesa })));
+
     const sStats: Record<string, any> = {};
     sales.forEach((s: any) => {
       const name = (storeMap.get(s.store_id) as any)?.name || "Sem loja";
       if (!sStats[name]) sStats[name] = { vendas: 0, lucro: 0 };
       sStats[name].vendas += Number(s.sale_price);
       sStats[name].lucro += Number(s.sale_price) - Number((productMap.get(s.product_id) as any)?.cost_price || 0);
+    });
+    os.forEach((o: any) => {
+      const name = (storeMap.get(o.store_id) as any)?.name || "Sem loja";
+      if (!sStats[name]) sStats[name] = { vendas: 0, lucro: 0 };
+      const val = Number(o.final_price || o.estimated_price || 0);
+      sStats[name].vendas += val;
+      const osCost = osItems.filter((i: any) => i.service_order_id === o.id).reduce((acc: number, i: any) => acc + (Number(i.unit_cost || 0) * Number(i.quantity || 1)), 0);
+      sStats[name].lucro += (val - osCost);
     });
     setStoreBreakdown(Object.entries(sStats).map(([name, d]: any) => ({ name, ...d })));
   }, [period, storeId, customStart, customEnd, specificDay]);
@@ -583,8 +609,14 @@ const Relatorios = () => {
   const fetchOS = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
-    const { data } = await supabase.from("service_orders").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false });
-    const all = ((data ?? []) as any[]).filter(o => effectiveStoreId === "all" || o.store_id === effectiveStoreId);
+    let query = supabase.from("service_orders").select("*");
+    if (effectiveStoreId && effectiveStoreId !== "all") {
+      query = query.eq("store_id", effectiveStoreId);
+    }
+    const { data } = await query
+      .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)
+      .order("created_at", { ascending: false });
+    const all = ((data ?? []) as any[]);
     setOsData(all);
     const delivered = all.filter(o => o.status === "delivered");
     const totalReceitaOS = delivered.reduce((s, o) => s + Number(o.final_price || o.estimated_price || 0), 0);
@@ -608,18 +640,64 @@ const Relatorios = () => {
   const fetchRanking = useCallback(async () => {
     const { start, end } = getPeriodDates(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
     const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
-    const [salesRes, productsRes, osRes] = await Promise.all([
+    const [salesRes, productsRes, osRes, rolesRes] = await Promise.all([
       supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end),
       supabase.from("products").select("*"),
-      supabase.from("service_orders").select("*").eq("status", "delivered").gte("delivered_at", start).lte("delivered_at", end),
+      supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
+      supabase.from("user_roles").select("*"),
     ]);
     const sales = ((salesRes.data ?? []) as any[]).filter(s => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
     const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p]));
     const os = ((osRes.data ?? []) as any[]).filter(o => effectiveStoreId === "all" || o.store_id === effectiveStoreId);
+    const roles = (rolesRes.data ?? []) as any[];
+    const roleMap = new Map(roles.map((r: any) => [r.user_id, r]));
+
+    // Fetch peças usadas para apurar margem líquida dos reparos
+    let osItems: any[] = [];
+    if (os.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("service_order_items" as any)
+        .select("service_order_id, unit_cost, quantity")
+        .in("service_order_id", os.map((o: any) => o.id));
+      osItems = itemsData ?? [];
+    }
+
     const stats: Record<string, any> = {};
     const ensure = (uid: string) => { if (!stats[uid]) stats[uid] = { uid, nome: profileMap.get(uid) ?? "Usuario", totalVendas: 0, qtdVendas: 0, lucro: 0, comissoes: 0, osEntregues: 0 }; };
-    sales.forEach((s: any) => { ensure(s.created_by); stats[s.created_by].totalVendas += Number(s.sale_price); stats[s.created_by].qtdVendas++; const p: any = productMap.get(s.product_id); stats[s.created_by].lucro += Number(s.sale_price) - Number(p?.cost_price || 0); stats[s.created_by].comissoes += Number(s.commission_value || 0); });
-    os.forEach((o: any) => { const uid = o.technician_id || o.created_by; ensure(uid); stats[uid].osEntregues++; });
+    
+    sales.forEach((s: any) => { 
+      ensure(s.created_by); 
+      stats[s.created_by].totalVendas += Number(s.sale_price); 
+      stats[s.created_by].qtdVendas++; 
+      const p: any = productMap.get(s.product_id); 
+      stats[s.created_by].lucro += Number(s.sale_price) - Number(p?.cost_price || 0); 
+      stats[s.created_by].comissoes += Number(s.commission_value || 0); 
+    });
+
+    os.forEach((o: any) => { 
+      const uid = o.technician_id || o.created_by; 
+      ensure(uid); 
+      stats[uid].osEntregues++;
+      const osTotal = Number(o.final_price || o.estimated_price || 0);
+      stats[uid].totalVendas += osTotal;
+
+      const partsCost = osItems
+        .filter((item: any) => item.service_order_id === o.id)
+        .reduce((sum: number, item: any) => sum + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
+      
+      const osLucro = Math.max(0, osTotal - partsCost);
+      stats[uid].lucro += osLucro;
+
+      const userRoleData = roleMap.get(uid);
+      const receivesComm = userRoleData ? (userRoleData.commission_on_services ?? true) : true;
+      const commPercent = userRoleData ? Number(userRoleData.commission_services_percent || 0) : 0;
+      
+      if (receivesComm && commPercent > 0) {
+        const osCommission = (osLucro * commPercent) / 100;
+        stats[uid].comissoes += osCommission;
+      }
+    });
+
     const sorted = Object.values(stats).sort((a, b) => b.totalVendas - a.totalVendas);
     setRanking(sorted);
     setComissoes(sorted.filter(s => s.comissoes > 0).sort((a, b) => b.comissoes - a.comissoes));
@@ -725,7 +803,7 @@ const Relatorios = () => {
 
     const [salesRes, osRes, caixaRes, txRes] = await Promise.all([
       q(supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end)),
-      q(supabase.from("service_orders").select("*").gte("created_at", start).lte("created_at", end)),
+      q(supabase.from("service_orders").select("*").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)),
       q(supabase.from("cash_registers" as any).select("*").gte("created_at", start).lte("created_at", end)),
       q(supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end)),
     ]);
@@ -753,10 +831,14 @@ const Relatorios = () => {
     const entradas = cashEntries.filter((e: any) => ["entrada"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
     const saidas = cashEntries.filter((e: any) => ["saida", "sangria"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
 
-    // Sales by payment method
-    const totalDinheiro = sales.reduce((s: number, x: any) => s + Number(x.payment_cash || 0), 0);
-    const totalCartao = sales.reduce((s: number, x: any) => s + Number(x.payment_card || 0), 0);
-    const totalPix = sales.reduce((s: number, x: any) => s + Number(x.payment_pix || 0), 0);
+    // Sales and OS by payment method
+    const osDelivered = (os as any[]).filter((o: any) => o.status === "delivered");
+    const totalDinheiro = sales.reduce((s: number, x: any) => s + Number(x.payment_cash || 0), 0)
+                        + osDelivered.reduce((s: number, x: any) => s + Number(x.payment_cash || 0), 0);
+    const totalCartao = sales.reduce((s: number, x: any) => s + Number(x.payment_card || 0), 0)
+                      + osDelivered.reduce((s: number, x: any) => s + Number(x.payment_card || 0), 0);
+    const totalPix = sales.reduce((s: number, x: any) => s + Number(x.payment_pix || 0), 0)
+                   + osDelivered.reduce((s: number, x: any) => s + Number(x.payment_pix || 0), 0);
 
     // Top sellers
     const sellerMap: Record<string, number> = {};
@@ -840,10 +922,12 @@ const Relatorios = () => {
   const dreLines = [
     { label: "Receita de Aparelhos", value: dre.receitaAparelhos ?? 0, sub: (dre.qtdVendasAparelhos ?? 0) + " vendas", type: "income" },
     { label: "Receita de Acessorios", value: dre.receitaAcessorios ?? 0, sub: (dre.qtdVendasAcessorios ?? 0) + " vendas", type: "income" },
-    { label: "Receita de Servicos (OS)", value: dre.receitaOS ?? 0, type: "income" },
+    { label: "Receita de Servicos (OS)", value: dre.receitaOS ?? 0, sub: (dre.qtdOS ?? 0) + " entregues", type: "income" },
     { label: "= Receita Total", value: dre.totalReceita ?? 0, type: "total", bold: true },
     { label: "(-) CMV Aparelhos", value: -(dre.cmvAparelhos ?? 0), type: "expense" },
     { label: "(-) CMV Acessorios", value: -(dre.cmvAcessorios ?? 0), type: "expense" },
+    { label: "(-) Custo Peças OS", value: -(dre.cmvPecasOS ?? 0), type: "expense" },
+    { label: "= Total CMV", value: -(dre.totalCmv ?? 0), type: "total", bold: true },
     { label: "= Lucro Bruto", value: dre.lucroBruto ?? 0, type: "total", bold: true },
     { label: "(-) Despesas PJ (Operacionais)", value: -(dre.despesasPJ ?? 0), type: "expense" },
     { label: "(-) Despesas PF (Pessoais)", value: -(dre.despesasPF ?? 0), type: "expense" },

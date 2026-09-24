@@ -97,7 +97,8 @@ const SignatureCanvas = ({ onSave, initialData }: SignatureCanvasProps) => {
       </div>
       <canvas
         ref={canvasRef}
-        className="w-full h-32 rounded-lg border border-border bg-background cursor-crosshair touch-none"
+        style={{ touchAction: "none" }}
+        className="w-full h-36 rounded-xl border border-border/80 bg-background cursor-crosshair touch-none select-none shadow-inner"
         onMouseDown={startDraw}
         onMouseMove={draw}
         onMouseUp={endDraw}

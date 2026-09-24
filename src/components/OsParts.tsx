@@ -295,6 +295,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
   const handleRemovePart = async (itemId: string, productId: string) => {
     try {
+      const itemToRemove = items.find(i => i.id === itemId);
+
       const { error: itemError } = await supabase
         .from("service_order_items" as any)
         .delete()
@@ -308,6 +310,27 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
         .update({ status: "in_stock" })
         .eq("id", productId)
         .eq("status", "sold");
+
+      // Se foi uma peça avulsa cadastrada com saída financeira, estorna a saída de caixa e despesa
+      if (itemToRemove && storeId) {
+        const prodName = itemToRemove.products?.name || "";
+        if (prodName) {
+          const descSearch = `Compra de Peça Avulsa (OS): ${prodName.trim()}%`;
+          await supabase
+            .from("cash_entries" as any)
+            .delete()
+            .eq("store_id", storeId)
+            .like("description", descSearch)
+            .eq("type", "saida");
+
+          await supabase
+            .from("transactions")
+            .delete()
+            .eq("store_id", storeId)
+            .like("description", descSearch)
+            .eq("type", "expense_pj");
+        }
+      }
 
       toast.success("Peça removida e retornada ao estoque.");
       fetchData();
@@ -531,10 +554,11 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
               {!readonly && (
                 <Button
-                  className="h-6 w-6 p-0 text-destructive bg-transparent hover:bg-destructive/10 border-0 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
+                  className="h-8 w-8 sm:h-7 sm:w-7 p-0 text-destructive bg-destructive/10 hover:bg-destructive/20 sm:bg-transparent sm:hover:bg-destructive/10 border border-destructive/20 sm:border-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ml-2 shrink-0 active:scale-95"
                   onClick={() => handleRemovePart(item.id, item.product_id)}
+                  title="Remover peça da OS"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                 </Button>
               )}
             </div>

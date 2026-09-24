@@ -191,10 +191,12 @@ const Estoque = () => {
 
     const initialStatus = form.needsRepair ? "repair" : "in_stock";
 
+    const parsedCost = parseFloat(form.cost_price);
     const { data, error } = await supabase.from("products").insert({
       name: form.name, brand: form.brand, model: form.model,
       imei: form.imei || null, serial_number: form.serial_number || null,
-      cost_price: parseFloat(form.cost_price),
+      cost_price: parsedCost,
+      original_cost_price: parsedCost,
       sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
       store_id: activeStoreId, created_by: user.id,
       product_type: form.product_type, condition: form.condition,
@@ -203,7 +205,7 @@ const Estoque = () => {
       battery_percentage: form.battery_percentage ? parseInt(form.battery_percentage) : null,
       status: initialStatus,
       notes: form.notes || null
-    }).select().single();
+    } as any).select().single();
     
     if (error) {
       toast.error(error.message.includes("imei") ? "IMEI já cadastrado!" : error.message);
@@ -317,14 +319,9 @@ const Estoque = () => {
     } else {
       logAction("TRANSFER_STOCK", "products", transferProduct.id, transferProduct, { ...transferProduct, store_id: transferStoreId, reason: justification }, transferStoreId);
       const storeMap = new Map(stores.map(s => [s.id, s.name]));
-      await supabase.from("transactions").insert({
-        type: "income", amount: 0,
-        description: `Transferência: ${transferProduct.name} de ${storeMap.get(transferProduct.store_id)} → ${storeMap.get(transferStoreId)}`,
-        store_id: transferStoreId, product_id: transferProduct.id, created_by: user.id,
-      });
       await supabase.from("product_history" as any).insert({
         product_id: transferProduct.id, action: "Transferência de Loja", 
-        notes: `Transferência: ${justification}`,
+        notes: `Transferência de ${storeMap.get(transferProduct.store_id) || "Origem"} para ${storeMap.get(transferStoreId) || "Destino"}. Motivo: ${justification}`,
         created_by: user.id,
       });
       toast.success("Produto transferido!");
@@ -343,25 +340,59 @@ const Estoque = () => {
       const { data: sales, error: salesError } = await supabase.from("sales").select("product_id");
       if (salesError) throw salesError;
       
-      const soldIds = [...new Set(sales.map(s => s.product_id))];
+      const soldIds = [...new Set((sales || []).map(s => s.product_id).filter(Boolean))];
       
-      // 2. Atualizar status dos produtos que estão 'in_stock' mas deveriam ser 'sold'
-      const { data: updated, error: updateError } = await supabase
-        .from("products")
-        .update({ status: "sold" })
-        .in("id", soldIds)
-        .eq("status", "in_stock")
-        .select();
+      // 2. Atualizar status dos produtos vendidos que ainda constam como 'in_stock'
+      let reconciledSold = 0;
+      if (soldIds.length > 0) {
+        const { data: updated, error: updateError } = await supabase
+          .from("products")
+          .update({ status: "sold" })
+          .in("id", soldIds)
+          .eq("status", "in_stock")
+          .select();
 
-      if (updateError) throw updateError;
-      
-      const count = updated?.length || 0;
-      if (count > 0) {
-        toast.success(`${count} aparelhos foram conciliados e marcados como vendidos.`);
-        fetchData();
-      } else {
-        toast.info("O estoque já está conciliado com as vendas.");
+        if (updateError) throw updateError;
+        reconciledSold = updated?.length || 0;
       }
+
+      // 3. Conciliar peças consumidas em Ordens de Serviço
+      const { data: osItems } = await supabase.from("service_order_items" as any).select("product_id");
+      const osProductIds = [...new Set((osItems || []).map((i: any) => i.product_id).filter(Boolean))];
+      let reconciledOSParts = 0;
+      if (osProductIds.length > 0) {
+        const { data: updatedOSParts } = await supabase
+          .from("products")
+          .update({ status: "sold" })
+          .in("id", osProductIds)
+          .eq("status", "in_stock")
+          .select();
+        reconciledOSParts = updatedOSParts?.length || 0;
+      }
+
+      // 4. Preencher original_cost_price para aparelhos legados onde está nulo
+      const { data: legacyNullProds } = await supabase
+        .from("products")
+        .select("id, cost_price")
+        .is("original_cost_price", null);
+
+      if (legacyNullProds && legacyNullProds.length > 0) {
+        for (const lp of legacyNullProds) {
+          await supabase
+            .from("products")
+            .update({ original_cost_price: lp.cost_price } as any)
+            .eq("id", lp.id)
+            .is("original_cost_price", null);
+        }
+      }
+      
+      const totalReconciled = reconciledSold + reconciledOSParts;
+      if (totalReconciled > 0) {
+        toast.success(`Estoque conciliado! ${reconciledSold} aparelhos e ${reconciledOSParts} peças de OS sincronizados.`);
+      } else {
+        toast.info("O estoque, vendas e ordens de serviço já estão 100% conciliados.");
+      }
+      fetchData();
     } catch (err: any) {
       toast.error("Erro na conciliação: " + err.message);
     } finally {
@@ -696,19 +727,44 @@ const Estoque = () => {
     if (!productToDelete) return;
     setLoading(true);
     try {
-      // 1. Delete references in product_history
-      await supabase.from("product_history" as any).delete().eq("product_id", id);
-      
-      // 2. Set trade_in_product_id references in sales to null
+      // 1. Bloquear se o produto possui venda consolidada no financeiro/fiscal
+      const { data: linkedSales, error: salesCheckErr } = await supabase
+        .from("sales")
+        .select("id")
+        .eq("product_id", id)
+        .limit(1);
+
+      if (salesCheckErr) throw salesCheckErr;
+      if (linkedSales && linkedSales.length > 0) {
+        toast.error("Este aparelho possui venda registrada no financeiro/fiscal e não pode ser excluído.");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Bloquear se a peça está vinculada a Ordem de Serviço
+      const { data: linkedOS, error: osCheckErr } = await supabase
+        .from("service_order_items" as any)
+        .select("id")
+        .eq("product_id", id)
+        .limit(1);
+
+      if (osCheckErr) throw osCheckErr;
+      if (linkedOS && linkedOS.length > 0) {
+        toast.error("Esta peça está vinculada a uma Ordem de Serviço e não pode ser excluída.");
+        setLoading(false);
+        return;
+      }
+
+      // 3. Set trade_in_product_id references in sales to null
       await supabase.from("sales").update({ trade_in_product_id: null } as any).eq("trade_in_product_id", id);
 
-      // 3. Delete sales referencing this product
-      await supabase.from("sales").delete().eq("product_id", id);
+      // 4. Delete references in product_history
+      await supabase.from("product_history" as any).delete().eq("product_id", id);
 
-      // 4. Delete references in product_repair_items (where this product was used as a part)
+      // 5. Delete references in product_repair_items (where this product was used as a part)
       await supabase.from("product_repair_items" as any).delete().eq("part_product_id", id);
 
-      // 5. For repairs of this product, delete repair items first, then the repair
+      // 6. For repairs of this product, delete repair items first, then the repair
       const { data: repairs } = await (supabase.from("product_repairs" as any).select("id").eq("product_id", id) as any);
       if (repairs && repairs.length > 0) {
         const repairIds = repairs.map(r => r.id);
@@ -716,12 +772,12 @@ const Estoque = () => {
         await supabase.from("product_repairs" as any).delete().in("id", repairIds);
       }
 
-      // 6. Finally delete the product
+      // 7. Finally delete the product
       const { error } = await supabase.from("products").delete().eq("id", id);
       if (error) throw error;
 
       logAction("DELETE_RECORD", "products", id, productToDelete, { reason }, productToDelete?.store_id);
-      toast.success("Aparelho removido!");
+      toast.success("Aparelho removido com sucesso!");
       fetchData();
     } catch (error: any) {
       console.error("Erro ao deletar produto:", error);

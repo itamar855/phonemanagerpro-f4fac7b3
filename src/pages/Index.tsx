@@ -108,8 +108,8 @@ const Dashboard = () => {
         : Promise.resolve({ data: [] }),
       can("os")
         ? (!isFiltered 
-            ? supabase.from("service_orders").select("id, status, store_id, created_at, final_price, estimated_price").gte("created_at", start).lte("created_at", end) 
-            : supabase.from("service_orders").select("id, status, store_id, created_at, final_price, estimated_price").eq("store_id", effectiveStoreId).gte("created_at", start).lte("created_at", end))
+            ? supabase.from("service_orders").select("id, status, store_id, created_at, delivered_at, final_price, estimated_price").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`) 
+            : supabase.from("service_orders").select("id, status, store_id, created_at, delivered_at, final_price, estimated_price").eq("store_id", effectiveStoreId).or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`))
         : Promise.resolve({ data: [] }),
       can("estoque") 
         ? (!isFiltered ? supabase.from("accessories" as any).select("*") : supabase.from("accessories" as any).select("*").eq("store_id", effectiveStoreId))
@@ -218,8 +218,8 @@ const Dashboard = () => {
       .reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
     const lucroServicos = receitaOS - custoPecasDelivered;
 
-    // Despesas PJ adicionais (que não sejam compra de acessório já contabilizado no CMV)
-    const despesasPJAdicionais = transactions.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    // Despesas PJ adicionais (que não sejam compra de acessório já contabilizado no CMV e nem peça de reparo já em custoPecasOS / custoPecasReparos)
+    const despesasPJAdicionais = transactions.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio" && t.category !== "reparo").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
     const despesasPFTotal = transactions.filter((t: any) => t.type === "expense_pf" || t.type === "pro_labore").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
 
     // Consideramos custo de peças internos como redução do faturamento líquido também (já que foi gasto em peças de reparos internos)

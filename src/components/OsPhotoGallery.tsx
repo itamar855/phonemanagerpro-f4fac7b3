@@ -194,12 +194,14 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
               </div>
 
               {!readonly && (
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <Button 
-                    className="h-6 w-6 p-0 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-full shadow-lg"
+                    type="button"
+                    className="h-7 w-7 sm:h-6 sm:w-6 p-0 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-full shadow-lg active:scale-90"
                     onClick={(e) => { e.stopPropagation(); handleDelete(photo.id, photo.photo_url); }}
+                    title="Excluir foto"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
                   </Button>
                 </div>
               )}

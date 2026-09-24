@@ -195,7 +195,7 @@ export const AndroidPatternLock = ({ onPattern, size = 240 }: Props) => {
           ref={canvasRef}
           width={size}
           height={size}
-          style={{ width: size, height: size, display: "block", cursor: "crosshair" }}
+          style={{ width: size, height: size, display: "block", cursor: "crosshair", touchAction: "none" }}
           onMouseDown={handleStart}
           onMouseMove={handleMove}
           onMouseUp={handleEnd}

@@ -308,26 +308,45 @@ const Vendas = () => {
             .update({
               status: "in_stock",
               cost_price: deviceVal,
+              original_cost_price: deviceVal,
               store_id: selectedProduct.store_id,
               sale_price: null
-            })
+            } as any)
             .eq("id", existingTradeIn.id)
             .select("id")
             .maybeSingle();
 
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = updatedTip?.id || existingTradeIn.id;
+          
+          await supabase.from("product_history" as any).insert({
+            product_id: currentProductId,
+            action: "Entrada por Trade-in",
+            new_cost: deviceVal,
+            notes: `Aparelho recebido como troca na venda do produto ${selectedProduct.name}`,
+            created_by: user.id,
+          });
         } else {
           const { data: tip, error: tiErr } = await supabase.from("products").insert({
             name: device.name, brand: device.brand || "Genérico",
             model: device.model || "N/A", imei: device.imei || null,
-            cost_price: deviceVal, store_id: selectedProduct.store_id,
+            cost_price: deviceVal,
+            original_cost_price: deviceVal,
+            store_id: selectedProduct.store_id,
             created_by: user.id, status: "in_stock",
             product_type: "celular",
             condition: "used"
-          }).select("id").single();
+          } as any).select("id").single();
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = tip.id;
+
+          await supabase.from("product_history" as any).insert({
+            product_id: currentProductId,
+            action: "Entrada por Trade-in",
+            new_cost: deviceVal,
+            notes: `Aparelho recebido como troca na venda do produto ${selectedProduct.name}`,
+            created_by: user.id,
+          });
         }
 
         if (i === 0) {
@@ -714,8 +733,9 @@ const Vendas = () => {
             model: editForm.trade_in_device_model || "N/A",
             imei: editForm.trade_in_device_imei || null,
             cost_price: tradeInVal,
+            original_cost_price: tradeInVal,
             status: "in_stock",
-          }).eq("id", editSale.trade_in_product_id);
+          } as any).eq("id", editSale.trade_in_product_id);
         } else {
           // Create new trade-in product in stock
           const { data: tipData } = await supabase.from("products").insert({
@@ -724,10 +744,11 @@ const Vendas = () => {
             model: editForm.trade_in_device_model || "N/A",
             imei: editForm.trade_in_device_imei || null,
             cost_price: tradeInVal,
+            original_cost_price: tradeInVal,
             store_id: editSale.store_id,
             created_by: user!.id,
             status: "in_stock",
-          }).select("id").single();
+          } as any).select("id").single();
           // Link the new trade-in product to the sale
           if (tipData) {
             await supabase.from("sales").update({ trade_in_product_id: tipData.id }).eq("id", editSale.id);

@@ -52,11 +52,27 @@ export const useCartManager = (
     isPdvSubmitting.current = true;
     setLoading(true);
     try {
-      // 1. Atualizar estoque de cada item
+      // 1. Validar e atualizar estoque de cada item no banco de dados
       for (const item of cart) {
+        const { data: currentAcc, error: fetchErr } = await supabase
+          .from("accessories" as any)
+          .select("quantity, name")
+          .eq("id", item.acc.id)
+          .single() as any;
+
+        if (fetchErr || !currentAcc) {
+          throw new Error(`Acessório ${item.acc.name} não encontrado no estoque.`);
+        }
+
+        const currentQty = Number(currentAcc.quantity || 0);
+        if (currentQty < item.qty) {
+          throw new Error(`Estoque insuficiente para "${currentAcc.name}". Disponível: ${currentQty}, solicitado: ${item.qty}.`);
+        }
+
+        const newQty = Math.max(0, currentQty - item.qty);
         const { error: accError } = await supabase
           .from("accessories" as any)
-          .update({ quantity: item.acc.quantity - item.qty })
+          .update({ quantity: newQty })
           .eq("id", item.acc.id);
         
         if (accError) throw new Error(`Erro ao atualizar estoque de ${item.acc.name}: ${accError.message}`);
