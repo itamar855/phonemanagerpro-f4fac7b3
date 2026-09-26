@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -40,8 +40,21 @@ export function KanbanBoard({
     }
   };
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (scrollRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault();
+      scrollRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4 items-start h-[550px] md:h-[calc(100vh-270px)] min-h-[500px] scrollbar-none snap-x snap-mandatory">
+    <div
+      ref={scrollRef}
+      onWheel={handleWheel}
+      className="flex gap-3 overflow-x-auto pb-4 items-start h-[550px] md:h-[calc(100vh-270px)] min-h-[500px] snap-x snap-mandatory scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+    >
       {allStatuses.map((status) => {
         const config = statusConfig[status];
         const statusOrders = orders.filter((o) => o.status === status);

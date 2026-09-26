@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Package, Plus, Trash2, Loader2, Cpu, ChevronDown, ChevronUp, Image, Upload, X } from "lucide-react";
+import { Package, Plus, Trash2, Loader2, Cpu, Image, Upload, X, ShoppingCart, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 
 interface Product {
@@ -26,6 +26,7 @@ interface ServiceOrderItem {
   unit_cost: number;
   created_at: string;
   receipt_url?: string | null;
+  supplier_order_receipt_url?: string | null;
   supplier_id?: string | null;
   supplier_name?: string | null;
   products?: {
@@ -70,9 +71,11 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
     cost_price: "",
     sale_price: "",
     supplier_id: "",
-    receipt: null as File | null,
+    receipt: null as File | null,          // comprovante de pagamento
+    orderReceipt: null as File | null,     // comprovante do pedido ao fornecedor
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const orderFileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = async () => {
     try {
@@ -181,10 +184,16 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
     setAdding(true);
     try {
-      // 1. Upload receipt if provided
+      // 1. Upload comprovante de pagamento (se fornecido)
       let receiptUrl: string | null = null;
       if (newPart.receipt) {
         receiptUrl = await uploadReceipt(newPart.receipt, `os-${orderId.slice(0, 8)}`);
+      }
+
+      // 1b. Upload comprovante do pedido ao fornecedor (se fornecido)
+      let orderReceiptUrl: string | null = null;
+      if (newPart.orderReceipt) {
+        orderReceiptUrl = await uploadReceipt(newPart.orderReceipt, `pedido-os-${orderId.slice(0, 8)}`);
       }
 
       const costPrice = parseFloat(newPart.cost_price) || 0;
@@ -215,7 +224,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
 
       if (prodError) throw prodError;
 
-      // 3. Insert into service_order_items with supplier
+      // 3. Insert into service_order_items with supplier and both receipt types
       const { error: itemError } = await supabase
         .from("service_order_items" as any)
         .insert({
@@ -226,6 +235,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           unit_cost: costPrice,
           supplier_id: resolvedSupplierId,
           supplier_name: supplierName,
+          receipt_url: receiptUrl || null,
+          supplier_order_receipt_url: orderReceiptUrl || null,
         });
 
       if (itemError) throw itemError;
@@ -264,6 +275,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           payment_method: "pix",
           confirmed: hasReceipt,
           receipt_url: receiptUrl || null,
+          supplier_order_receipt_url: orderReceiptUrl || null,
           created_by: user.id,
         } as any);
       }
@@ -283,7 +295,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
       } as any);
 
       toast.success("Peça cadastrada no estoque, vinculada à OS e lançada no caixa!");
-      setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null });
+      setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null, orderReceipt: null });
       setAddMode("stock");
       fetchData();
     } catch (error: any) {
@@ -477,9 +489,11 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                 </div>
               </div>
 
-              {/* Receipt upload */}
+              {/* Comprovante de Pagamento */}
               <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wide">Comprovante de Pagamento</Label>
+                <Label className="text-[10px] uppercase tracking-wide flex items-center gap-1">
+                  <CreditCard className="h-3 w-3 text-primary" /> Comprovante de Pagamento
+                </Label>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -507,7 +521,44 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Upload className="h-3.5 w-3.5" />
-                    Anexar comprovante (imagem ou PDF)
+                    Anexar comprovante de pagamento
+                  </Button>
+                )}
+              </div>
+
+              {/* Comprovante do Pedido ao Fornecedor */}
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-wide flex items-center gap-1">
+                  <ShoppingCart className="h-3 w-3 text-blue-500" /> Comprovante do Pedido (Fornecedor)
+                </Label>
+                <input
+                  ref={orderFileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={e => setNewPart(p => ({ ...p, orderReceipt: e.target.files?.[0] || null }))}
+                />
+                {newPart.orderReceipt ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 p-2 text-xs">
+                    <Image className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="flex-1 truncate text-blue-500">{newPart.orderReceipt.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewPart(p => ({ ...p, orderReceipt: null }))}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-8 text-xs gap-1.5 border-dashed border-blue-500/40 text-blue-500 hover:border-blue-500 hover:bg-blue-500/5"
+                    onClick={() => orderFileInputRef.current?.click()}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Anexar comprovante do pedido
                   </Button>
                 )}
               </div>
@@ -547,7 +598,17 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                     rel="noopener noreferrer"
                     className="text-[10px] text-primary underline flex items-center gap-0.5 mt-0.5"
                   >
-                    <Image className="h-2.5 w-2.5" /> Ver comprovante
+                    <CreditCard className="h-2.5 w-2.5" /> Comprovante de Pagamento
+                  </a>
+                )}
+                {(item as any).supplier_order_receipt_url && (
+                  <a
+                    href={(item as any).supplier_order_receipt_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-blue-500 underline flex items-center gap-0.5 mt-0.5"
+                  >
+                    <ShoppingCart className="h-2.5 w-2.5" /> Comprovante do Pedido
                   </a>
                 )}
               </div>

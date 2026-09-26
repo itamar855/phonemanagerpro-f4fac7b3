@@ -27,6 +27,7 @@ interface CashEntry {
   payment_method: string;
   confirmed: boolean;
   receipt_url: string | null;
+  supplier_order_receipt_url?: string | null;
   created_at: string;
 }
 
@@ -68,6 +69,9 @@ const Caixa = () => {
   const [sangriaDialog, setSangriaDialog] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(false);
   const [justDialogOpened, setJustDialogOpened] = useState(false);
+  // Dialog de detalhes de lançamento individual
+  const [entryDetailDialog, setEntryDetailDialog] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
   
   // Forms
   const [openForm, setOpenForm] = useState({ amount: "", note: "", receipt: null as File | null });
@@ -76,6 +80,7 @@ const Caixa = () => {
   const [sangriaForm, setSangriaForm] = useState({ amount: "", description: "" });
   const [confirmEntry, setConfirmEntry] = useState<CashEntry | null>(null);
   const [confirmFile, setConfirmFile] = useState<File | null>(null);
+  const [confirmOrderFile, setConfirmOrderFile] = useState<File | null>(null);
   const [justification, setJustification] = useState("");
   const [pendingAction, setPendingAction] = useState<{type: "delete" | "unconfirm" | "reopen", id: string} | null>(null);
 
@@ -578,20 +583,45 @@ const Caixa = () => {
     setLoading(false);
   };
 
+  const openEntryDetail = (entry: CashEntry) => {
+    setSelectedEntry(entry);
+    setEntryDetailDialog(true);
+    // Se pendente, prepara confirmação embutida
+    if (!entry.confirmed) {
+      setConfirmEntry(entry);
+      setConfirmFile(null);
+      setConfirmOrderFile(null);
+    }
+  };
+
   const openConfirmDialog = (entry: CashEntry) => {
     setConfirmEntry(entry);
     setConfirmFile(null);
+    setConfirmOrderFile(null);
     setConfirmDialog(true);
   };
 
-  const handleConfirmEntry = async () => {
+  const handleConfirmEntry = async (fromDetailDialog = false) => {
     if (!confirmEntry || !confirmFile) return;
     setLoading(true);
     const url = await uploadReceipt(confirmFile, `confirmacao/${confirmEntry.id}-${Date.now()}`);
+    let orderUrl: string | null = null;
+    if (confirmOrderFile) {
+      orderUrl = await uploadReceipt(confirmOrderFile, `pedido-confirmacao/${confirmEntry.id}-${Date.now()}`);
+    }
     if (url) {
-      await supabase.from("cash_entries" as any).update({ confirmed: true, receipt_url: url }).eq("id", confirmEntry.id);
+      await supabase.from("cash_entries" as any).update({
+        confirmed: true,
+        receipt_url: url,
+        ...(orderUrl ? { supplier_order_receipt_url: orderUrl } : {}),
+      }).eq("id", confirmEntry.id);
       toast.success("Confirmado!");
-      setConfirmDialog(false);
+      if (fromDetailDialog) {
+        setEntryDetailDialog(false);
+        setSelectedEntry(null);
+      } else {
+        setConfirmDialog(false);
+      }
       fetchRegister(activeStoreId);
     }
     setLoading(false);
@@ -805,7 +835,7 @@ const Caixa = () => {
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Lançamentos Recentes ({entries.length})</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
                   {entries.map(entry => (
-                    <div key={entry.id} className="flex items-center justify-between text-xs border rounded-lg p-2 bg-muted/20" onClick={() => !entry.confirmed && openConfirmDialog(entry)}>
+                    <div key={entry.id} className="flex items-center justify-between text-xs border rounded-lg p-2 bg-muted/20 cursor-pointer hover:bg-muted/40 transition-colors" onClick={() => openEntryDetail(entry)}>
                       <div className="min-w-0 flex-1 mr-2">
                         <p className="font-medium truncate">{(entry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
                         <p className="text-muted-foreground">{entry.payment_method === "misto" ? getMistoLabel(entry.description) : (paymentLabels[entry.payment_method || ""] || "Outro")} · {new Date(entry.created_at).toLocaleTimeString("pt-BR")}</p>
@@ -957,10 +987,14 @@ const Caixa = () => {
           <div className="space-y-4 mt-2">
             <p className="text-xs">{confirmEntry?.description} - {confirmEntry && formatCurrency(Number(confirmEntry.amount))}</p>
             <div className="space-y-2">
-              <Label className="text-xs">Comprovante (obrigatório)</Label>
-              <Input type="file" onChange={e => setConfirmFile(e.target.files?.[0] || null)} />
+              <Label className="text-xs flex items-center gap-1"><CreditCard className="h-3 w-3" /> Comprovante de Pagamento (obrigatório)</Label>
+              <Input type="file" accept="image/*,application/pdf" onChange={e => setConfirmFile(e.target.files?.[0] || null)} />
             </div>
-            <Button className="w-full" onClick={handleConfirmEntry} disabled={loading || !confirmFile}>Confirmar</Button>
+            <div className="space-y-2">
+              <Label className="text-xs flex items-center gap-1 text-blue-500"><Receipt className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor (opcional)</Label>
+              <Input type="file" accept="image/*,application/pdf" onChange={e => setConfirmOrderFile(e.target.files?.[0] || null)} />
+            </div>
+            <Button className="w-full" onClick={() => handleConfirmEntry(false)} disabled={loading || !confirmFile}>Confirmar</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1229,6 +1263,109 @@ const Caixa = () => {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Detalhes do Lançamento Individual */}
+      <Dialog open={entryDetailDialog} onOpenChange={(open) => { setEntryDetailDialog(open); if (!open) setSelectedEntry(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-primary" /> Detalhes do Lançamento
+            </DialogTitle>
+          </DialogHeader>
+          {selectedEntry && (
+            <div className="space-y-4 py-2">
+              {/* Info principal */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-2 border border-border/50">
+                <p className="font-semibold text-sm leading-snug">{(selectedEntry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {selectedEntry.payment_method === "misto" ? getMistoLabel(selectedEntry.description) : (paymentLabels[selectedEntry.payment_method || ""] || "Outro")}
+                  </span>
+                  <span className={`font-bold text-sm ${["entrada","abertura"].includes(selectedEntry.type) ? "text-primary" : "text-destructive"}`}>
+                    {["entrada","abertura"].includes(selectedEntry.type) ? "+" : "-"}{formatCurrency(Number(selectedEntry.amount))}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{new Date(selectedEntry.created_at).toLocaleString("pt-BR")}</span>
+                  {selectedEntry.confirmed
+                    ? <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30">✓ Confirmado</Badge>
+                    : <Badge className="text-[10px] bg-orange-500/20 text-orange-600">⏳ Pendente</Badge>
+                  }
+                </div>
+              </div>
+
+              {/* Comprovantes existentes */}
+              {(selectedEntry.receipt_url || (selectedEntry as any).supplier_order_receipt_url) && (
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wide">Comprovantes Anexados</p>
+                  {selectedEntry.receipt_url && (
+                    <a
+                      href={selectedEntry.receipt_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 text-xs text-primary font-semibold bg-primary/5 border border-primary/20 px-3 py-2 rounded-lg hover:bg-primary/10 transition-colors"
+                    >
+                      <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                      Comprovante de Pagamento
+                      <ArrowUpRight className="h-3 w-3 ml-auto" />
+                    </a>
+                  )}
+                  {(selectedEntry as any).supplier_order_receipt_url && (
+                    <a
+                      href={(selectedEntry as any).supplier_order_receipt_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 text-xs text-blue-500 font-semibold bg-blue-500/5 border border-blue-500/20 px-3 py-2 rounded-lg hover:bg-blue-500/10 transition-colors"
+                    >
+                      <Truck className="h-3.5 w-3.5 shrink-0" />
+                      Comprovante do Pedido (Fornecedor)
+                      <ArrowUpRight className="h-3 w-3 ml-auto" />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Seção de confirmação embutida — só para pendentes */}
+              {!selectedEntry.confirmed && (
+                <div className="space-y-3 border border-orange-500/30 bg-orange-500/5 rounded-lg p-3">
+                  <p className="text-[10px] uppercase font-semibold text-orange-500 tracking-wide flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Confirmar este lançamento
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1">
+                      <CreditCard className="h-3 w-3 text-primary" /> Comprovante de Pagamento <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="h-8 text-xs"
+                      onChange={e => setConfirmFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1 text-blue-500">
+                      <Truck className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor <span className="text-muted-foreground">(opcional)</span>
+                    </Label>
+                    <Input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      className="h-8 text-xs"
+                      onChange={e => setConfirmOrderFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <Button
+                    className="w-full h-8 text-xs"
+                    onClick={() => handleConfirmEntry(true)}
+                    disabled={loading || !confirmFile}
+                  >
+                    {loading ? "Confirmando..." : "Confirmar Lançamento"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
