@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Camera, Upload, CheckCircle } from "lucide-react";
+import { convertToWebP } from "@/utils/imageOptimizer";
 
 export default function Avaliacao() {
   const [loading, setLoading] = useState(false);
@@ -33,13 +34,14 @@ export default function Avaliacao() {
       // Upload files
       const uploadedPhotos = [];
       for (const file of files) {
-        const fileExt = file.name.split('.').pop();
+        const optimizedFile = await convertToWebP(file);
+        const fileExt = optimizedFile.name.split('.').pop();
         const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
         const filePath = `${fileName}`;
 
         const { error: uploadError, data } = await supabase.storage
           .from('device_evaluations')
-          .upload(filePath, file);
+          .upload(filePath, optimizedFile);
 
         if (uploadError) {
           throw uploadError;

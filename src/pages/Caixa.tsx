@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
 import { SuppliersTab } from "@/components/features/caixa/SuppliersTab";
+import { convertToWebP } from "@/utils/imageOptimizer";
 
 interface CashEntry {
   id: string;
@@ -398,8 +399,13 @@ const Caixa = () => {
 
 
   const uploadReceipt = async (file: File, path: string): Promise<string | null> => {
-    const safePath = path.replace(/[^a-zA-Z0-9.\-_/]/g, "_");
-    const { data, error } = await supabase.storage.from("comprovantes").upload(safePath, file, { upsert: true });
+    const optimizedFile = await convertToWebP(file);
+    let finalPath = path;
+    if (optimizedFile.type === "image/webp" && !finalPath.toLowerCase().endsWith(".webp")) {
+      finalPath = finalPath.replace(/\.[^/.]+$/, "") + ".webp";
+    }
+    const safePath = finalPath.replace(/[^a-zA-Z0-9.\-_/]/g, "_");
+    const { data, error } = await supabase.storage.from("comprovantes").upload(safePath, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;

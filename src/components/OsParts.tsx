@@ -4,9 +4,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Package, Plus, Trash2, Loader2, Cpu, Image, Upload, X, ShoppingCart, CreditCard } from "lucide-react";
 import { toast } from "sonner";
+import { convertToWebP } from "@/utils/imageOptimizer";
 
 interface Product {
   id: string;
@@ -119,10 +119,11 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
   }, [orderId, storeId, readonly]);
 
   const uploadReceipt = async (file: File, prefix: string): Promise<string | null> => {
-    const safeName = `${prefix}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+    const optimizedFile = await convertToWebP(file);
+    const safeName = `${prefix}-${Date.now()}-${optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
     const { data, error } = await supabase.storage
       .from("comprovantes")
-      .upload(`pecas/${safeName}`, file, { upsert: true });
+      .upload(`pecas/${safeName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;

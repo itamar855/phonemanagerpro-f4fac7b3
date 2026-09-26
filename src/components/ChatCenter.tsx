@@ -11,6 +11,7 @@ import {
   Phone, ChevronRight, User, MoreVertical, Brain
 } from "lucide-react";
 import { toast } from "sonner";
+import { convertToWebP } from "@/utils/imageOptimizer";
 
 const InstagramIcon = ({ className }: { className?: string }) => (
   <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
@@ -171,8 +172,9 @@ export default function ChatCenter({ leads, onRefreshProfile, onAIQualify, user,
         let type = 'text';
 
         if (imageFile) {
-          const path = `chat/${Date.now()}_${imageFile.name}`;
-          const { data } = await supabase.storage.from("chat_media").upload(path, imageFile);
+          const optimizedImg = await convertToWebP(imageFile);
+          const path = `chat/${Date.now()}_${optimizedImg.name}`;
+          const { data } = await supabase.storage.from("chat_media").upload(path, optimizedImg);
           const { data: urlData } = supabase.storage.from("chat_media").getPublicUrl(data!.path);
           mediaUrl = urlData.publicUrl;
           type = 'image';

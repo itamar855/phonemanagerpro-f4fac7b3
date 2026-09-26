@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, ArrowUpDown, ArrowUpRight, ArrowDownRight, Tag, Trash2, Edit2, Camera, Upload, Receipt, CheckCircle, Loader2, AlertTriangle, Store } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
+import { convertToWebP } from "@/utils/imageOptimizer";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -103,9 +104,10 @@ const Transacoes = () => {
   });
 
   const uploadReceipt = async (file: File): Promise<string | null> => {
-    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    const optimizedFile = await convertToWebP(file);
+    const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
     const fileName = `${user?.id}-${Date.now()}-${safeName}`;
-    const { data, error } = await supabase.storage.from("comprovantes").upload(`transacoes/${fileName}`, file, { upsert: true });
+    const { data, error } = await supabase.storage.from("comprovantes").upload(`transacoes/${fileName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;

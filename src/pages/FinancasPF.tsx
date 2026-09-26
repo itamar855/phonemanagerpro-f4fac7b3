@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { convertToWebP } from "@/utils/imageOptimizer";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -131,9 +132,10 @@ const FinancasPF = () => {
   };
 
   const uploadReceipt = async (file: File): Promise<string | null> => {
-    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    const optimizedFile = await convertToWebP(file);
+    const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
     const fileName = `${user?.id}-${Date.now()}-${safeName}`;
-    const { data, error } = await supabase.storage.from("comprovantes").upload(`pf/${fileName}`, file, { upsert: true });
+    const { data, error } = await supabase.storage.from("comprovantes").upload(`pf/${fileName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;

@@ -23,6 +23,7 @@ import {
   Printer, ChevronRight, ChevronLeft, Camera, Upload, Receipt, Shield, Trash2, Store, Copy
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { convertToWebP } from "@/utils/imageOptimizer";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { OsChecklist, ChecklistData, CHECKLIST_ITEMS, VISUAL_CHECKLIST_ITEMS } from "@/components/OsChecklist";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -527,8 +528,9 @@ const OrdensServico = () => {
   useEffect(() => { fetchData(); }, [activeStoreId]);
 
   const uploadReceipt = async (file: File): Promise<string | null> => {
-    const fileName = `${detailOrder?.order_number}-${Date.now()}-${file.name}`;
-    const { data, error } = await supabase.storage.from("comprovantes").upload(`os-pagamentos/${fileName}`, file, { upsert: true });
+    const optimizedFile = await convertToWebP(file);
+    const fileName = `${detailOrder?.order_number}-${Date.now()}-${optimizedFile.name}`;
+    const { data, error } = await supabase.storage.from("comprovantes").upload(`os-pagamentos/${fileName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;

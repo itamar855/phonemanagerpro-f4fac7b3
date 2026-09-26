@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { logAction } from "@/utils/auditLogger";
+import { convertToWebP } from "@/utils/imageOptimizer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -189,10 +190,11 @@ const Lojas = () => {
 
   const handleLogoUpload = async (file: File) => {
     setLogoUploading(true);
-    const ext = file.name.split(".").pop();
+    const optimizedFile = await convertToWebP(file, { maxDimension: 800 });
+    const ext = optimizedFile.name.split(".").pop();
     const path = `logos/${selectedStoreId}-${Date.now()}.${ext}`;
     const { data, error } = await supabase.storage
-      .from("comprovantes").upload(path, file, { upsert: true });
+      .from("comprovantes").upload(path, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro ao enviar logo: " + error.message); setLogoUploading(false); return; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     setDetailsForm(f => ({ ...f, logo_url: urlData.publicUrl }));

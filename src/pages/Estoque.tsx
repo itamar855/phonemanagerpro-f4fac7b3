@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Plus, Search, Package, ArrowRightLeft, AlertTriangle, Zap, Pencil, Trash2, Store, Wrench, Cpu, Upload, FileText } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { logAction } from "@/utils/auditLogger";
+import { convertToWebP } from "@/utils/imageOptimizer";
 import DeviceRepairModal from "@/components/DeviceRepairModal";
 import { AparelhosTable } from "@/components/features/estoque/AparelhosTable";
 import { AcessoriosTable } from "@/components/features/estoque/AcessoriosTable";
@@ -417,10 +418,11 @@ const Estoque = () => {
     try {
       let voucherUrl = null;
       if (partVoucherFile) {
-        const fileExt = partVoucherFile.name.split(".").pop();
-        const safeName = partVoucherFile.name.replace(/[^a-zA-Z0-9]/g, "_");
+        const optimizedVoucher = await convertToWebP(partVoucherFile);
+        const fileExt = optimizedVoucher.name.split(".").pop();
+        const safeName = optimizedVoucher.name.replace(/[^a-zA-Z0-9]/g, "_");
         const path = `pecas/comprovante-${Date.now()}-${safeName}.${fileExt}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage.from("comprovantes").upload(path, partVoucherFile, { upsert: true });
+        const { data: uploadData, error: uploadError } = await supabase.storage.from("comprovantes").upload(path, optimizedVoucher, { upsert: true });
         if (uploadError) throw uploadError;
         const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
         voucherUrl = urlData.publicUrl;
@@ -572,10 +574,11 @@ const Estoque = () => {
     }, 200);
 
     try {
-      const fileExt = file.name.split(".").pop();
-      const safeName = file.name.replace(/[^a-zA-Z0-9]/g, "_");
+      const optimizedFile = await convertToWebP(file);
+      const fileExt = optimizedFile.name.split(".").pop();
+      const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9]/g, "_");
       const path = `pecas/comprovante-${Date.now()}-${safeName}.${fileExt}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage.from("comprovantes").upload(path, file, { upsert: true });
+      const { data: uploadData, error: uploadError } = await supabase.storage.from("comprovantes").upload(path, optimizedFile, { upsert: true });
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
       const publicUrl = urlData.publicUrl;

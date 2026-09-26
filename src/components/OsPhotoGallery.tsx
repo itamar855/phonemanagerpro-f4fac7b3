@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, UploadCloud, Image as ImageIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { convertToWebP } from "@/utils/imageOptimizer";
 
 interface Photo {
   id: string;
@@ -54,14 +55,15 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
       
       setUploading(true);
       const file = event.target.files[0];
-      const fileExt = file.name.split('.').pop();
+      const optimizedFile = await convertToWebP(file);
+      const fileExt = optimizedFile.name.split('.').pop();
       const fileName = `${orderId}-${Math.random()}.${fileExt}`;
       const filePath = `os-photos/${fileName}`;
 
       // Upload image
       const { error: uploadError } = await supabase.storage
         .from('comprovantes')
-        .upload(filePath, file);
+        .upload(filePath, optimizedFile);
 
       if (uploadError) throw uploadError;
 

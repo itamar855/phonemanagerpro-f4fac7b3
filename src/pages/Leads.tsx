@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { convertToWebP } from "@/utils/imageOptimizer";
 import {
   Trash2, MoreVertical, MessageSquare, ChevronRight, Download,
   MessageCircle, Phone, Plus, Users, Mail, Search, Shield, Store,
@@ -556,8 +557,9 @@ const Leads = () => {
           let finalMessageType = 'text';
 
           if (imageFile) {
-            const path = `chat/${Date.now()}_${imageFile.name}`;
-            const { data: uploadData, error: uploadError } = await supabase.storage.from("chat_media").upload(path, imageFile);
+            const optimizedImg = await convertToWebP(imageFile);
+            const path = `chat/${Date.now()}_${optimizedImg.name}`;
+            const { data: uploadData, error: uploadError } = await supabase.storage.from("chat_media").upload(path, optimizedImg);
             if (uploadError) throw uploadError;
             const { data: urlData } = supabase.storage.from("chat_media").getPublicUrl(uploadData.path);
             mediaUrlToUpload = urlData.publicUrl;

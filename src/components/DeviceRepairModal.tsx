@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Wrench, Plus, Trash2, Loader2, Camera, Upload, Receipt, CheckCircle, Cpu, FileText, Smartphone, Image as LucideImage, X } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
+import { convertToWebP } from "@/utils/imageOptimizer";
 
 interface Supplier {
   id: string;
@@ -201,10 +202,11 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   };
 
   const uploadReceipt = async (file: File, prefix: string): Promise<string | null> => {
-    const safeName = `${prefix}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
+    const optimizedFile = await convertToWebP(file);
+    const safeName = `${prefix}-${Date.now()}-${optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
     const { data, error } = await supabase.storage
       .from("comprovantes")
-      .upload(`pecas/${safeName}`, file, { upsert: true });
+      .upload(`pecas/${safeName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;
@@ -381,10 +383,11 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     }, 200);
 
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const optimizedFile = await convertToWebP(file);
+      const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const path = `reparos/${product.id}-${type}-${Date.now()}-${safeName}`;
 
-      const { data, error } = await supabase.storage.from("comprovantes").upload(path, file, { upsert: true });
+      const { data, error } = await supabase.storage.from("comprovantes").upload(path, optimizedFile, { upsert: true });
       if (error) throw error;
 
       const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
