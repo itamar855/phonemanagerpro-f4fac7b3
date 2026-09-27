@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Package, Plus, Trash2, Loader2, Cpu, Image, Upload, X, ShoppingCart, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { convertToWebP } from "@/utils/imageOptimizer";
@@ -261,9 +262,17 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           .maybeSingle();
         register = fallbackRegister;
       }
+
+      // Buscar número da OS para descrição rica e legível no caixa
+      const { data: currentOrder } = await supabase
+        .from("service_orders")
+        .select("order_number")
+        .eq("id", orderId)
+        .maybeSingle();
       
+      const osPrefix = currentOrder?.order_number ? `OS #${currentOrder.order_number}` : "OS";
       const registerId = register ? (register as any).id : null;
-      const desc = `Compra de Peça Avulsa (OS): ${newPart.name.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
+      const desc = `Compra de Peça Avulsa (${osPrefix}): ${newPart.name.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
       const hasReceipt = !!receiptUrl;
 
       if (registerId) {
@@ -278,6 +287,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
           receipt_url: receiptUrl || null,
           supplier_order_receipt_url: orderReceiptUrl || null,
           created_by: user.id,
+          reference_id: orderId,
         } as any);
       }
 
@@ -293,6 +303,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
         store_id: storeId,
         created_by: user.id,
         receipt_url: receiptUrl || null,
+        reference_id: orderId,
       } as any);
 
       toast.success("Peça cadastrada no estoque, vinculada à OS e lançada no caixa!");
@@ -328,7 +339,7 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
       if (itemToRemove && storeId) {
         const prodName = itemToRemove.products?.name || "";
         if (prodName) {
-          const descSearch = `Compra de Peça Avulsa (OS): ${prodName.trim()}%`;
+          const descSearch = `Compra de Peça Avulsa (%): ${prodName.trim()}%`;
           await supabase
             .from("cash_entries" as any)
             .delete()

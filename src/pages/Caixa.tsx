@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   Wallet, RefreshCw, Plus, Minus, History, Trash2, CheckCircle, 
   Clock, AlertTriangle, Filter, Store, User, Camera, Upload, Receipt, ArrowUpRight, Unlock, Eye,
-  Truck, CreditCard, TrendingDown, TrendingUp, Phone, Building2
+  Truck, CreditCard, TrendingDown, TrendingUp, Phone, Building2, Wrench, ExternalLink, Smartphone, Package
 } from "lucide-react";
 import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
@@ -73,6 +74,15 @@ const Caixa = () => {
   // Dialog de detalhes de lançamento individual
   const [entryDetailDialog, setEntryDetailDialog] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
+  const [linkedServiceOrder, setLinkedServiceOrder] = useState<any | null>(null);
+  const [loadingLinkedOrder, setLoadingLinkedOrder] = useState(false);
+
+  // Dialog de Ordem de Serviço aberta a partir do Caixa
+  const [osModalOpen, setOsModalOpen] = useState(false);
+  const [osModalOrder, setOsModalOrder] = useState<any | null>(null);
+  const [osModalItems, setOsModalItems] = useState<any[]>([]);
+  const [loadingOsItems, setLoadingOsItems] = useState(false);
+  const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
   
   // Forms
   const [openForm, setOpenForm] = useState({ amount: "", note: "", receipt: null as File | null });
@@ -127,6 +137,19 @@ const Caixa = () => {
     return {};
   };
 
+  const navigate = useNavigate();
+
+  const statusConfig: Record<string, { label: string; color: string }> = {
+    open:             { label: "Aberta",               color: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
+    analyzing:        { label: "Em Análise",           color: "bg-amber-500/15 text-amber-500 border-amber-500/20" },
+    waiting_part:     { label: "Aguardando Peça",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20" },
+    repairing:        { label: "Em Reparo",            color: "bg-purple-500/15 text-purple-400 border-purple-500/20" },
+    waiting_approval: { label: "Aguardando Aprovação", color: "bg-amber-500/15 text-amber-500 border-amber-500/20" },
+    ready:            { label: "Pronta p/ Retirada",   color: "bg-primary/15 text-primary border-primary/20" },
+    delivered:        { label: "Entregue",             color: "bg-muted text-muted-foreground border-border" },
+    cancelled:        { label: "Cancelada",            color: "bg-destructive/15 text-destructive border-destructive/20" },
+  };
+
   const getMistoLabel = (description: string | null): string => {
     const vals = getMistoValues(description);
     const parts: string[] = [];
@@ -158,6 +181,8 @@ const Caixa = () => {
        supabase.from("profiles").select("user_id, display_name"),
        supabase.from("stores").select("id, name")
     ]);
+    
+    setStoreList(storesRes.data || []);
     
     const profileMap = new Map((profilesRes.data || []).map(p => [p.user_id, p.display_name]));
     const storeMap = new Map((storesRes.data || []).map(s => [s.id, s.name]));
@@ -589,9 +614,160 @@ const Caixa = () => {
     setLoading(false);
   };
 
+  const resolveLinkedOrder = async (entry: CashEntry) => {
+    setLoadingLinkedOrder(true);
+    setLinkedServiceOrder(null);
+    try {
+      let foundOrder: any = null;
+
+      // 1. Diretamente por reference_id
+      if ((entry as any).reference_id) {
+        const { data } = await supabase
+          .from("service_orders")
+          .select("*")
+          .eq("id", (entry as any).reference_id)
+          .maybeSingle();
+        if (data) foundOrder = data;
+      }
+
+      // 2. Por número de OS na descrição (ex: "OS #70", "(OS #70)", "OS 70")
+      if (!foundOrder && entry.description) {
+        const match = entry.description.match(/OS\s*#?\s*(\d+)/i);
+        if (match && match[1]) {
+          const orderNum = parseInt(match[1], 10);
+          const { data } = await supabase
+            .from("service_orders")
+            .select("*")
+            .eq("order_number", orderNum)
+            .maybeSingle();
+          if (data) {
+            foundOrder = data;
+            // Auto-vincula para próximos acessos
+            supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+          }
+        }
+      }
+
+      // 3. Fallback inteligente para peças avulsas já cadastradas ("Compra de Peça Avulsa (OS): ...")
+      if (!foundOrder && entry.description && entry.description.includes("Compra de Peça Avulsa")) {
+        const matchPart = entry.description.match(/Compra de Peça Avulsa(?:\s*\(.*?\))?:\s*([^\[]+)/i);
+        const partName = matchPart ? matchPart[1].trim() : "";
+
+        // Estratégia A: Busca o produto pelo nome correspondente
+        let matchingProductIds: string[] = [];
+        if (partName) {
+          const { data: prods } = await supabase
+            .from("products")
+            .select("id, name")
+            .ilike("name", `%${partName}%`)
+            .limit(10);
+          if (prods && prods.length > 0) {
+            matchingProductIds = prods.map(p => p.id);
+          }
+        }
+
+        // Estratégia B: Busca item de OS pelo product_id encontrado ou pelo custo unitário
+        let matchedOrderId: string | null = null;
+        if (matchingProductIds.length > 0) {
+          const { data: itemsByProd } = await (supabase
+            .from("service_order_items" as any)
+            .select("service_order_id")
+            .in("product_id", matchingProductIds)
+            .limit(10) as any);
+          if (itemsByProd && itemsByProd.length > 0) {
+            matchedOrderId = itemsByProd[0].service_order_id;
+          }
+        }
+
+        // Fallback por custo unitário caso não encontre por nome
+        if (!matchedOrderId) {
+          const { data: itemsByCost } = await (supabase
+            .from("service_order_items" as any)
+            .select("service_order_id")
+            .eq("unit_cost", entry.amount)
+            .limit(10) as any);
+          if (itemsByCost && itemsByCost.length > 0) {
+            matchedOrderId = itemsByCost[0].service_order_id;
+          }
+        }
+
+        if (matchedOrderId) {
+          const { data } = await supabase
+            .from("service_orders")
+            .select("*")
+            .eq("id", matchedOrderId)
+            .maybeSingle();
+          if (data) {
+            foundOrder = data;
+            supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+          }
+        }
+      }
+
+      // 4. Fallback pelo prefixo de OS no comprovante anexado (ex: "os-3b2d1844/...")
+      if (!foundOrder && entry.receipt_url) {
+        const matchOs = entry.receipt_url.match(/os-([a-f0-9\-]{8})/i);
+        if (matchOs && matchOs[1]) {
+          const { data: osList } = await supabase
+            .from("service_orders")
+            .select("*")
+            .ilike("id", `${matchOs[1]}%`)
+            .limit(1);
+          if (osList && osList.length > 0) {
+            foundOrder = osList[0];
+            supabase.from("cash_entries" as any).update({ reference_id: foundOrder.id }).eq("id", entry.id).then();
+          }
+        }
+      }
+
+      setLinkedServiceOrder(foundOrder);
+    } catch (err) {
+      console.error("Erro ao resolver OS vinculada ao lançamento:", err);
+    } finally {
+      setLoadingLinkedOrder(false);
+    }
+  };
+
+  const handleOpenFullOs = async (order: any) => {
+    setOsModalOrder(order);
+    setOsModalOpen(true);
+    setLoadingOsItems(true);
+    try {
+      const { data: items } = await (supabase
+        .from("service_order_items" as any)
+        .select("*")
+        .eq("service_order_id", order.id) as any);
+
+      if (items && items.length > 0) {
+        const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean))) as string[];
+        const prodMap = new Map<string, any>();
+        if (productIds.length > 0) {
+          const { data: prods } = await supabase
+            .from("products")
+            .select("id, name, brand, model")
+            .in("id", productIds);
+          (prods || []).forEach((p: any) => prodMap.set(p.id, p));
+        }
+        const enrichedItems = items.map((it: any) => ({
+          ...it,
+          products: prodMap.get(it.product_id) || null
+        }));
+        setOsModalItems(enrichedItems);
+      } else {
+        setOsModalItems([]);
+      }
+    } catch (err) {
+      console.error("Erro ao carregar peças da OS:", err);
+      setOsModalItems([]);
+    } finally {
+      setLoadingOsItems(false);
+    }
+  };
+
   const openEntryDetail = (entry: CashEntry) => {
     setSelectedEntry(entry);
     setEntryDetailDialog(true);
+    resolveLinkedOrder(entry);
     // Se pendente, prepara confirmação embutida
     if (!entry.confirmed) {
       setConfirmEntry(entry);
@@ -1302,6 +1478,72 @@ const Caixa = () => {
                 </div>
               </div>
 
+              {/* Informações da Ordem de Serviço / Serviço Vinculado */}
+              {loadingLinkedOrder && (
+                <div className="p-3 bg-muted/20 border border-border/40 rounded-lg text-center text-xs text-muted-foreground animate-pulse flex items-center justify-center gap-2">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Buscando detalhes do serviço vinculado...
+                </div>
+              )}
+
+              {linkedServiceOrder && !loadingLinkedOrder && (
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
+                      <Wrench className="h-3.5 w-3.5" /> Serviço Vinculado (OS #{linkedServiceOrder.order_number})
+                    </span>
+                    {linkedServiceOrder.status && (
+                      <Badge className={`text-[10px] px-2 py-0.5 border ${statusConfig[linkedServiceOrder.status]?.color || "bg-muted text-muted-foreground"}`}>
+                        {statusConfig[linkedServiceOrder.status]?.label || linkedServiceOrder.status}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-primary/10">
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Cliente</span>
+                      <p className="font-medium text-foreground">{linkedServiceOrder.customer_name || "—"}</p>
+                      {linkedServiceOrder.customer_phone && (
+                        <a
+                          href={`https://wa.me/55${linkedServiceOrder.customer_phone.replace(/\D/g, "")}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 mt-0.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Phone className="h-3 w-3" /> {linkedServiceOrder.customer_phone}
+                        </a>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Aparelho</span>
+                      <p className="font-medium text-foreground">{linkedServiceOrder.device_brand} {linkedServiceOrder.device_model}</p>
+                      {linkedServiceOrder.device_color && (
+                        <span className="text-[10px] text-muted-foreground block">Cor: {linkedServiceOrder.device_color}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-xs pt-1 border-t border-primary/10 space-y-0.5">
+                    {linkedServiceOrder.reported_defect && (
+                      <p><span className="text-muted-foreground text-[11px]">Defeito:</span> <span className="font-medium text-foreground">{linkedServiceOrder.reported_defect}</span></p>
+                    )}
+                    {linkedServiceOrder.requested_service && (
+                      <p><span className="text-muted-foreground text-[11px]">Serviço:</span> <span className="font-medium text-foreground">{linkedServiceOrder.requested_service}</span></p>
+                    )}
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs gap-1.5 border-primary/40 hover:bg-primary/10 text-primary font-semibold mt-1"
+                    onClick={() => handleOpenFullOs(linkedServiceOrder)}
+                  >
+                    <Eye className="h-3.5 w-3.5" /> Abrir Ordem de Serviço #{linkedServiceOrder.order_number}
+                  </Button>
+                </div>
+              )}
+
               {/* Comprovantes existentes */}
               {(selectedEntry.receipt_url || (selectedEntry as any).supplier_order_receipt_url) && (
                 <div className="space-y-2">
@@ -1370,6 +1612,215 @@ const Caixa = () => {
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Completo de Visualização da OS a partir do Caixa */}
+      <Dialog open={osModalOpen} onOpenChange={setOsModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between gap-2 pr-4">
+              <span className="flex items-center gap-2">
+                <Wrench className="h-5 w-5 text-primary" />
+                Ordem de Serviço #{osModalOrder?.order_number}
+              </span>
+              {osModalOrder?.status && (
+                <Badge className={`text-xs px-2.5 py-0.5 border ${statusConfig[osModalOrder.status]?.color || "bg-muted"}`}>
+                  {statusConfig[osModalOrder.status]?.label || osModalOrder.status}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {osModalOrder && (
+            <div className="space-y-4 py-1 text-xs">
+              {/* Header com Loja e Datas */}
+              <div className="flex items-center justify-between text-muted-foreground bg-muted/30 p-2.5 rounded-lg border border-border/40">
+                <span className="flex items-center gap-1.5">
+                  <Store className="h-3.5 w-3.5" />
+                  {storeList.find(s => s.id === osModalOrder.store_id)?.name || currentRegister?.stores?.name || "Loja"}
+                </span>
+                <span>Aberta em: {new Date(osModalOrder.created_at).toLocaleString("pt-BR")}</span>
+              </div>
+
+              {/* Cliente */}
+              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 border border-border/40">
+                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
+                  <User className="h-3 w-3" /> Dados do Cliente
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Nome</span>
+                    <p className="font-medium text-sm text-foreground">{osModalOrder.customer_name || "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Telefone</span>
+                    {osModalOrder.customer_phone ? (
+                      <a
+                        href={`https://wa.me/55${osModalOrder.customer_phone.replace(/\D/g, "")}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-emerald-500 hover:underline flex items-center gap-1 font-medium text-sm"
+                      >
+                        <Phone className="h-3.5 w-3.5" /> {osModalOrder.customer_phone}
+                      </a>
+                    ) : "—"}
+                  </div>
+                  {osModalOrder.customer_cpf && (
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">CPF</span>
+                      <p className="font-medium text-foreground">{osModalOrder.customer_cpf}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Aparelho */}
+              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 border border-border/40">
+                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
+                  <Smartphone className="h-3 w-3" /> Aparelho
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Marca / Modelo</span>
+                    <p className="font-medium text-foreground">{osModalOrder.device_brand} {osModalOrder.device_model}</p>
+                  </div>
+                  {osModalOrder.device_color && (
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Cor</span>
+                      <p className="font-medium text-foreground">{osModalOrder.device_color}</p>
+                    </div>
+                  )}
+                  {osModalOrder.device_imei && (
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">IMEI</span>
+                      <p className="font-medium text-foreground">{osModalOrder.device_imei}</p>
+                    </div>
+                  )}
+                  {osModalOrder.device_condition && (
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground block text-[11px]">Condição / Avarias</span>
+                      <p className="font-medium text-foreground">{osModalOrder.device_condition}</p>
+                    </div>
+                  )}
+                  {osModalOrder.device_accessories && (
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground block text-[11px]">Acessórios Deixados</span>
+                      <p className="font-medium text-foreground">{osModalOrder.device_accessories}</p>
+                    </div>
+                  )}
+                </div>
+                {osModalOrder.device_is_off && (
+                  <div className="mt-1 p-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded text-[11px] font-semibold">
+                    ⚠️ Aparelho deu entrada desligado no estabelecimento
+                  </div>
+                )}
+              </div>
+
+              {/* Serviço & Diagnóstico */}
+              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 border border-border/40">
+                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
+                  <Wrench className="h-3 w-3" /> Serviço & Valores
+                </p>
+                <div className="space-y-1 pt-1">
+                  <p><span className="text-muted-foreground">Defeito Reclamado:</span> <span className="font-medium text-foreground">{osModalOrder.reported_defect || "—"}</span></p>
+                  <p><span className="text-muted-foreground">Serviço Solicitado:</span> <span className="font-medium text-foreground">{osModalOrder.requested_service || "—"}</span></p>
+                  {osModalOrder.internal_notes && (
+                    <p><span className="text-muted-foreground">Notas Internas:</span> <span className="font-medium text-foreground">{osModalOrder.internal_notes}</span></p>
+                  )}
+                  <div className="flex items-center gap-4 pt-2 border-t border-border/30">
+                    <div>
+                      <span className="text-muted-foreground text-[11px] block">Valor Estimado</span>
+                      <span className="font-semibold">{formatCurrency(Number(osModalOrder.estimated_price || 0))}</span>
+                    </div>
+                    {osModalOrder.final_price && (
+                      <div>
+                        <span className="text-muted-foreground text-[11px] block">Valor Final</span>
+                        <span className="font-bold text-sm text-primary">{formatCurrency(Number(osModalOrder.final_price))}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Peças e Comprovantes Utilizados nesta OS */}
+              <div className="rounded-lg bg-muted/40 p-3 space-y-2 border border-border/40">
+                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
+                  <Package className="h-3 w-3" /> Peças Utilizadas nesta OS ({osModalItems.length})
+                </p>
+                {loadingOsItems ? (
+                  <p className="text-muted-foreground py-2 text-center">Carregando peças...</p>
+                ) : osModalItems.length === 0 ? (
+                  <p className="text-muted-foreground py-1 text-center italic">Nenhuma peça cadastrada para esta OS.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {osModalItems.map((item: any) => (
+                      <div key={item.id} className="p-2.5 rounded border border-border/60 bg-background/50 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-foreground">
+                            {item.products?.name || "Peça"} {item.products?.brand ? `(${item.products.brand})` : ""}
+                          </span>
+                          <span className="font-bold text-destructive">
+                            -{formatCurrency(Number(item.unit_cost || item.cost_price || 0))}
+                          </span>
+                        </div>
+                        {item.supplier_name && (
+                          <p className="text-muted-foreground text-[11px]">
+                            Fornecedor: <span className="font-medium text-foreground">{item.supplier_name}</span>
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {item.receipt_url && (
+                            <a
+                              href={item.receipt_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium bg-primary/10 px-2 py-0.5 rounded"
+                            >
+                              <CreditCard className="h-3 w-3" /> Comprovante de Pagamento ↗
+                            </a>
+                          )}
+                          {item.supplier_order_receipt_url && (
+                            <a
+                              href={item.supplier_order_receipt_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-blue-500 hover:underline flex items-center gap-1 font-medium bg-blue-500/10 px-2 py-0.5 rounded"
+                            >
+                              <Truck className="h-3 w-3" /> Comprovante do Pedido (Fornecedor) ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botões de Ação no Rodapé */}
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    setOsModalOpen(false);
+                    navigate("/ordens-servico");
+                  }}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Ir para Tela de Ordens de Serviço
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setOsModalOpen(false)}
+                >
+                  Fechar
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
