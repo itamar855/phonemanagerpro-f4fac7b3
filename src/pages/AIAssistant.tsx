@@ -90,6 +90,13 @@ const AIAssistant = () => {
     setLoading(true);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        setLoading(false);
+        return;
+      }
+
       const context = await fetchContext(type);
 
       const resp = await fetch(
@@ -98,7 +105,8 @@ const AIAssistant = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({ type, context }),
         }
@@ -151,13 +159,20 @@ const AIAssistant = () => {
     setExportLoading(format);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        setExportLoading(null);
+        return;
+      }
+
       const resp = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-data`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({ format }),
         }
