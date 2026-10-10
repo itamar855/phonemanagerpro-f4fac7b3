@@ -14,13 +14,15 @@ import {
 } from "recharts";
 import {
   FileText, TrendingUp, TrendingDown, ShoppingBag, Wrench,
-  Wallet, Trophy, Medal, Download, Star, Crown, Users, MessageCircle, Camera,
+  Wallet, Trophy, Medal, Download, Star, Crown, Users, MessageCircle, Camera, Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
 import { logAction } from "@/utils/auditLogger";
 import { RelatorioDiarioTab } from "@/components/features/relatorios/RelatorioDiarioTab";
+import { OS_STATUS_CONFIG, getStatusLabel, getStatusColor, ALL_OS_STATUSES } from "@/utils/osStatus";
+import { calculateOSItemMetrics } from "@/utils/osCalculations";
 
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -171,36 +173,47 @@ function exportVendasPDF(rows: any[], periodo: string, loja: string) {
   toast.success("PDF de Vendas gerado!");
 }
 
-function exportOSPDF(osData: any[], osStats: any, profileMap: Map<string,string>, periodo: string, loja: string) {
-  const doc=new jsPDF({unit:"mm",format:"a4",orientation:"landscape"});
-  const pg={n:1};
-  let y=pdfHeader(doc,"Relatorio de OS - Servicos",loja,periodo);
-  y=pdfKpiRow(doc,y,[
-    {label:"Total OS",value:String(osStats.total??0)},
-    {label:"Entregues",value:String(osStats.delivered??0),color:PDF_GREEN},
-    {label:"Em Aberto",value:String(osStats.open??0)},
-    {label:"Receita OS",value:formatCurrency(osStats.totalReceita??0),color:PDF_GREEN},
-    {label:"Ticket Medio",value:formatCurrency(osStats.ticketMedio??0)},
+function exportOSPDF(osData: any[], osStats: any, profileMap: Map<string, string>, periodo: string, loja: string) {
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
+  const pg = { n: 1 };
+  let y = pdfHeader(doc, "Relatorio de OS - Servicos", loja, periodo);
+  y = pdfKpiRow(doc, y, [
+    { label: "Receita OS", value: formatCurrency(osStats.totalReceita ?? 0), color: PDF_GREEN },
+    { label: "Custo Peças", value: formatCurrency(osStats.custoPecas ?? 0), color: PDF_RED },
+    { label: "Margem da OS", value: formatCurrency(osStats.lucroBruto ?? 0), color: PDF_GREEN },
+    { label: "Entregues", value: String(osStats.delivered ?? 0), color: PDF_GREEN },
+    { label: "Recebidas", value: String(osStats.recebidas ?? 0) },
+    { label: "Ticket Medio", value: formatCurrency(osStats.ticketMedio ?? 0) },
   ]);
-  y+=4;
-  const cols=[
-    {label:"Nr OS",w:28},{label:"CLIENTE",w:40},{label:"APARELHO",w:40},{label:"SERVICO",w:46},
-    {label:"TECNICO",w:36},{label:"STATUS",w:25},{label:"ESTIMADO",w:28},{label:"FINAL",w:28},{label:"DATA",w:22},
+  y += 4;
+  const cols = [
+    { label: "Nr OS", w: 20 },
+    { label: "CLIENTE", w: 38 },
+    { label: "APARELHO", w: 38 },
+    { label: "SERVICO", w: 42 },
+    { label: "TECNICO", w: 32 },
+    { label: "STATUS", w: 26 },
+    { label: "ENTRADA", w: 22 },
+    { label: "ENTREGA", w: 22 },
+    { label: "VALOR FINAL", w: 26 },
   ];
-  y=pdfTableHead(doc,y,cols);
-  const sm:Record<string,string>={open:"Aberto",in_progress:"Em andamento",waiting_parts:"Aguard. peca",completed:"Concluido",delivered:"Entregue",cancelled:"Cancelado"};
-  osData.forEach((o:any,i:number)=>{
-    y=pdfCheckPage(doc,y,pg);
-    y=pdfTableRow(doc,y,cols,[
-      o.order_number??"-",o.customer_name??"-",
-      ((o.device_brand??"")+" "+(o.device_model??"")).trim()||"-",
-      o.requested_service??"-",profileMap.get(o.technician_id)??"???",
-      sm[o.status]??o.status,formatCurrency(Number(o.estimated_price||0)),
-      formatCurrency(Number(o.final_price||0)),new Date(o.created_at).toLocaleDateString("pt-BR"),
-    ],i%2===0);
+  y = pdfTableHead(doc, y, cols);
+  osData.forEach((o: any, i: number) => {
+    y = pdfCheckPage(doc, y, pg);
+    y = pdfTableRow(doc, y, cols, [
+      String(o.order_number ?? "-"),
+      o.customer_name ?? "-",
+      ((o.device_brand ?? "") + " " + (o.device_model ?? "")).trim() || "-",
+      o.requested_service ?? "-",
+      profileMap.get(o.technician_id) ?? "Sem técnico",
+      getStatusLabel(o.status),
+      new Date(o.created_at).toLocaleDateString("pt-BR"),
+      o.delivered_at ? new Date(o.delivered_at).toLocaleDateString("pt-BR") : "—",
+      formatCurrency(Number(o.final_price || o.estimated_price || 0)),
+    ], i % 2 === 0);
   });
-  pdfFooter(doc,pg.n);
-  doc.save("OS-"+periodo.replace(/\//g,"-")+".pdf");
+  pdfFooter(doc, pg.n);
+  doc.save("OS-" + periodo.replace(/\//g, "-") + ".pdf");
   toast.success("PDF de OS gerado!");
 }
 
@@ -264,32 +277,45 @@ function exportRankingPDF(ranking: any[], periodo: string, loja: string) {
 }
 
 function exportComissoesPDF(comissoes: any[], periodo: string, loja: string) {
-  const doc=new jsPDF({unit:"mm",format:"a4"});
-  const pg={n:1};
-  let y=pdfHeader(doc,"Relatorio de Comissoes",loja,periodo);
-  const tot=comissoes.reduce((s,c)=>s+c.comissoes,0);
-  y=pdfKpiRow(doc,y,[
-    {label:"Total a Pagar",value:formatCurrency(tot),color:PDF_RED},
-    {label:"Vendedores",value:String(comissoes.length)},
-    {label:"Total Vendido",value:formatCurrency(comissoes.reduce((s,c)=>s+c.totalVendas,0)),color:PDF_GREEN},
-    {label:"Total Lucro",value:formatCurrency(comissoes.reduce((s,c)=>s+c.lucro,0)),color:PDF_GREEN},
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const pg = { n: 1 };
+  let y = pdfHeader(doc, "Relatorio de Comissoes", loja, periodo);
+  const tot = comissoes.reduce((s, c) => s + c.comissoes, 0);
+  y = pdfKpiRow(doc, y, [
+    { label: "Total a Pagar", value: formatCurrency(tot), color: PDF_RED },
+    { label: "Colaboradores", value: String(comissoes.length) },
+    { label: "Total Faturado", value: formatCurrency(comissoes.reduce((s, c) => s + c.totalVendas, 0)), color: PDF_GREEN },
+    { label: "Margem / Lucro", value: formatCurrency(comissoes.reduce((s, c) => s + c.lucro, 0)), color: PDF_GREEN },
   ]);
-  y+=4;
-  const cols=[
-    {label:"POS.",w:14},{label:"VENDEDOR",w:55},{label:"QTD. VENDAS",w:30},
-    {label:"TOTAL VENDIDO",w:38},{label:"LUCRO GERADO",w:36},{label:"% COMISSAO",w:28},{label:"COMISSAO (R$)",w:32},
+  y += 4;
+  const cols = [
+    { label: "POS.", w: 12 },
+    { label: "COLABORADOR", w: 45 },
+    { label: "CARGO", w: 22 },
+    { label: "QTD.", w: 25 },
+    { label: "FATURADO", w: 30 },
+    { label: "COM. VENDAS", w: 28 },
+    { label: "COM. OS", w: 28 },
+    { label: "TOTAL COM.", w: 28 },
   ];
-  y=pdfTableHead(doc,y,cols);
-  comissoes.forEach((v:any,i:number)=>{
-    y=pdfCheckPage(doc,y,pg);
-    const pct=v.totalVendas>0?formatPct((v.comissoes/v.totalVendas)*100):"0%";
-    y=pdfTableRow(doc,y,cols,[
-      (i+1)+"o",v.nome,String(v.qtdVendas),
-      formatCurrency(v.totalVendas),formatCurrency(v.lucro),pct,formatCurrency(v.comissoes),
-    ],i%2===0);
+  y = pdfTableHead(doc, y, cols);
+  comissoes.forEach((v: any, i: number) => {
+    y = pdfCheckPage(doc, y, pg);
+    const cargo = v.role === "tecnico" ? "Técnico" : "Vendedor";
+    const qtdStr = `${v.qtdVendas}v / ${v.osEntregues} OS`;
+    y = pdfTableRow(doc, y, cols, [
+      (i + 1) + "o",
+      v.nome,
+      cargo,
+      qtdStr,
+      formatCurrency(v.totalVendas),
+      v.comissoesVendas > 0 ? formatCurrency(v.comissoesVendas) : "-",
+      v.comissoesOS > 0 ? formatCurrency(v.comissoesOS) : "-",
+      formatCurrency(v.comissoes),
+    ], i % 2 === 0);
   });
-  pdfFooter(doc,pg.n);
-  doc.save("Comissoes-"+periodo.replace(/\//g,"-")+".pdf");
+  pdfFooter(doc, pg.n);
+  doc.save("Comissoes-" + periodo.replace(/\//g, "-") + ".pdf");
   toast.success("PDF de Comissoes gerado!");
 }
 
@@ -460,6 +486,7 @@ const ExportBtns = ({ onCSV, onPDF }: { onCSV: ()=>void; onPDF: ()=>void }) => (
 
 const Relatorios = () => {
   const { user, userRole, activeStoreId } = useAuth();
+  const isAdmin = userRole === "admin";
   const [tab, setTab] = useState("dre");
   const [stores, setStores] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -481,6 +508,10 @@ const Relatorios = () => {
   const [rankingProducts, setRankingProducts] = useState<any[]>([]);
   const [osData, setOsData] = useState<any[]>([]);
   const [osStats, setOsStats] = useState<any>({});
+  const [osFilterTechId, setOsFilterTechId] = useState("all");
+  const [osFilterStatus, setOsFilterStatus] = useState("all");
+  const [osDateMode, setOsDateMode] = useState<"delivery" | "entry">("delivery");
+  const [osSearch, setOsSearch] = useState("");
   const [caixaData, setCaixaData] = useState<any[]>([]);
   const [caixaStats, setCaixaStats] = useState<any>({});
   const [ranking, setRanking] = useState<any[]>([]);
@@ -501,8 +532,8 @@ const Relatorios = () => {
   }, []);
 
   useEffect(() => {
-    if (activeStoreId && userRole !== "admin") setStoreId(activeStoreId);
-  }, [activeStoreId, userRole]);
+    if (activeStoreId && !isAdmin) setStoreId(activeStoreId);
+  }, [activeStoreId, isAdmin]);
 
   const profileMap = useMemo(() => new Map(profiles.map(p => [p.user_id, p.display_name ?? p.user_id])), [profiles]);
   const storeMap = useMemo(() => new Map(stores.map(s => [s.id, s])), [stores]);
@@ -511,9 +542,24 @@ const Relatorios = () => {
   const currentPeriodLabel = getPeriodLabel(period, customStart, customEnd, specificDay);
   const currentRankPeriodLabel = getPeriodLabel(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
 
+  const filteredOSData = useMemo(() => {
+    return osData.filter((o) => {
+      if (osFilterTechId !== "all" && o.technician_id !== osFilterTechId) return false;
+      if (osFilterStatus !== "all" && o.status !== osFilterStatus) return false;
+      if (osSearch.trim()) {
+        const q = osSearch.toLowerCase();
+        const matchNum = String(o.order_number || "").includes(q);
+        const matchCust = (o.customer_name || "").toLowerCase().includes(q);
+        const matchDev = `${o.device_brand || ""} ${o.device_model || ""}`.toLowerCase().includes(q);
+        if (!matchNum && !matchCust && !matchDev) return false;
+      }
+      return true;
+    });
+  }, [osData, osFilterTechId, osFilterStatus, osSearch]);
+
   const fetchDRE = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     const q = (t: any) => effectiveStoreId && effectiveStoreId !== "all" ? t.eq("store_id", effectiveStoreId) : t;
     const [salesRes, productsRes, txRes, osRes] = await Promise.all([
       q(supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end)),
@@ -585,7 +631,7 @@ const Relatorios = () => {
 
   const fetchVendas = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     const [salesRes, productsRes, customersRes] = await Promise.all([
       supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false }),
       supabase.from("products").select("*"),
@@ -608,28 +654,113 @@ const Relatorios = () => {
 
   const fetchOS = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     let query = supabase.from("service_orders").select("*");
     if (effectiveStoreId && effectiveStoreId !== "all") {
       query = query.eq("store_id", effectiveStoreId);
     }
-    const { data } = await query
-      .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)
+    const { data: allRaw } = await query
+      .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(created_at.gte.${start},created_at.lte.${end})`)
       .order("created_at", { ascending: false });
-    const all = ((data ?? []) as any[]);
-    setOsData(all);
-    const delivered = all.filter(o => o.status === "delivered");
-    const totalReceitaOS = delivered.reduce((s, o) => s + Number(o.final_price || o.estimated_price || 0), 0);
+    const all = ((allRaw ?? []) as any[]);
+
+    // Fetch peças usadas para apurar custo real e margem da OS
+    let osItems: any[] = [];
+    if (all.length > 0) {
+      const { data: itemsData } = await supabase
+        .from("service_order_items" as any)
+        .select("service_order_id, unit_cost, quantity")
+        .in("service_order_id", all.map((o: any) => o.id));
+      osItems = itemsData ?? [];
+    }
+
+    const { data: rolesData } = await supabase
+      .from("user_roles")
+      .select("user_id, role, commission_services_percent, commission_on_services");
+    const roleMap = new Map((rolesData ?? []).map((r: any) => [r.user_id, r]));
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    const recebidasNoPeriodo = all.filter((o) => {
+      const d = new Date(o.created_at);
+      return d >= startDate && d <= endDate;
+    });
+
+    const entreguesNoPeriodo = all.filter((o) => {
+      if (o.status !== "delivered") return false;
+      const d = o.delivered_at ? new Date(o.delivered_at) : new Date(o.created_at);
+      return d >= startDate && d <= endDate;
+    });
+
+    const entreguesIds = new Set(entreguesNoPeriodo.map((o) => o.id));
+
+    const totalReceitaOS = entreguesNoPeriodo.reduce(
+      (s, o) => s + Number(o.final_price || o.estimated_price || 0),
+      0
+    );
+
+    const custoPecasOS = osItems
+      .filter((item: any) => entreguesIds.has(item.service_order_id))
+      .reduce((s: number, item: any) => s + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
+
+    const lucroBrutoOS = Math.max(0, totalReceitaOS - custoPecasOS);
+
     const techStats: Record<string, any> = {};
-    all.forEach(o => { const name = profileMap.get(o.technician_id) ?? "Sem tecnico"; if (!techStats[name]) techStats[name] = { tecnico: name, total: 0, entregues: 0, receita: 0 }; techStats[name].total++; if (o.status === "delivered") { techStats[name].entregues++; techStats[name].receita += Number(o.final_price || o.estimated_price || 0); } });
+    all.forEach((o) => {
+      const techId = o.technician_id;
+      const name = techId ? (profileMap.get(techId) ?? "Técnico") : "Sem técnico";
+      if (!techStats[name]) {
+        techStats[name] = {
+          tecnico: name,
+          techId,
+          total: 0,
+          entregues: 0,
+          receita: 0,
+          custoPecas: 0,
+          lucroBruto: 0,
+          comissao: 0,
+        };
+      }
+      techStats[name].total++;
+
+      if (entreguesIds.has(o.id)) {
+        techStats[name].entregues++;
+        const osParts = osItems.filter((i: any) => i.service_order_id === o.id);
+        const metrics = calculateOSItemMetrics(o, osParts, techId ? roleMap.get(techId) : null);
+        techStats[name].receita += metrics.receitaOS;
+        techStats[name].custoPecas += metrics.custoPecas;
+        techStats[name].lucroBruto += metrics.lucroBrutoOS;
+        techStats[name].comissao += metrics.comissaoTecnico;
+      }
+    });
+
     const serviceStats: Record<string, number> = {};
-    all.forEach(o => { serviceStats[o.requested_service] = (serviceStats[o.requested_service] || 0) + 1; });
-    setOsStats({ total: all.length, delivered: delivered.length, cancelled: all.filter(o => o.status === "cancelled").length, open: all.filter(o => !["delivered","cancelled"].includes(o.status)).length, totalReceita: totalReceitaOS, ticketMedio: delivered.length > 0 ? totalReceitaOS / delivered.length : 0, byTech: Object.values(techStats).sort((a, b) => b.receita - a.receita), byService: Object.entries(serviceStats).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })) });
-  }, [period, storeId, customStart, customEnd, specificDay, profileMap]);
+    all.forEach((o) => {
+      if (o.requested_service) {
+        serviceStats[o.requested_service] = (serviceStats[o.requested_service] || 0) + 1;
+      }
+    });
+
+    setOsData(all);
+    setOsStats({
+      total: all.length,
+      recebidas: recebidasNoPeriodo.length,
+      delivered: entreguesNoPeriodo.length,
+      cancelled: all.filter((o) => o.status === "cancelled").length,
+      open: all.filter((o) => !["delivered", "cancelled"].includes(o.status)).length,
+      totalReceita: totalReceitaOS,
+      custoPecas: custoPecasOS,
+      lucroBruto: lucroBrutoOS,
+      ticketMedio: entreguesNoPeriodo.length > 0 ? totalReceitaOS / entreguesNoPeriodo.length : 0,
+      byTech: Object.values(techStats).sort((a: any, b: any) => b.receita - a.receita),
+      byService: Object.entries(serviceStats).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })),
+    });
+  }, [period, storeId, customStart, customEnd, specificDay, profileMap, userRole, activeStoreId]);
 
   const fetchCaixa = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     const { data: registers } = await supabase.from("cash_registers" as any).select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false });
     const all = ((registers ?? []) as any[]).filter(r => effectiveStoreId === "all" || r.store_id === effectiveStoreId);
     const closed = all.filter(r => r.status === "closed");
@@ -639,7 +770,7 @@ const Relatorios = () => {
 
   const fetchRanking = useCallback(async () => {
     const { start, end } = getPeriodDates(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     const [salesRes, productsRes, osRes, rolesRes] = await Promise.all([
       supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end),
       supabase.from("products").select("*"),
@@ -663,7 +794,24 @@ const Relatorios = () => {
     }
 
     const stats: Record<string, any> = {};
-    const ensure = (uid: string) => { if (!stats[uid]) stats[uid] = { uid, nome: profileMap.get(uid) ?? "Usuario", totalVendas: 0, qtdVendas: 0, lucro: 0, comissoes: 0, osEntregues: 0 }; };
+    const ensure = (uid: string) => {
+      if (!stats[uid]) {
+        const role = roleMap.get(uid)?.role || "vendedor";
+        stats[uid] = {
+          uid,
+          nome: profileMap.get(uid) ?? "Usuário",
+          role,
+          totalVendas: 0,
+          qtdVendas: 0,
+          lucro: 0,
+          comissoes: 0,
+          comissoesVendas: 0,
+          comissoesOS: 0,
+          osEntregues: 0,
+          totalServicos: 0,
+        };
+      }
+    };
     
     sales.forEach((s: any) => { 
       ensure(s.created_by); 
@@ -671,30 +819,28 @@ const Relatorios = () => {
       stats[s.created_by].qtdVendas++; 
       const p: any = productMap.get(s.product_id); 
       stats[s.created_by].lucro += Number(s.sale_price) - Number(p?.cost_price || 0); 
-      stats[s.created_by].comissoes += Number(s.commission_value || 0); 
+      const comm = Number(s.commission_value || 0);
+      stats[s.created_by].comissoes += comm; 
+      stats[s.created_by].comissoesVendas += comm;
     });
 
     os.forEach((o: any) => { 
-      const uid = o.technician_id || o.created_by; 
-      ensure(uid); 
-      stats[uid].osEntregues++;
-      const osTotal = Number(o.final_price || o.estimated_price || 0);
-      stats[uid].totalVendas += osTotal;
+      // OS sem técnico NÃO gera comissão técnica para atendente (Salvaguarda 1 e 9)
+      if (o.technician_id) {
+        const uid = o.technician_id;
+        ensure(uid); 
+        stats[uid].osEntregues++;
+        const osTotal = Number(o.final_price || o.estimated_price || 0);
+        stats[uid].totalServicos += osTotal;
+        stats[uid].totalVendas += osTotal;
 
-      const partsCost = osItems
-        .filter((item: any) => item.service_order_id === o.id)
-        .reduce((sum: number, item: any) => sum + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
-      
-      const osLucro = Math.max(0, osTotal - partsCost);
-      stats[uid].lucro += osLucro;
+        const osParts = osItems.filter((item: any) => item.service_order_id === o.id);
+        const userRoleData = roleMap.get(uid);
+        const metrics = calculateOSItemMetrics(o, osParts, userRoleData);
 
-      const userRoleData = roleMap.get(uid);
-      const receivesComm = userRoleData ? (userRoleData.commission_on_services ?? true) : true;
-      const commPercent = userRoleData ? Number(userRoleData.commission_services_percent || 0) : 0;
-      
-      if (receivesComm && commPercent > 0) {
-        const osCommission = (osLucro * commPercent) / 100;
-        stats[uid].comissoes += osCommission;
+        stats[uid].lucro += metrics.lucroBrutoOS;
+        stats[uid].comissoes += metrics.comissaoTecnico;
+        stats[uid].comissoesOS += metrics.comissaoTecnico;
       }
     });
 
@@ -705,7 +851,7 @@ const Relatorios = () => {
 
   const fetchLeads = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     let q = supabase.from("leads").select("*").gte("created_at", start).lte("created_at", end);
     if (effectiveStoreId && effectiveStoreId !== "all") q = q.eq("store_id", effectiveStoreId);
     const { data } = await q;
@@ -720,7 +866,7 @@ const Relatorios = () => {
 
   const fetchFinanceiro = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     
     let q = supabase
       .from("transactions")
@@ -798,7 +944,7 @@ const Relatorios = () => {
     const d = new Date(diarioDay + "T00:00:00");
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0).toISOString();
     const end   = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59).toISOString();
-    const effectiveStoreId = userRole === "admin" ? storeId : activeStoreId;
+    const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     const q = (t: any) => effectiveStoreId && effectiveStoreId !== "all" ? t.eq("store_id", effectiveStoreId) : t;
 
     const [salesRes, osRes, caixaRes, txRes] = await Promise.all([
@@ -1057,19 +1203,264 @@ const Relatorios = () => {
         <TabsContent value="os" className="space-y-4 mt-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <Filters {...filterProps} />
-            <ExportBtns onCSV={()=>exportCSV(osData.map((o:any)=>({numero:o.order_number,cliente:o.customer_name,aparelho:o.device_brand+" "+o.device_model,servico:o.requested_service,status:o.status,tecnico:profileMap.get(o.technician_id)??"—",estimado:formatCurrency(Number(o.estimated_price||0)),final:formatCurrency(Number(o.final_price||0)),data:new Date(o.created_at).toLocaleDateString("pt-BR")})),"os.csv")} onPDF={()=>exportOSPDF(osData,osStats,profileMap,currentPeriodLabel,currentStoreName)} />
+            <ExportBtns
+              onCSV={() =>
+                exportCSV(
+                  filteredOSData.map((o: any) => ({
+                    numero: o.order_number,
+                    cliente: o.customer_name,
+                    aparelho: (o.device_brand || "") + " " + (o.device_model || ""),
+                    servico: o.requested_service,
+                    status: getStatusLabel(o.status),
+                    tecnico: profileMap.get(o.technician_id) ?? "Sem técnico",
+                    estimado: formatCurrency(Number(o.estimated_price || 0)),
+                    final: formatCurrency(Number(o.final_price || 0)),
+                    data_entrada: new Date(o.created_at).toLocaleDateString("pt-BR"),
+                    data_entrega: o.delivered_at ? new Date(o.delivered_at).toLocaleDateString("pt-BR") : "—",
+                  })),
+                  "os.csv"
+                )
+              }
+              onPDF={() => exportOSPDF(filteredOSData, osStats, profileMap, currentPeriodLabel, currentStoreName)}
+            />
           </div>
+
+          {/* Filtros específicos de OS (Técnico, Status, Semântica de Data e Busca) */}
+          <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-xl border border-border/60 bg-muted/20">
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Técnico</Label>
+              <Select value={osFilterTechId} onValueChange={setOsFilterTechId}>
+                <SelectTrigger className="h-8 w-[160px] text-xs bg-card">
+                  <SelectValue placeholder="Todos os técnicos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os técnicos</SelectItem>
+                  <SelectItem value="unassigned">Sem técnico</SelectItem>
+                  {profiles.map((p) => (
+                    <SelectItem key={p.user_id} value={p.user_id}>
+                      {p.display_name || "Técnico"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Status</Label>
+              <Select value={osFilterStatus} onValueChange={setOsFilterStatus}>
+                <SelectTrigger className="h-8 w-[150px] text-xs bg-card">
+                  <SelectValue placeholder="Todos os status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  {ALL_OS_STATUSES.map((st) => (
+                    <SelectItem key={st} value={st}>
+                      {getStatusLabel(st)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Critério da Data</Label>
+              <Select value={osDateMode} onValueChange={(v: any) => setOsDateMode(v)}>
+                <SelectTrigger className="h-8 w-[180px] text-xs bg-card">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="delivery">Data de Entrega (Conclusão)</SelectItem>
+                  <SelectItem value="entry">Data de Entrada (Recepção)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1 flex-1 min-w-[200px]">
+              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Buscar OS</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={osSearch}
+                  onChange={(e) => setOsSearch(e.target.value)}
+                  placeholder="Cliente, aparelho, IMEI ou Nº OS..."
+                  className="h-8 pl-8 text-xs bg-card"
+                />
+              </div>
+            </div>
+
+            {(osFilterTechId !== "all" || osFilterStatus !== "all" || osDateMode !== "delivery" || osSearch) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs self-end text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setOsFilterTechId("all");
+                  setOsFilterStatus("all");
+                  setOsDateMode("delivery");
+                  setOsSearch("");
+                }}
+              >
+                Limpar Filtros
+              </Button>
+            )}
+          </div>
+
+          {/* Grid de KPIs de OS com Rentabilidade e Margem */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[{label:"Total OS",value:String(osStats.total??0),color:""},{label:"Entregues",value:String(osStats.delivered??0),color:"text-primary"},{label:"Em Aberto",value:String(osStats.open??0),color:"text-yellow-500"},{label:"Receita OS",value:formatCurrency(osStats.totalReceita??0),color:"text-primary"}].map(k=>(<Card key={k.label} className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">{k.label}</p><p className={"font-display text-xl font-bold mt-1 "+k.color}>{k.value}</p></CardContent></Card>))}
+            {[
+              { label: "Receita de OS", value: formatCurrency(osStats.totalReceita ?? 0), color: "text-primary", sub: "OS Entregues no período" },
+              { label: "Custo Peças (OS)", value: formatCurrency(osStats.custoPecas ?? 0), color: "text-orange-400", sub: "Peças consumidas" },
+              { label: "Margem da OS", value: formatCurrency(osStats.lucroBruto ?? 0), color: "text-emerald-500", sub: "Lucro Bruto da OS" },
+              { label: "Ticket Médio", value: formatCurrency(osStats.ticketMedio ?? 0), color: "", sub: "Média por OS entregue" },
+              { label: "Entregues no Período", value: String(osStats.delivered ?? 0), color: "text-primary", sub: "Produtividade de saída" },
+              { label: "Recebidas no Período", value: String(osStats.recebidas ?? 0), color: "text-blue-400", sub: "Novas entradas" },
+              { label: "Em Aberto (Bancada)", value: String(osStats.open ?? 0), color: "text-yellow-500", sub: "Aguardando conclusão" },
+              { label: "Canceladas", value: String(osStats.cancelled ?? 0), color: "text-destructive", sub: "Sem reparo" },
+            ].map((k) => (
+              <Card key={k.label} className="border-border/50">
+                <CardContent className="p-3.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{k.label}</p>
+                  <p className={"font-display text-lg sm:text-xl font-bold mt-0.5 " + k.color}>{k.value}</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">{k.sub}</p>
+                </CardContent>
+              </Card>
+            ))}
           </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Por Tecnico</CardTitle></CardHeader>
-              <CardContent>{(osStats.byTech??[]).length>0?(<div className="space-y-2">{(osStats.byTech??[]).map((t:any)=>(<div key={t.tecnico} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"><div><p className="text-sm font-medium">{t.tecnico}</p><p className="text-[10px] text-muted-foreground">{t.total} OS - {t.entregues} entregues</p></div><p className="text-sm font-bold text-primary">{formatCurrency(t.receita)}</p></div>))}</div>):<p className="text-xs text-muted-foreground text-center py-6">Sem dados</p>}</CardContent></Card>
-            <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Servicos Mais Solicitados</CardTitle></CardHeader>
-              <CardContent>{(osStats.byService??[]).length>0?(<ResponsiveContainer width="100%" height={200}><PieChart><Pie data={osStats.byService} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({name,percent})=>`${(percent*100).toFixed(0)}%`}>{(osStats.byService??[]).map((_:any,i:number)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip /></PieChart></ResponsiveContainer>):<p className="text-xs text-muted-foreground text-center py-6">Sem dados</p>}</CardContent></Card>
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="font-display text-sm">Produção por Técnico</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(osStats.byTech ?? []).length > 0 ? (
+                  <div className="space-y-2">
+                    {(osStats.byTech ?? []).map((t: any) => (
+                      <div key={t.tecnico} className="rounded-lg bg-muted/40 p-3 border border-border/40 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold">{t.tecnico}</p>
+                          <Badge variant="outline" className="text-[10px]">
+                            {t.entregues} / {t.total} concluídas
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-border/30">
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Receita</p>
+                            <p className="font-bold text-primary">{formatCurrency(t.receita)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Margem da OS</p>
+                            <p className="font-bold text-emerald-500">{formatCurrency(t.lucroBruto)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-muted-foreground">Comissão Est.</p>
+                            <p className="font-bold text-yellow-500">{formatCurrency(t.comissao)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-6">Sem dados de técnicos no período</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="font-display text-sm">Serviços Mais Solicitados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(osStats.byService ?? []).length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={osStats.byService}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={70}
+                        label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
+                      >
+                        {(osStats.byService ?? []).map((_: any, i: number) => (
+                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-6">Sem dados</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Ordens de Servico ({osData.length})</CardTitle></CardHeader>
-            <CardContent>{osData.length>0?(<div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b border-border text-muted-foreground">{["Nr OS","Cliente","Aparelho","Servico","Tecnico","Status","Estimado","Final","Data"].map(h=>(<th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">{h}</th>))}</tr></thead><tbody>{osData.map((o:any,i:number)=>{const sm:Record<string,string>={open:"Aberto",in_progress:"Em andamento",waiting_parts:"Aguard. peca",completed:"Concluido",delivered:"Entregue",cancelled:"Cancelado"};return(<tr key={i} className="border-b border-border/30 hover:bg-muted/30"><td className="py-2 px-2 whitespace-nowrap font-mono">{o.order_number??"-"}</td><td className="py-2 px-2">{o.customer_name}</td><td className="py-2 px-2 whitespace-nowrap">{o.device_brand} {o.device_model}</td><td className="py-2 px-2">{o.requested_service}</td><td className="py-2 px-2">{profileMap.get(o.technician_id)??"—"}</td><td className="py-2 px-2"><Badge variant="outline" className="text-[10px]">{sm[o.status]??o.status}</Badge></td><td className="py-2 px-2 whitespace-nowrap">{formatCurrency(Number(o.estimated_price||0))}</td><td className="py-2 px-2 whitespace-nowrap font-bold text-primary">{formatCurrency(Number(o.final_price||0))}</td><td className="py-2 px-2 whitespace-nowrap">{new Date(o.created_at).toLocaleDateString("pt-BR")}</td></tr>);})}</tbody></table></div>):<p className="text-xs text-muted-foreground text-center py-8">Nenhuma OS no periodo</p>}</CardContent></Card>
+
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="font-display text-sm">
+                  Ordens de Serviço ({filteredOSData.length})
+                </CardTitle>
+                <span className="text-[11px] text-muted-foreground">
+                  Modo: {osDateMode === "delivery" ? "Entregas no período" : "Entradas no período"}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {filteredOSData.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        {["Nr OS", "Cliente", "Aparelho", "Serviço", "Técnico", "Status", "Entrada", "Entrega", "Valor Final"].map(
+                          (h) => (
+                            <th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">
+                              {h}
+                            </th>
+                          )
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOSData.map((o: any, i: number) => (
+                        <tr key={i} className="border-b border-border/30 hover:bg-muted/30">
+                          <td className="py-2 px-2 whitespace-nowrap font-mono font-bold text-foreground">
+                            #{o.order_number ?? "-"}
+                          </td>
+                          <td className="py-2 px-2">{o.customer_name}</td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            {o.device_brand} {o.device_model}
+                          </td>
+                          <td className="py-2 px-2">{o.requested_service}</td>
+                          <td className="py-2 px-2">{profileMap.get(o.technician_id) ?? "—"}</td>
+                          <td className="py-2 px-2">
+                            <Badge variant="outline" className={`text-[10px] ${getStatusColor(o.status)}`}>
+                              {getStatusLabel(o.status)}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">
+                            {new Date(o.created_at).toLocaleDateString("pt-BR")}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap font-medium">
+                            {o.delivered_at ? new Date(o.delivered_at).toLocaleDateString("pt-BR") : "—"}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap font-bold text-primary">
+                            {formatCurrency(Number(o.final_price || o.estimated_price || 0))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-8">
+                  Nenhuma OS encontrada com os filtros selecionados
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="caixa" className="space-y-4 mt-4">
@@ -1089,7 +1480,7 @@ const Relatorios = () => {
             <div className="flex flex-wrap gap-2 items-end">
               <div className="space-y-1"><Label className="text-xs">Periodo</Label><PeriodSelect value={rankPeriod} onChange={setRankPeriod} includeCustom={false} /></div>
               {rankPeriod==="day"&&(<div className="space-y-1"><Label className="text-xs">Dia</Label><Input type="date" value={rankSpecificDay} onChange={e=>setRankSpecificDay(e.target.value)} className="h-9 w-36" /></div>)}
-              {userRole==="admin"&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas as lojas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
+              {isAdmin&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas as lojas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
             </div>
             <ExportBtns onCSV={()=>exportCSV(ranking.map((v,i)=>({posicao:(i+1)+"o",vendedor:v.nome,vendas:v.qtdVendas,total_vendido:formatCurrency(v.totalVendas),lucro:formatCurrency(v.lucro),comissao:formatCurrency(v.comissoes),os_entregues:v.osEntregues})),"ranking.csv")} onPDF={()=>exportRankingPDF(ranking,currentRankPeriodLabel,currentStoreName)} />
           </div>
@@ -1103,16 +1494,100 @@ const Relatorios = () => {
             <div className="flex flex-wrap gap-2 items-end">
               <div className="space-y-1"><Label className="text-xs">Periodo</Label><PeriodSelect value={rankPeriod} onChange={setRankPeriod} includeCustom={false} /></div>
               {rankPeriod==="day"&&(<div className="space-y-1"><Label className="text-xs">Dia</Label><Input type="date" value={rankSpecificDay} onChange={e=>setRankSpecificDay(e.target.value)} className="h-9 w-36" /></div>)}
-              {userRole==="admin"&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
+              {isAdmin&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
             </div>
             <ExportBtns onCSV={()=>exportCSV(comissoes.map((c,i)=>({posicao:i+1,vendedor:c.nome,vendas:c.qtdVendas,total_vendido:formatCurrency(c.totalVendas),lucro:formatCurrency(c.lucro),comissao:formatCurrency(c.comissoes)})),"comissoes.csv")} onPDF={()=>exportComissoesPDF(comissoes,currentRankPeriodLabel,currentStoreName)} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total a Pagar</p><p className="font-display text-xl font-bold mt-1 text-primary">{formatCurrency(comissoes.reduce((s,c)=>s+c.comissoes,0))}</p></CardContent></Card>
-            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Vendedores c/ Comissao</p><p className="font-display text-xl font-bold mt-1">{comissoes.length}</p></CardContent></Card>
+            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Colaboradores c/ Comissão</p><p className="font-display text-xl font-bold mt-1">{comissoes.length}</p></CardContent></Card>
           </div>
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm flex items-center gap-2"><Star className="h-4 w-4 text-yellow-500" /> Comissoes por Vendedor</CardTitle></CardHeader>
-            <CardContent>{comissoes.length>0?(<div className="space-y-3">{comissoes.map((v,i)=>(<div key={v.uid} className="rounded-lg border border-border/50 p-4 space-y-3"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><RankBadge pos={i+1}/><p className="font-semibold">{v.nome}</p></div><Badge className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30 font-bold">{formatCurrency(v.comissoes)}</Badge></div><div className="grid grid-cols-3 gap-3 text-xs"><div className="rounded bg-muted/50 p-2 text-center"><p className="text-muted-foreground">Vendas</p><p className="font-bold">{v.qtdVendas}</p></div><div className="rounded bg-muted/50 p-2 text-center"><p className="text-muted-foreground">Total Vendido</p><p className="font-bold text-primary">{formatCurrency(v.totalVendas)}</p></div><div className="rounded bg-muted/50 p-2 text-center"><p className="text-muted-foreground">Lucro Gerado</p><p className="font-bold text-primary">{formatCurrency(v.lucro)}</p></div></div><div><div className="flex justify-between text-[10px] text-muted-foreground mb-1"><span>Comissao / Total vendido</span><span>{v.totalVendas>0?formatPct((v.comissoes/v.totalVendas)*100):"0%"}</span></div><div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-yellow-500 transition-all" style={{width:Math.min(100,v.totalVendas>0?(v.comissoes/v.totalVendas)*100*5:0)+"%"}} /></div></div></div>))}</div>):<p className="text-xs text-muted-foreground text-center py-8">Nenhuma comissao no periodo</p>}</CardContent></Card>
+          <Card className="border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="font-display text-sm flex items-center gap-2">
+                <Star className="h-4 w-4 text-yellow-500" /> Comissões por Colaborador
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {comissoes.length > 0 ? (
+                <div className="space-y-3">
+                  {comissoes.map((v, i) => {
+                    const pctVal = v.totalVendas > 0 ? (v.comissoes / v.totalVendas) * 100 : 0;
+                    return (
+                      <div key={v.uid} className="rounded-lg border border-border/50 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <RankBadge pos={i + 1} />
+                            <p className="font-semibold">{v.nome}</p>
+                            {v.role === "tecnico" ? (
+                              <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/30">
+                                Técnico
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/30">
+                                Vendedor
+                              </Badge>
+                            )}
+                          </div>
+                          <Badge className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30 font-bold">
+                            {formatCurrency(v.comissoes)}
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3 text-xs">
+                          <div className="rounded bg-muted/50 p-2 text-center">
+                            <p className="text-muted-foreground">Volume</p>
+                            <p className="font-bold">{v.qtdVendas} v / {v.osEntregues} OS</p>
+                          </div>
+                          <div className="rounded bg-muted/50 p-2 text-center">
+                            <p className="text-muted-foreground">Faturado Total</p>
+                            <p className="font-bold text-primary">{formatCurrency(v.totalVendas)}</p>
+                          </div>
+                          <div className="rounded bg-muted/50 p-2 text-center">
+                            <p className="text-muted-foreground">Margem / Lucro</p>
+                            <p className="font-bold text-emerald-500">{formatCurrency(v.lucro)}</p>
+                          </div>
+                        </div>
+
+                        {(v.comissoesVendas > 0 || v.comissoesOS > 0) && (
+                          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/40 text-[11px]">
+                            <span className="text-muted-foreground">Detalhamento:</span>
+                            {v.comissoesVendas > 0 && (
+                              <span className="text-foreground">
+                                Comissão Vendas: <strong className="text-primary">{formatCurrency(v.comissoesVendas)}</strong>
+                              </span>
+                            )}
+                            {v.comissoesOS > 0 && (
+                              <span className="text-foreground">
+                                Comissão OS: <strong className="text-yellow-500">{formatCurrency(v.comissoesOS)}</strong>
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        <div>
+                          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                            <span>Comissão / Faturado</span>
+                            <span>{formatPct(pctVal)}</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-yellow-500 transition-all"
+                              style={{ width: `${Math.min(100, pctVal * 5)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-8">
+                  Nenhuma comissão no período
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

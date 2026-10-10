@@ -33,6 +33,8 @@ import { triggerWebhook } from "@/utils/webhookSender";
 import { logAction } from "@/utils/auditLogger";
 import { OSCard } from "@/components/features/os/OSCard";
 import { OSFormModal } from "@/components/features/os/OSFormModal";
+import { OS_STATUS_CONFIG as statusConfig, ALL_OS_STATUSES as allStatuses } from "@/utils/osStatus";
+import { resolveTechnicianIdOnUpdate, resolveTechnicianIdOnCreate } from "@/utils/osCalculations";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -44,19 +46,6 @@ const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condiç
 5. O orçamento inicial pode sofrer alterações após análise técnica, mediante aprovação do cliente.
 6. A loja não se responsabiliza por danos pré-existentes não descritos nesta OS.
 7. Serviços de diagnóstico podem ter custo mesmo que o reparo não seja efetuado.`;
-
-const statusConfig: Record<string, { label: string; color: string; icon: typeof Clock }> = {
-  open:             { label: "Aberta",               color: "bg-blue-500/15 text-blue-400 border-blue-500/20",         icon: Clock       },
-  analyzing:        { label: "Em Análise",           color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
-  waiting_part:     { label: "Aguardando Peça",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20",   icon: Package     },
-  repairing:        { label: "Em Reparo",            color: "bg-purple-500/15 text-purple-400 border-purple-500/20",   icon: Wrench      },
-  waiting_approval: { label: "Aguardando Aprovação", color: "bg-accent/15 text-accent border-accent/20",               icon: AlertCircle },
-  ready:            { label: "Pronta p/ Retirada",   color: "bg-primary/15 text-primary border-primary/20",            icon: CheckCircle2 },
-  delivered:        { label: "Entregue",             color: "bg-muted text-muted-foreground border-border",            icon: CheckCircle2 },
-  cancelled:        { label: "Cancelada",            color: "bg-destructive/15 text-destructive border-destructive/20", icon: AlertCircle },
-};
-
-const allStatuses = Object.keys(statusConfig);
 
 const paymentLabels: Record<string, string> = {
   dinheiro: "Dinheiro", cartao_credito: "Cartão Crédito",
@@ -464,7 +453,8 @@ const OrdensServico = () => {
   const [detailOrder, setDetailOrder] = useState<any | null>(null);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [filterStoreId, setFilterStoreId] = useState("all");
+  const [filterTechnicianId, setFilterTechnicianId] = useState<string>("all");
+  const [onlyMyOrders, setOnlyMyOrders] = useState<boolean>(() => userRole === "tecnico");
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
   const [loading, setLoading] = useState(false);
@@ -653,7 +643,7 @@ const OrdensServico = () => {
         reported_defect: form.reported_defect,
         requested_service: form.requested_service,
         store_id: storeIdToUse,
-        technician_id: form.technician_id || null,
+        technician_id: resolveTechnicianIdOnCreate(form.technician_id),
         estimated_price: form.estimated_price ? parseFloat(form.estimated_price) : 0,
         estimated_completion: form.estimated_completion || null,
         device_is_off: form.device_is_off,
@@ -882,7 +872,10 @@ const OrdensServico = () => {
 
     const updates: any = {};
     if (updateForm.final_price) updates.final_price = parseFloat(updateForm.final_price);
-    if (updateForm.technician_id) updates.technician_id = updateForm.technician_id;
+    const techResolution = resolveTechnicianIdOnUpdate(updateForm.technician_id, detailOrder.technician_id);
+    if (techResolution.shouldUpdate) {
+      updates.technician_id = techResolution.value;
+    }
     if (updateForm.payment_cash !== "") updates.payment_cash = parseFloat(updateForm.payment_cash) || 0;
     if (updateForm.payment_card !== "") updates.payment_card = parseFloat(updateForm.payment_card) || 0;
     if (updateForm.payment_pix !== "") updates.payment_pix = parseFloat(updateForm.payment_pix) || 0;
@@ -1069,6 +1062,17 @@ const OrdensServico = () => {
   };
 
   const filtered = orders.filter((o: any) => {
+    // Filtro por Técnico / Minhas OS
+    if (onlyMyOrders && user?.id) {
+      if (o.technician_id !== user.id) return false;
+    } else if (filterTechnicianId !== "all") {
+      if (filterTechnicianId === "unassigned") {
+        if (o.technician_id) return false;
+      } else if (o.technician_id !== filterTechnicianId) {
+        return false;
+      }
+    }
+
     // Filtro por data
     if (filterStartDate) {
       const start = new Date(filterStartDate + "T00:00:00");
@@ -1082,13 +1086,12 @@ const OrdensServico = () => {
     }
 
     const q = search.toLowerCase();
-    const match = o.customer_name.toLowerCase().includes(q) ||
+    const match = (o.customer_name?.toLowerCase() || "").includes(q) ||
       (o.device_imei && o.device_imei.includes(search)) ||
       (o.device_model && o.device_model.toLowerCase().includes(q)) ||
       String(o.order_number).includes(search);
     
-    const storeMatch = filterStoreId === "all" || o.store_id === filterStoreId;
-    return match && (filterStatus === "all" || o.status === filterStatus) && storeMatch;
+    return match && (filterStatus === "all" || o.status === filterStatus);
   });
 
   const statusCounts = orders.reduce((acc: any, o: any) => {
@@ -1100,7 +1103,7 @@ const OrdensServico = () => {
     setDetailOrder(order);
     setUpdateForm({
       final_price: order.final_price ? String(order.final_price) : "",
-      technician_id: order.technician_id ?? "",
+      technician_id: order.technician_id ?? "none",
       payment_cash: order.payment_cash ? String(order.payment_cash) : "",
       payment_card: order.payment_card ? String(order.payment_card) : "",
       payment_pix: order.payment_pix ? String(order.payment_pix) : "",
@@ -1168,6 +1171,61 @@ const OrdensServico = () => {
           loading={loading}
           isSubmitting={isSubmitting.current}
         />
+      </div>
+
+      {/* Filtro Técnico / Minhas OS */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center rounded-lg border border-border/70 p-0.5 bg-muted/30">
+          <Button 
+            type="button"
+            variant={onlyMyOrders ? "default" : "ghost"}
+            size="sm"
+            className={`h-7 px-3 text-xs rounded-md ${onlyMyOrders ? "font-semibold shadow-xs" : "text-muted-foreground"}`}
+            onClick={() => {
+              setOnlyMyOrders(true);
+              setFilterTechnicianId("all");
+            }}
+          >
+            Minhas OS ({orders.filter(o => o.technician_id === user?.id).length})
+          </Button>
+          <Button 
+            type="button"
+            variant={!onlyMyOrders && filterTechnicianId === "all" ? "default" : "ghost"}
+            size="sm"
+            className={`h-7 px-3 text-xs rounded-md ${!onlyMyOrders && filterTechnicianId === "all" ? "font-semibold shadow-xs" : "text-muted-foreground"}`}
+            onClick={() => {
+              setOnlyMyOrders(false);
+              setFilterTechnicianId("all");
+            }}
+          >
+            Todas as OS ({orders.length})
+          </Button>
+        </div>
+
+        {(isAdmin || userRole === "gerente" || !onlyMyOrders) && (
+          <div className="w-[180px]">
+            <Select 
+              value={filterTechnicianId} 
+              onValueChange={(v) => {
+                setFilterTechnicianId(v);
+                setOnlyMyOrders(false);
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs bg-card border-border/70">
+                <SelectValue placeholder="Filtrar por técnico" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os técnicos</SelectItem>
+                <SelectItem value="unassigned">Sem técnico atribuído</SelectItem>
+                {profiles.map((p) => (
+                  <SelectItem key={p.user_id} value={p.user_id}>
+                    {p.display_name || "Técnico"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Status chips com rolagem suave e pílulas táteis */}
@@ -1364,9 +1422,9 @@ const OrdensServico = () => {
                   <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide">Serviço</p>
                   <p><span className="text-muted-foreground">Defeito:</span> {detailOrder.reported_defect}</p>
                   <p><span className="text-muted-foreground">Serviço:</span> {detailOrder.requested_service}</p>
-                  {detailOrder.technician_id && <p><span className="text-muted-foreground">Técnico:</span> {profileMap.get(detailOrder.technician_id) ?? "—"}</p>}
+                  <p><span className="text-muted-foreground">Técnico:</span> {detailOrder.technician_id ? (profileMap.get(detailOrder.technician_id) ?? "—") : "Nenhum (Sem técnico)"}</p>
                   <p><span className="text-muted-foreground">Estimado:</span> {formatCurrency(Number(detailOrder.estimated_price || 0))}</p>
-                  {detailOrder.final_price && <p><span className="text-muted-foreground">Final:</span> <span className="font-bold text-primary">{formatCurrency(Number(detailOrder.final_price))}</span></p>}
+                  {Boolean(detailOrder.final_price) && <p><span className="text-muted-foreground">Final:</span> <span className="font-bold text-primary">{formatCurrency(Number(detailOrder.final_price))}</span></p>}
                   {detailOrder.estimated_completion && <p><span className="text-muted-foreground">Previsão:</span> {new Date(detailOrder.estimated_completion).toLocaleString("pt-BR")}</p>}
                   {detailOrder.warranty_end_date && <p><span className="text-muted-foreground">Garantia até:</span> <span className="font-bold text-green-500">{new Date(detailOrder.warranty_end_date).toLocaleDateString("pt-BR")}</span></p>}
                 </div>
@@ -1457,9 +1515,10 @@ const OrdensServico = () => {
                       </div>
                       <div className="space-y-1.5 col-span-2">
                         <Label className="text-xs">Técnico Responsável</Label>
-                        <Select value={updateForm.technician_id} onValueChange={v => setUpdateForm(f => ({ ...f, technician_id: v }))}>
+                        <Select value={updateForm.technician_id || "none"} onValueChange={v => setUpdateForm(f => ({ ...f, technician_id: v }))}>
                           <SelectTrigger className="h-9"><SelectValue placeholder="Selecione" /></SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="none">Nenhum (Sem técnico)</SelectItem>
                             {profiles.map((p) => <SelectItem key={p.user_id} value={p.user_id}>{p.display_name ?? p.user_id}</SelectItem>)}
                           </SelectContent>
                         </Select>

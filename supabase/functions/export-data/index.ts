@@ -5,6 +5,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function getServiceRoleKey(): string {
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const key = parsed?.["default"];
+      if (typeof key === "string" && key.startsWith("sb_secret_")) {
+        return key;
+      }
+    } catch {}
+  }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
+  throw new Error("Supabase privileged credential unavailable.");
+}
+
 Deno.serve(async (req) => {
   const requestId = Math.random().toString(36).substring(7);
   console.log(`[${requestId}] EXTREME_DEBUG: Função iniciada. Método: ${req.method}`);
@@ -15,12 +31,12 @@ Deno.serve(async (req) => {
 
   try {
     const url = Deno.env.get("SUPABASE_URL");
-    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const key = getServiceRoleKey();
     
     console.log(`[${requestId}] DEBUG: SUPABASE_URL existe? ${!!url}`);
-    console.log(`[${requestId}] DEBUG: SERVICE_KEY existe? ${!!key}`);
+    console.log(`[${requestId}] DEBUG: SERVICE_KEY obtida? ${!!key}`);
 
-    if (!url || !key) {
+    if (!url) {
         throw new Error("Variáveis de ambiente do Supabase não configuradas no servidor.");
     }
 

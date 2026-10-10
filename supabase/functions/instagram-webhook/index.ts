@@ -85,7 +85,63 @@ const resolveCreatedBy = async (
   return data?.user_id ?? null;
 };
 
+// ─── Helper: validação HMAC-SHA256 da Meta com crypto.subtle.verify sobre rawBytes ─────
+async function verifyMetaHmacSha256(
+  rawBytes: Uint8Array,
+  signatureHeader: string | null,
+  appSecret: string
+): Promise<boolean> {
+  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
+    return false;
+  }
+  const hexString = signatureHeader.slice(7).trim().toLowerCase();
+  if (hexString.length !== 64 || !/^[0-9a-f]{64}$/.test(hexString)) {
+    return false;
+  }
+
+  try {
+    const signatureBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      signatureBytes[i] = parseInt(hexString.substr(i * 2, 2), 16);
+    }
+
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(appSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+
+    return await crypto.subtle.verify(
+      "HMAC",
+      key,
+      signatureBytes,
+      rawBytes
+    );
+  } catch (err) {
+    console.error("Erro ao verificar assinatura HMAC:", err);
+    return false;
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────────
+
+function getServiceRoleKey(): string {
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const key = parsed?.["default"];
+      if (typeof key === "string" && key.startsWith("sb_secret_")) {
+        return key;
+      }
+    } catch {}
+  }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
+  throw new Error("Supabase privileged credential unavailable.");
+}
 
 serve(async (req) => {
   const { method } = req;
@@ -97,7 +153,7 @@ serve(async (req) => {
 
   const supabaseClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    getServiceRoleKey()
   );
 
   // ── GET: verificação de webhook pela Meta ──────────────────────────────────
@@ -118,40 +174,211 @@ serve(async (req) => {
     return new Response("Forbidden", { status: 403 });
   }
 
-  // ── POST: receber eventos de mensagem ─────────────────────────────────────
+  // ── POST: receber eventos de mensagem ou ações do painel ───────────────────
+  let rawBytes: Uint8Array = new Uint8Array(0);
+  let rawBody = "";
   let payload: any = null;
 
   try {
-    payload = await req.json();
+    const rawBuffer = await req.arrayBuffer();
+    rawBytes = new Uint8Array(rawBuffer);
+    rawBody = new TextDecoder().decode(rawBytes);
 
-    // Novo: suporte para operações via painel (evita CORS no navegador)
-    if (payload.type === 'sync-profile' || payload.type === 'send-message') {
-       const { userId, storeId, message, type } = payload;
-      let query = supabaseClient
-        .from("instagram_config")
-        .select("*")
-        .eq("is_active", true);
-      
-      if (storeId) {
-        query = query.eq("store_id", storeId);
-      }
-      
-      const { data: config } = await query.limit(1).maybeSingle();
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return new Response(JSON.stringify({ error: "Payload JSON inválido" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-      if (!config?.page_access_token) {
-        return new Response(JSON.stringify({ error: "Configuração do Instagram não encontrada ou inativa." }), { 
-          status: 404, headers: corsHeaders 
+    const panelActionTypes = ["sync-profile", "send-message", "debug-token"];
+    const isPanelAction = typeof payload?.type === "string" && panelActionTypes.includes(payload.type);
+
+    if (isPanelAction) {
+      // ── FLUXO DE AÇÃO DO PAINEL ───────────────────────────────────────────
+      // 1. Extração do Token JWT do usuário
+      const authHeader = req.headers.get("authorization") || req.headers.get("Authorization");
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Token de autorização ausente ou malformado" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
-      if (type === 'debug-token') {
-        console.log("Iniciando Diagnóstico de Token...");
-        // 1. Verificar Páginas
-        const pagesRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${config.page_access_token}`);
-        const pagesData = await pagesRes.json();
 
-        // 2. Verificar Conta IG vinculada à página atual
-        const igRes = await fetch(`https://graph.facebook.com/v19.0/${config.page_id}?fields=instagram_business_account&access_token=${config.page_access_token}`);
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
+
+      if (userError || !userData?.user) {
+        return new Response(JSON.stringify({ error: "Sessão inválida ou expirada" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const callerId = userData.user.id;
+
+      // 2. Buscar cargo, permissões e lojas vinculadas no banco usando caller.id validado
+      const [roleRes, storesRes] = await Promise.all([
+        supabaseClient
+          .from("user_roles")
+          .select("role, permissions")
+          .eq("user_id", callerId)
+          .maybeSingle(),
+        supabaseClient
+          .from("member_stores")
+          .select("store_id")
+          .eq("user_id", callerId),
+      ]);
+
+      const callerRole = roleRes.data?.role as string | undefined;
+      const callerPermissions = (roleRes.data?.permissions as Record<string, boolean> | undefined) ?? {};
+      const callerStoreIds: string[] = (storesRes.data ?? []).map((s: any) => s.store_id);
+
+      // 3. Validação de Autoridade Canônica:
+      // Regra canônica: 'dono' NÃO possui bypass automático.
+      // Exige callerRole === "admin" OU callerPermissions.leads === true
+      const hasLeadsPermission = callerRole === "admin" || callerPermissions.leads === true;
+      if (!hasLeadsPermission) {
+        return new Response(JSON.stringify({ error: "Acesso negado: usuário não possui permissão para o módulo de Leads" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (callerStoreIds.length === 0) {
+        return new Response(JSON.stringify({ error: "Acesso negado: usuário não possui nenhuma loja vinculada" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // 4. Determinação Server-Side da Loja Alvo e Validação Estrita de Escopo
+      let targetStoreId: string | null = null;
+      const { userId, storeId, message } = payload;
+
+      if (payload.type === "debug-token") {
+        if (callerRole !== "admin" || callerPermissions.configuracoes !== true) {
+          return new Response(JSON.stringify({ error: "Acesso negado para diagnóstico" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (!storeId) {
+          return new Response(JSON.stringify({ error: "storeId é obrigatório para diagnóstico" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (!callerStoreIds.includes(storeId)) {
+          return new Response(JSON.stringify({ error: "Acesso negado: loja fora do escopo do usuário" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        targetStoreId = storeId;
+      } else if (payload.type === "sync-profile") {
+        if (!userId) {
+          return new Response(JSON.stringify({ error: "Parâmetro obrigatório ausente (userId)" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (storeId) {
+          if (!callerStoreIds.includes(storeId)) {
+            return new Response(JSON.stringify({ error: "Acesso negado: loja fora do escopo do usuário" }), {
+              status: 403,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          targetStoreId = storeId;
+        } else {
+          const { data: targetLead } = await supabaseClient
+            .from("leads")
+            .select("id, store_id")
+            .eq("instagram_user_id", userId)
+            .maybeSingle();
+
+          if (!targetLead?.store_id) {
+            return new Response(JSON.stringify({ error: "Não foi possível determinar a loja do lead; forneça storeId" }), {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          if (!callerStoreIds.includes(targetLead.store_id)) {
+            return new Response(JSON.stringify({ error: "Acesso negado: loja fora do escopo do usuário" }), {
+              status: 403,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          targetStoreId = targetLead.store_id;
+        }
+      } else if (payload.type === "send-message") {
+        if (!userId || !message) {
+          return new Response(JSON.stringify({ error: "Parâmetros obrigatórios ausentes (userId, message)" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Buscar a loja real do lead SERVER-SIDE (não confiar em storeId enviado pelo cliente)
+        const { data: targetLead } = await supabaseClient
+          .from("leads")
+          .select("id, store_id")
+          .eq("instagram_user_id", userId)
+          .maybeSingle();
+
+        const leadStoreId = targetLead?.store_id;
+        if (!leadStoreId) {
+          return new Response(JSON.stringify({ error: "Lead não encontrado ou sem loja associada" }), {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        if (!callerStoreIds.includes(leadStoreId)) {
+          return new Response(JSON.stringify({ error: "Acesso negado: lead pertence a loja fora do escopo do usuário" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        targetStoreId = leadStoreId;
+      }
+
+      // 5. Buscar configuração privilegiada EXCLUSIVAMENTE para a loja autorizada
+      const { data: config } = await supabaseClient
+        .from("instagram_config")
+        .select("*")
+        .eq("is_active", true)
+        .eq("store_id", targetStoreId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!config?.page_access_token) {
+        return new Response(JSON.stringify({ error: "Configuração do Instagram não encontrada ou inativa para esta loja." }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const cleanToken = validateAndCleanToken(config.page_access_token);
+      if (!cleanToken) {
+        return new Response(JSON.stringify({ error: "Access token configurado é inválido ou está corrompido." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (payload.type === "debug-token") {
+        const pagesRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${cleanToken}`);
+        const pagesData = await pagesRes.json();
+        const igRes = await fetch(`https://graph.facebook.com/v19.0/${config.page_id}?fields=instagram_business_account&access_token=${cleanToken}`);
         const igData = await igRes.json();
 
         return new Response(JSON.stringify({
@@ -159,39 +386,59 @@ serve(async (req) => {
           linked_ig: igData,
           current_config: {
             page_id: config.page_id,
-            ig_id: config.instagram_business_account_id
-          }
+            ig_id: config.instagram_business_account_id,
+          },
         }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-       const cleanToken = validateAndCleanToken(config.page_access_token);
-       
-       if (!cleanToken) {
-         return new Response(JSON.stringify({ error: "Access token configurado é inválido ou está corrompido." }), { 
-           status: 400, headers: corsHeaders 
-         });
-       }
- 
-       if (payload.type === 'sync-profile') {
-         const profile = await fetchInstagramUserProfile(userId, cleanToken);
-         return new Response(JSON.stringify({ profile }), { 
-           headers: { ...corsHeaders, "Content-Type": "application/json" } 
-         });
-       } else {
-         const res = await fetch(`https://graph.facebook.com/v19.0/${config.instagram_business_account_id}/messages`, {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cleanToken}` },
-           body: JSON.stringify({
-             recipient: { id: userId },
-             message: { text: message }
-           })
-         });
- 
-         const result = await res.json();
-         return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-       }
+      if (payload.type === "sync-profile") {
+        const profile = await fetchInstagramUserProfile(userId, cleanToken);
+        return new Response(JSON.stringify({ profile }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } else if (payload.type === "send-message") {
+        const res = await fetch(`https://graph.facebook.com/v19.0/${config.instagram_business_account_id}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${cleanToken}` },
+          body: JSON.stringify({
+            recipient: { id: userId },
+            message: { text: message },
+          }),
+        });
+
+        const result = await res.json();
+        return new Response(JSON.stringify(result), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // ── FLUXO DE EVENTO EXTERNO DA META (WEBHOOK) ───────────────────────────
+    const appSecret = Deno.env.get("INSTAGRAM_APP_SECRET");
+    if (!appSecret) {
+      console.error("INSTAGRAM_APP_SECRET não configurado no runtime.");
+      return new Response(JSON.stringify({ error: "Webhook indisponível" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const signature = req.headers.get("x-hub-signature-256") || req.headers.get("X-Hub-Signature-256");
+    if (!signature) {
+      return new Response(JSON.stringify({ error: "Assinatura do webhook ausente" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const isMetaValid = await verifyMetaHmacSha256(rawBytes, signature, appSecret);
+    if (!isMetaValid) {
+      return new Response(JSON.stringify({ error: "Assinatura do webhook inválida" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     console.log("Payload recebido. Objeto:", payload.object);

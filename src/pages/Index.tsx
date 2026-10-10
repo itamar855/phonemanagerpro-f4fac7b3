@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Package, TrendingUp, TrendingDown, Wrench,
   AlertTriangle, Zap, Store, Users,
+  Clock, CheckCircle2, CheckCircle, Coins, Eye, ChevronRight, AlertCircle,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -19,6 +22,8 @@ import {
 import {
   Collapsible, CollapsibleTrigger, CollapsibleContent,
 } from "@/components/ui/collapsible";
+import { getStatusLabel, getStatusColor } from "@/utils/osStatus";
+import { calculateOSItemMetrics, isOrderOnBench } from "@/utils/osCalculations";
 
 const COLORS = ["hsl(152, 60%, 45%)", "hsl(38, 92%, 50%)", "hsl(0, 62%, 50%)", "hsl(220, 25%, 50%)", "hsl(280, 50%, 50%)"];
 
@@ -77,9 +82,88 @@ const Dashboard = () => {
   const [lowStockAcc, setLowStockAcc] = useState<{ name: string; qty: number; min: number }[]>([]);
   const [stores, setStores] = useState<any[]>([]);
 
+  const navigate = useNavigate();
+  const [techStats, setTechStats] = useState({
+    emBancada: 0,
+    aguardandoPeca: 0,
+    aguardandoAprovacao: 0,
+    prontas: 0,
+    entreguesPeriodo: 0,
+    minhaComissao: 0,
+  });
+  const [techQueue, setTechQueue] = useState<any[]>([]);
+
+  const fetchTechnicianData = async () => {
+    if (!user) return;
+    const { start, end } = getPeriodDates(period, customStart, customEnd);
+    const effectiveStoreId = !isAdmin && (!activeStoreId || activeStoreId === "all") 
+      ? (userStoreIds.length > 0 ? userStoreIds[0] : null) 
+      : activeStoreId;
+
+    let q = supabase
+      .from("service_orders")
+      .select("id, order_number, customer_name, customer_phone, device_brand, device_model, requested_service, reported_defect, status, priority, estimated_completion, created_at, delivered_at, final_price, estimated_price, store_id, technician_id")
+      .eq("technician_id", user.id);
+
+    if (effectiveStoreId && effectiveStoreId !== "all") {
+      q = q.eq("store_id", effectiveStoreId);
+    }
+
+    const [ordersRes, roleRes] = await Promise.all([
+      q.order("created_at", { ascending: false }),
+      supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle(),
+    ]);
+
+    const allMyOrders = (ordersRes.data ?? []) as any[];
+    const roleData = roleRes.data;
+
+    // Filtra as entregues no período para cálculo de comissão (Salvaguardas 1 e 4)
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const deliveredInPeriod = allMyOrders.filter((o) => {
+      if (o.status !== "delivered") return false;
+      const d = o.delivered_at ? new Date(o.delivered_at) : new Date(o.created_at);
+      return d >= startDate && d <= endDate;
+    });
+
+    let parts: any[] = [];
+    if (deliveredInPeriod.length > 0) {
+      const { data: partsData } = await supabase
+        .from("service_order_items" as any)
+        .select("service_order_id, unit_cost, quantity")
+        .in("service_order_id", deliveredInPeriod.map((o) => o.id));
+      parts = partsData ?? [];
+    }
+
+    let totalComissao = 0;
+    deliveredInPeriod.forEach((o) => {
+      const osParts = parts.filter((p) => p.service_order_id === o.id);
+      const metrics = calculateOSItemMetrics(o, osParts, roleData);
+      totalComissao += metrics.comissaoTecnico;
+    });
+
+    const activeOrders = allMyOrders.filter((o) => !["delivered", "cancelled"].includes(o.status));
+
+    setTechStats({
+      emBancada: activeOrders.filter((o) => isOrderOnBench(o.status)).length,
+      aguardandoPeca: activeOrders.filter((o) => o.status === "waiting_part").length,
+      aguardandoAprovacao: activeOrders.filter((o) => o.status === "waiting_approval").length,
+      prontas: activeOrders.filter((o) => o.status === "ready").length,
+      entreguesPeriodo: deliveredInPeriod.length,
+      minhaComissao: totalComissao,
+    });
+
+    setTechQueue(activeOrders);
+  };
+
   const fetchData = async () => {
     // Só prossegue quando AuthContext estiver 100% carregado
     if (!userPermissions) return;
+
+    if (userRole === "tecnico") {
+      await fetchTechnicianData();
+      return;
+    }
 
     const effectiveStoreId = !isAdmin && (!activeStoreId || activeStoreId === "all") 
       ? (userStoreIds.length > 0 ? userStoreIds[0] : null) 
@@ -300,17 +384,22 @@ const Dashboard = () => {
     }
   };
 
+  const isTecnico = userRole === "tecnico";
   const totalInvestedAll = stats.totalInvested + stats.totalInvestedAcc;
 
-  const hasAnyData = can("estoque") || can("vendas") || can("os") || can("transacoes") || can("caixa");
+  const hasAnyData = isTecnico || can("estoque") || can("vendas") || can("os") || can("transacoes") || can("caixa");
 
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">
+            {isTecnico ? "Dashboard do Técnico" : "Dashboard"}
+          </h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {activeStoreId !== "all"
+            {isTecnico
+              ? "Visão operacional da sua bancada e métricas de produção"
+              : activeStoreId !== "all"
               ? `Dados da unidade: ${activeStoreName}`
               : "Visão consolidada de todas as lojas"}
           </p>
@@ -373,6 +462,171 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* 🛠️ VISÃO OPERACIONAL EXCLUSIVA DO TÉCNICO */}
+      {isTecnico && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-[10px] uppercase font-semibold">Em Bancada</span>
+                  <Wrench className="h-4 w-4 text-violet-400" />
+                </div>
+                <p className="font-display text-2xl font-bold text-violet-400 mt-1">{techStats.emBancada}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Em Análise / Reparo</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-[10px] uppercase font-semibold">Aguard. Peça</span>
+                  <Clock className="h-4 w-4 text-yellow-500" />
+                </div>
+                <p className="font-display text-2xl font-bold text-yellow-500 mt-1">{techStats.aguardandoPeca}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Pendente estoque</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-[10px] uppercase font-semibold">Aguard. Aprovação</span>
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                </div>
+                <p className="font-display text-2xl font-bold text-amber-500 mt-1">{techStats.aguardandoAprovacao}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Orçamento c/ cliente</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-[10px] uppercase font-semibold">Prontas</span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                </div>
+                <p className="font-display text-2xl font-bold text-emerald-500 mt-1">{techStats.prontas}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Aguardando retirada</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-[10px] uppercase font-semibold">Entregues</span>
+                  <CheckCircle className="h-4 w-4 text-blue-400" />
+                </div>
+                <p className="font-display text-2xl font-bold text-blue-400 mt-1">{techStats.entreguesPeriodo}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">No período selecionado</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-[10px] uppercase font-semibold">Minha Comissão</span>
+                  <Coins className="h-4 w-4 text-yellow-400" />
+                </div>
+                <p className="font-display text-xl font-bold text-yellow-400 mt-1">{formatCurrency(techStats.minhaComissao)}</p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">Acumulada no período</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Fila de Trabalho / Bancada */}
+          <Card className="border-border/50 shadow-lg shadow-black/10">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-display text-base flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-primary" />
+                    Minha Fila de Trabalho ({techQueue.length})
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ordens de serviço em andamento atribuídas à sua bancada
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs h-8"
+                  onClick={() => navigate("/ordens-servico")}
+                >
+                  Ver Todas as OS
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {techQueue.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        <th className="text-left py-2 px-2 font-medium">OS</th>
+                        <th className="text-left py-2 px-2 font-medium">Aparelho</th>
+                        <th className="text-left py-2 px-2 font-medium">Cliente</th>
+                        <th className="text-left py-2 px-2 font-medium">Defeito / Serviço</th>
+                        <th className="text-left py-2 px-2 font-medium">Status</th>
+                        <th className="text-left py-2 px-2 font-medium">Previsão</th>
+                        <th className="text-right py-2 px-2 font-medium">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {techQueue.map((o) => (
+                        <tr key={o.id} className="border-b border-border/30 hover:bg-muted/30">
+                          <td className="py-2.5 px-2 font-mono font-bold text-foreground">
+                            #{o.order_number ?? "-"}
+                          </td>
+                          <td className="py-2.5 px-2 font-medium">
+                            {o.device_brand} {o.device_model}
+                          </td>
+                          <td className="py-2.5 px-2 text-muted-foreground">
+                            {o.customer_name}
+                          </td>
+                          <td className="py-2.5 px-2 max-w-[200px] truncate" title={o.reported_defect || o.requested_service}>
+                            {o.requested_service || o.reported_defect || "—"}
+                          </td>
+                          <td className="py-2.5 px-2">
+                            <Badge variant="outline" className={`text-[10px] ${getStatusColor(o.status)}`}>
+                              {getStatusLabel(o.status)}
+                            </Badge>
+                          </td>
+                          <td className="py-2.5 px-2 whitespace-nowrap text-muted-foreground">
+                            {o.estimated_completion ? new Date(o.estimated_completion).toLocaleDateString("pt-BR") : "—"}
+                          </td>
+                          <td className="py-2.5 px-2 text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs gap-1 hover:text-primary"
+                              onClick={() => navigate("/ordens-servico")}
+                            >
+                              <Eye className="h-3 w-3" />
+                              Abrir
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <CheckCircle2 className="h-10 w-10 mb-2 text-emerald-500 opacity-60" />
+                  <p className="font-semibold text-sm text-foreground">Bancada Livre!</p>
+                  <p className="text-xs mt-1">Você não possui nenhuma OS pendente no momento.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* VISÃO GERAL ADMINISTRATIVA */}
+      {!isTecnico && (
+        <>
 
       {can("estoque") && (lowStockStores.length > 0 || lowStockAcc.length > 0) && (
         <Collapsible className="border border-yellow-500/20 bg-yellow-500/5 rounded-xl overflow-hidden shadow-sm">
@@ -552,7 +806,7 @@ const Dashboard = () => {
                 </Card>
                 <Card className="border-border/50 shadow-md">
                   <CardContent className="p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase">Lucro de Serviços</p>
+                    <p className="text-[10px] text-muted-foreground uppercase">Margem da OS (Serviços)</p>
                     <p className="font-display text-lg font-bold text-violet-400 mt-0.5">{formatCurrency(stats.lucroServicos)}</p>
                   </CardContent>
                 </Card>
@@ -668,6 +922,8 @@ const Dashboard = () => {
           </Card>
         )}
       </div>
+        </>
+      )}
 
       {!hasAnyData && (
         <Card className="border-border/50">

@@ -225,9 +225,10 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Técnico Responsável</Label>
-                <Select value={form.technician_id} onValueChange={(v) => setForm((prev: any) => ({ ...prev, technician_id: v }))}>
+                <Select value={form.technician_id || "none"} onValueChange={(v) => setForm((prev: any) => ({ ...prev, technician_id: v }))}>
                   <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Nenhum (Sem técnico)</SelectItem>
                     {profiles.map((p) => <SelectItem key={p.user_id} value={p.user_id}>{p.display_name ?? p.user_id}</SelectItem>)}
                   </SelectContent>
                 </Select>

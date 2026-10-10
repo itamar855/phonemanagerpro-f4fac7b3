@@ -1,0 +1,28 @@
+Estamos continuando a migração de segurança de chaves do Supabase e o rollout do Core no projeto CellManagerPro / PhoneManagerPro (Supabase Project Ref: hzrqtolfbwnmmeliazmh).
+
+Antes de modificar qualquer arquivo, executar qualquer comando de alteração ou propor código:
+
+1. LEIA INTEGRALMENTE OS ARQUIVOS DE HANDOFF PERSISTENTES:
+   - AI_HANDOFF.md
+   - AI_SECURITY_PHASE0_STATE.md
+   - AI_NEXT_STEPS.md
+
+2. INSPECIONE O ESTADO ATUAL DO REPOSITÓRIO:
+   - Execute git status --short e git log -n 3 --oneline.
+   - Verifique que o último commit é e280cd8 e que a suíte de testes está em 375/375 PASS.
+
+3. REGRAS OBRIGATÓRIAS DESTA SESSÃO:
+   - NÃO execute SQL no banco de dados.
+   - A Fase 0B ainda NÃO foi executada em produção e NÃO deve ser executada agora.
+   - As chaves legadas (legacy anon e legacy service_role) ainda estão ATIVAS no Supabase e NÃO devem ser desativadas ainda.
+   - NÃO faça deploy de Edge Functions automaticamente.
+   - NÃO exponha nenhuma chave, JWT, secret, hash ou token privilegiado no chat ou relatórios.
+   - Aplique o Protocolo Cirúrgico: menor alteração necessária, sem refatorações desnecessárias.
+
+4. SEU PRIMEIRO PASSO NESTE NOVO CHAT:
+   Resuma para mim com precisão:
+   - O estado atual em que paramos (Fase C2: Vercel Environment Variables);
+   - O status do código local e de produção (commit e280cd8, 375 testes passando);
+   - O próximo passo cirúrgico exato a ser executado no painel da Vercel (colar sb_publishable_... em VITE_SUPABASE_PUBLISHABLE_KEY para o ambiente Production e fazer Redeploy sem build cache).
+
+5. AGUARDE MINHA CONFIRMAÇÃO OU AUTORIZAÇÃO ANTES DE REALIZAR QUALQUER MODIFICAÇÃO.

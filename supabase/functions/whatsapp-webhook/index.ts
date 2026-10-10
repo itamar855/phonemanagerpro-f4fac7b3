@@ -7,15 +7,58 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function getServiceRoleKey(): string {
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const key = parsed?.["default"];
+      if (typeof key === "string" && key.startsWith("sb_secret_")) {
+        return key;
+      }
+    } catch {}
+  }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
+  throw new Error("Supabase privileged credential unavailable.");
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Provider Authentication Check (x-evolution-webhook-secret)
+  const expectedWebhookSecret = Deno.env.get("EVOLUTION_WEBHOOK_SECRET");
+  if (!expectedWebhookSecret) {
+    console.error("EVOLUTION_WEBHOOK_SECRET não configurado");
+    return new Response(
+      JSON.stringify({ error: "Webhook indisponível" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  const receivedWebhookSecret = req.headers.get("x-evolution-webhook-secret");
+  if (
+    !receivedWebhookSecret ||
+    receivedWebhookSecret !== expectedWebhookSecret
+  ) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
+  }
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      getServiceRoleKey()
     )
 
     const payload = await req.json()

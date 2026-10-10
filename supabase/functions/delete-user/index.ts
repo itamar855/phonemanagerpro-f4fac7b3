@@ -1,9 +1,26 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import {
+  validateCallerAuthority,
+  validateUserDeletion,
+  validateStoreScope,
+  corsHeaders,
+} from "../_shared/auth-rules.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+function getServiceRoleKey(): string {
+  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const key = parsed?.["default"];
+      if (typeof key === "string" && key.startsWith("sb_secret_")) {
+        return key;
+      }
+    } catch {}
+  }
+  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (legacy) return legacy;
+  throw new Error("Supabase privileged credential unavailable.");
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -13,32 +30,96 @@ Deno.serve(async (req) => {
   try {
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      getServiceRoleKey(),
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verify caller is admin or authorized gerente
+    // 1. Autenticar chamador via token Bearer (server-side)
     const authHeader = req.headers.get("authorization");
-    if (!authHeader) throw new Error("Não autorizado");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Cabeçalho de autorização ausente." }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const { data: { user: caller } } = await supabaseAdmin.auth.getUser(
+    const { data: { user: caller }, error: callerAuthError } = await supabaseAdmin.auth.getUser(
       authHeader.replace("Bearer ", "")
     );
-    if (!caller) throw new Error("Não autorizado");
+    if (callerAuthError || !caller) {
+      return new Response(JSON.stringify({ error: "Sessão inválida ou expirada." }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const { data: callerRole } = await supabaseAdmin
-      .from("user_roles")
-      .select("role, permissions")
-      .eq("user_id", caller.id)
-      .maybeSingle();
+    // 2. Consultar role, permissions e stores do chamador (server-side)
+    const [callerRoleRes, callerStoresRes] = await Promise.all([
+      supabaseAdmin
+        .from("user_roles")
+        .select("role, permissions")
+        .eq("user_id", caller.id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("member_stores")
+        .select("store_id")
+        .eq("user_id", caller.id),
+    ]);
 
-    const isAuthorized = callerRole?.role === "admin" || (callerRole?.role === "gerente" && (callerRole?.permissions as any)?.equipe);
-    if (!isAuthorized) throw new Error("Apenas administradores podem excluir membros");
+    const callerRole = callerRoleRes.data?.role || "";
+    const callerPermissions = callerRoleRes.data?.permissions || {};
+    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: any) => s.store_id);
+
+    const authCheck = validateCallerAuthority(callerRole, callerPermissions);
+    if (!authCheck.allowed) {
+      return new Response(JSON.stringify({ error: authCheck.reason }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { user_id, reason } = await req.json();
 
-    if (!user_id) throw new Error("ID do usuário é obrigatório");
-    if (user_id === caller.id) throw new Error("Você não pode excluir sua própria conta de administrador");
+    if (!user_id) {
+      return new Response(JSON.stringify({ error: "ID do usuário é obrigatório." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 3. Consultar cargo e lojas do usuário-alvo
+    const [targetRoleRes, targetStoresRes] = await Promise.all([
+      supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user_id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("member_stores")
+        .select("store_id")
+        .eq("user_id", user_id),
+    ]);
+
+    const targetRole = targetRoleRes.data?.role || "vendedor";
+    const targetCurrentStoreIds: string[] = (targetStoresRes.data || []).map((s: any) => s.store_id);
+
+    // 4. Validação de hierarquia e autoproteção (impede excluir dono e impede autoexclusão)
+    const deletionCheck = validateUserDeletion(callerRole, callerPermissions, caller.id, user_id, targetRole);
+    if (!deletionCheck.allowed) {
+      return new Response(JSON.stringify({ error: deletionCheck.reason }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 5. Validação de escopo de loja (Item 1 e 3: alvo não pode ter lojas fora do chamador)
+    const storeScopeCheck = validateStoreScope(callerStoreIds, targetCurrentStoreIds);
+    if (!storeScopeCheck.allowed) {
+      return new Response(JSON.stringify({ error: storeScopeCheck.reason }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // 1. Remove user roles and store assignments
     await supabaseAdmin.from("user_roles").delete().eq("user_id", user_id);

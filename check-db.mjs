@@ -1,8 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Using service_role key to bypass RLS and see ALL data
-const url = 'https://hzrqtolfbwnmmeliazmh.supabase.co';
-const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6cnF0b2xmYndubW1lbGlhem1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDIxMjUwMSwiZXhwIjoyMDg5Nzg4NTAxfQ.r2EtLy9dZeGYmRQaaqB_EJmmuRnIkErgSx2yrRG0oro';
+// Using privileged secret key via environment variable
+const url = process.env.SUPABASE_URL || 'https://hzrqtolfbwnmmeliazmh.supabase.co';
+const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!serviceKey) {
+  console.error("ERRO: SUPABASE_SECRET_KEY ou SUPABASE_SERVICE_ROLE_KEY não configurada no ambiente.");
+  process.exit(1);
+}
 
 const supabase = createClient(url, serviceKey);
 

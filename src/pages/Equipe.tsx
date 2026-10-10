@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Users, Shield, ShieldCheck, User, Plus, Phone, Store, Trash2, ChevronDown, Check, AlertTriangle, KeyRound } from "lucide-react";
+import { Users, Shield, ShieldCheck, User, Plus, Phone, Store, Trash2, ChevronDown, Check, AlertTriangle, KeyRound, Wrench } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -26,9 +26,11 @@ import { cn } from "@/lib/utils";
 import type { Tables, Enums } from "@/integrations/supabase/types";
 
 const roleConfig: Record<string, { label: string; color: string; icon: typeof Shield }> = {
+  dono: { label: "Dono", color: "bg-amber-500/15 text-amber-500 border-amber-500/20", icon: ShieldCheck },
   admin: { label: "Administrador", color: "bg-destructive/15 text-destructive border-destructive/20", icon: ShieldCheck },
   gerente: { label: "Gerente", color: "bg-accent/15 text-accent border-accent/20", icon: Shield },
   vendedor: { label: "Vendedor", color: "bg-primary/15 text-primary border-primary/20", icon: User },
+  tecnico: { label: "Técnico", color: "bg-purple-500/15 text-purple-400 border-purple-500/20", icon: Wrench },
 };
 
 const MODULES = [
@@ -56,6 +58,10 @@ type Permissions = Record<string, boolean>;
 const defaultPermissions = (role: string): Permissions => {
   if (role === "admin") {
     return Object.fromEntries(MODULES.map((m) => [m.key, true]));
+  }
+  if (role === "tecnico") {
+    // Conforme Salvaguarda 3: técnico recebe acesso operacional a OS, clientes e dashboard dedicado, sem estoque administrativo nem caixa
+    return Object.fromEntries(MODULES.map((m) => [m.key, ["os", "clientes", "dashboard"].includes(m.key)]));
   }
   // Para outros papéis, apenas módulos operacionais básicos, sem dashboard por padrão
   return Object.fromEntries(MODULES.map((m) => [m.key, ["vendas", "os", "clientes", "caixa"].includes(m.key)]));
@@ -144,6 +150,14 @@ const Equipe = () => {
 
   const openEditDialog = (member: ProfileWithRole) => {
     if (!isAdmin) return;
+    if (member.role === "dono") {
+      toast.error("O cargo 'dono' é reservado e protegido contra alterações pelo fluxo de equipe.");
+      return;
+    }
+    if (userRole === "gerente" && member.role !== "vendedor" && member.role !== "tecnico") {
+      toast.error("Gerentes só possuem permissão para gerenciar vendedores e técnicos.");
+      return;
+    }
     setSelectedMember(member);
     setNewRole(member.role || "vendedor");
     setEditPhone((member as any).phone || "");
@@ -189,78 +203,53 @@ const Equipe = () => {
 
   const handleRoleChange = async () => {
     if (!selectedMember || !newRole) return;
+    if (!justification) {
+      toast.error("Por favor, informe o motivo da alteração.");
+      return;
+    }
     setLoading(true);
 
-    const { data: existing } = await supabase
-      .from("user_roles")
-      .select("id")
-      .eq("user_id", selectedMember.user_id)
-      .maybeSingle();
-
-    if (existing) {
-      const { error } = await supabase
-        .from("user_roles")
-        .update({ 
-          role: newRole as any,
+    try {
+      const response = await supabase.functions.invoke("admin-update-user", {
+        body: {
+          target_user_id: selectedMember.user_id,
+          role: newRole,
           permissions: permissions,
+          store_ids: editStoreIds,
+          phone: editPhone || null,
           commission_sales_percent: parseFloat(editSalesCommission) || 0,
           commission_services_percent: parseFloat(editServicesCommission) || 0,
           commission_on_sales: selectedMember.commission_on_sales ?? true,
-          commission_on_services: selectedMember.commission_on_services ?? true
-        })
-        .eq("user_id", selectedMember.user_id);
-      if (error) { toast.error(error.message); setLoading(false); return; }
-    } else {
-      const { error } = await supabase
-        .from("user_roles")
-        .insert({ 
-          user_id: selectedMember.user_id, 
-          role: newRole as any,
-          permissions: permissions,
-          commission_sales_percent: parseFloat(editSalesCommission) || 0,
-          commission_services_percent: parseFloat(editServicesCommission) || 0,
-          commission_on_sales: selectedMember.commission_on_sales ?? true,
-          commission_on_services: selectedMember.commission_on_services ?? true
-        });
-      if (error) { toast.error(error.message); setLoading(false); return; }
-    }
+          commission_on_services: selectedMember.commission_on_services ?? true,
+          justification,
+        },
+      });
 
-    if (!justification) { toast.error("Por favor, informe o motivo da alteração."); setLoading(false); return; }
-
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .update({
-        phone: editPhone || null,
-        // Mantemos o store_id legado como o primeiro do array para compatibilidade rápida
-        store_id: editStoreIds.length > 0 ? editStoreIds[0] : null,
-      } as any)
-      .eq("user_id", selectedMember.user_id);
-
-    if (profileError) {
-      toast.error(profileError.message);
-    } else {
-      // Sincroniza member_stores
-      await supabase.from("member_stores" as any).delete().eq("user_id", selectedMember.user_id);
-      
-      if (editStoreIds.length > 0) {
-        const insertData = editStoreIds.map(sid => ({
-          user_id: selectedMember.user_id,
-          store_id: sid
-        }));
-        await supabase.from("member_stores" as any).insert(insertData);
+      if (response.error) {
+        let errorMsg = response.error.message;
+        try {
+          const body = await response.error.context?.json();
+          if (body?.error) errorMsg = body.error;
+        } catch (_) {}
+        toast.error(errorMsg || "Erro ao atualizar membro da equipe");
+      } else {
+        toast.success(response.data?.message || "Membro e unidades atualizados!");
+        setSelectedMember(null);
+        fetchData();
       }
-      
-      toast.success("Membro e unidades atualizados!");
-      logAction("UPDATE_RECORD" as any, "user_roles", selectedMember.user_id, { role: selectedMember.role }, { role: newRole, justification });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao atualizar membro da equipe");
+    } finally {
+      setLoading(false);
     }
-
-    setSelectedMember(null);
-    setLoading(false);
-    fetchData();
   };
 
   const handleDeleteMember = async (reason: string) => {
     if (!memberToDelete) return;
+    if (memberToDelete.role === "dono") {
+      toast.error("O cargo 'dono' é reservado e não pode ser excluído.");
+      return;
+    }
     setLoading(true);
 
     try {
@@ -385,7 +374,7 @@ const Equipe = () => {
                     ) : (
                       <Badge variant="outline" className="text-[10px] text-muted-foreground">Sem cargo</Badge>
                     )}
-                    {isAdmin && !isMe && (
+                    {isAdmin && !isMe && member.role !== "dono" && (userRole === "admin" || (userRole === "gerente" && (member.role === "vendedor" || member.role === "tecnico"))) && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -430,9 +419,14 @@ const Equipe = () => {
                   <Select value={newRole} onValueChange={(v) => { setNewRole(v); setPermissions(defaultPermissions(v)); }}>
                     <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="gerente">Gerente</SelectItem>
+                      {userRole === "admin" && (
+                        <>
+                          <SelectItem value="admin">Administrador</SelectItem>
+                          <SelectItem value="gerente">Gerente</SelectItem>
+                        </>
+                      )}
                       <SelectItem value="vendedor">Vendedor</SelectItem>
+                      <SelectItem value="tecnico">Técnico</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -646,9 +640,14 @@ const Equipe = () => {
                 <Select value={createForm.role} onValueChange={(v) => setCreateForm({ ...createForm, role: v })}>
                   <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="gerente">Gerente</SelectItem>
+                    {userRole === "admin" && (
+                      <>
+                        <SelectItem value="admin">Administrador</SelectItem>
+                        <SelectItem value="gerente">Gerente</SelectItem>
+                      </>
+                    )}
                     <SelectItem value="vendedor">Vendedor</SelectItem>
+                    <SelectItem value="tecnico">Técnico</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
