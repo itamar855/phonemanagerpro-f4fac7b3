@@ -24,6 +24,17 @@ import {
 } from "@/components/ui/collapsible";
 import { getStatusLabel, getStatusColor } from "@/utils/osStatus";
 import { calculateOSItemMetrics, isOrderOnBench } from "@/utils/osCalculations";
+import { TechDashboard } from "@/components/features/tecnico/TechDashboard";
+import {
+  calculateTechProductivity,
+  calculateTechTimeline,
+  calculateTechGoalsProgress,
+  calculateTechShopRanking,
+  type TechProductivityResult,
+  type TimelineDataPoint,
+  type TechGoalConfig,
+  type TechRankingItem,
+} from "@/utils/technicianMetrics";
 
 const COLORS = ["hsl(152, 60%, 45%)", "hsl(38, 92%, 50%)", "hsl(0, 62%, 50%)", "hsl(220, 25%, 50%)", "hsl(280, 50%, 50%)"];
 
@@ -83,15 +94,39 @@ const Dashboard = () => {
   const [stores, setStores] = useState<any[]>([]);
 
   const navigate = useNavigate();
-  const [techStats, setTechStats] = useState({
-    emBancada: 0,
-    aguardandoPeca: 0,
-    aguardandoAprovacao: 0,
-    prontas: 0,
-    entreguesPeriodo: 0,
-    minhaComissao: 0,
+  const [techProductivity, setTechProductivity] = useState<TechProductivityResult>({
+    totalDelivered: 0,
+    totalCancelled: 0,
+    totalActiveInBench: 0,
+    successRate: 100,
+    avgTotalLeadTimeDays: 0,
+    avgBenchTimeDays: 0,
+    realizedCommission: 0,
+    projectedCommission: 0,
+    totalLaborRevenue: 0,
+    ticketMedioLabor: 0,
   });
+  const [techTimeline, setTechTimeline] = useState<TimelineDataPoint[]>([]);
+  const [techGoals, setTechGoals] = useState<TechGoalConfig>(() => {
+    try {
+      const saved = localStorage.getItem("cellmanager_tech_goals");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return { targetOrders: 40, targetCommission: 2500 };
+  });
+  const [techShopRanking, setTechShopRanking] = useState<{
+    items: TechRankingItem[];
+    myRank: number;
+    totalTechs: number;
+  }>({ items: [], myRank: 1, totalTechs: 1 });
   const [techQueue, setTechQueue] = useState<any[]>([]);
+
+  const handleUpdateTechGoals = (newGoals: TechGoalConfig) => {
+    setTechGoals(newGoals);
+    try {
+      localStorage.setItem("cellmanager_tech_goals", JSON.stringify(newGoals));
+    } catch {}
+  };
 
   const fetchTechnicianData = async () => {
     if (!user) return;
@@ -109,15 +144,50 @@ const Dashboard = () => {
       q = q.eq("store_id", effectiveStoreId);
     }
 
-    const [ordersRes, roleRes] = await Promise.all([
+    let shopOrdersQuery = supabase
+      .from("service_orders")
+      .select("id, technician_id, final_price, estimated_price, status, created_at, delivered_at, store_id")
+      .eq("status", "delivered")
+      .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`);
+
+    if (effectiveStoreId && effectiveStoreId !== "all") {
+      shopOrdersQuery = shopOrdersQuery.eq("store_id", effectiveStoreId);
+    }
+
+    const [ordersRes, roleRes, shopOrdersRes, profilesRes] = await Promise.all([
       q.order("created_at", { ascending: false }),
       supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle(),
+      shopOrdersQuery,
+      supabase.from("profiles").select("user_id, display_name"),
     ]);
 
     const allMyOrders = (ordersRes.data ?? []) as any[];
     const roleData = roleRes.data;
+    const shopDelivered = (shopOrdersRes.data ?? []) as any[];
+    const profiles = profilesRes.data ?? [];
 
-    // Filtra as entregues no período para cálculo de comissão (Salvaguardas 1 e 4)
+    const profileMap = new Map<string, string>();
+    profiles.forEach((p: any) => {
+      if (p.user_id && p.display_name) {
+        profileMap.set(p.user_id, p.display_name);
+      }
+    });
+
+    const relevantIds = Array.from(new Set([
+      ...allMyOrders.map((o) => o.id),
+      ...shopDelivered.map((o) => o.id),
+    ]));
+
+    let parts: any[] = [];
+    if (relevantIds.length > 0) {
+      const { data: partsData } = await supabase
+        .from("service_order_items" as any)
+        .select("service_order_id, unit_cost, quantity")
+        .in("service_order_id", relevantIds);
+      parts = partsData ?? [];
+    }
+
+    const prodMetrics = calculateTechProductivity(allMyOrders, parts, roleData, user.id, start, end);
     const startDate = new Date(start);
     const endDate = new Date(end);
     const deliveredInPeriod = allMyOrders.filter((o) => {
@@ -126,33 +196,13 @@ const Dashboard = () => {
       return d >= startDate && d <= endDate;
     });
 
-    let parts: any[] = [];
-    if (deliveredInPeriod.length > 0) {
-      const { data: partsData } = await supabase
-        .from("service_order_items" as any)
-        .select("service_order_id, unit_cost, quantity")
-        .in("service_order_id", deliveredInPeriod.map((o) => o.id));
-      parts = partsData ?? [];
-    }
-
-    let totalComissao = 0;
-    deliveredInPeriod.forEach((o) => {
-      const osParts = parts.filter((p) => p.service_order_id === o.id);
-      const metrics = calculateOSItemMetrics(o, osParts, roleData);
-      totalComissao += metrics.comissaoTecnico;
-    });
-
+    const timelineData = calculateTechTimeline(deliveredInPeriod, parts, roleData);
+    const rankingData = calculateTechShopRanking(shopDelivered, profileMap, user.id, parts);
     const activeOrders = allMyOrders.filter((o) => !["delivered", "cancelled"].includes(o.status));
 
-    setTechStats({
-      emBancada: activeOrders.filter((o) => isOrderOnBench(o.status)).length,
-      aguardandoPeca: activeOrders.filter((o) => o.status === "waiting_part").length,
-      aguardandoAprovacao: activeOrders.filter((o) => o.status === "waiting_approval").length,
-      prontas: activeOrders.filter((o) => o.status === "ready").length,
-      entreguesPeriodo: deliveredInPeriod.length,
-      minhaComissao: totalComissao,
-    });
-
+    setTechProductivity(prodMetrics);
+    setTechTimeline(timelineData);
+    setTechShopRanking(rankingData);
     setTechQueue(activeOrders);
   };
 
@@ -465,163 +515,34 @@ const Dashboard = () => {
 
       {/* 🛠️ VISÃO OPERACIONAL EXCLUSIVA DO TÉCNICO */}
       {isTecnico && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-[10px] uppercase font-semibold">Em Bancada</span>
-                  <Wrench className="h-4 w-4 text-violet-400" />
-                </div>
-                <p className="font-display text-2xl font-bold text-violet-400 mt-1">{techStats.emBancada}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">Em Análise / Reparo</p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-[10px] uppercase font-semibold">Aguard. Peça</span>
-                  <Clock className="h-4 w-4 text-yellow-500" />
-                </div>
-                <p className="font-display text-2xl font-bold text-yellow-500 mt-1">{techStats.aguardandoPeca}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">Pendente estoque</p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-[10px] uppercase font-semibold">Aguard. Aprovação</span>
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
-                </div>
-                <p className="font-display text-2xl font-bold text-amber-500 mt-1">{techStats.aguardandoAprovacao}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">Orçamento c/ cliente</p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-[10px] uppercase font-semibold">Prontas</span>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                </div>
-                <p className="font-display text-2xl font-bold text-emerald-500 mt-1">{techStats.prontas}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">Aguardando retirada</p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-[10px] uppercase font-semibold">Entregues</span>
-                  <CheckCircle className="h-4 w-4 text-blue-400" />
-                </div>
-                <p className="font-display text-2xl font-bold text-blue-400 mt-1">{techStats.entreguesPeriodo}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">No período selecionado</p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm bg-gradient-to-br from-card to-card/50">
-              <CardContent className="p-3">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-[10px] uppercase font-semibold">Minha Comissão</span>
-                  <Coins className="h-4 w-4 text-yellow-400" />
-                </div>
-                <p className="font-display text-xl font-bold text-yellow-400 mt-1">{formatCurrency(techStats.minhaComissao)}</p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">Acumulada no período</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Fila de Trabalho / Bancada */}
-          <Card className="border-border/50 shadow-lg shadow-black/10">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="font-display text-base flex items-center gap-2">
-                    <Wrench className="h-4 w-4 text-primary" />
-                    Minha Fila de Trabalho ({techQueue.length})
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Ordens de serviço em andamento atribuídas à sua bancada
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs h-8"
-                  onClick={() => navigate("/ordens-servico")}
-                >
-                  Ver Todas as OS
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {techQueue.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-muted-foreground">
-                        <th className="text-left py-2 px-2 font-medium">OS</th>
-                        <th className="text-left py-2 px-2 font-medium">Aparelho</th>
-                        <th className="text-left py-2 px-2 font-medium">Cliente</th>
-                        <th className="text-left py-2 px-2 font-medium">Defeito / Serviço</th>
-                        <th className="text-left py-2 px-2 font-medium">Status</th>
-                        <th className="text-left py-2 px-2 font-medium">Previsão</th>
-                        <th className="text-right py-2 px-2 font-medium">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {techQueue.map((o) => (
-                        <tr key={o.id} className="border-b border-border/30 hover:bg-muted/30">
-                          <td className="py-2.5 px-2 font-mono font-bold text-foreground">
-                            #{o.order_number ?? "-"}
-                          </td>
-                          <td className="py-2.5 px-2 font-medium">
-                            {o.device_brand} {o.device_model}
-                          </td>
-                          <td className="py-2.5 px-2 text-muted-foreground">
-                            {o.customer_name}
-                          </td>
-                          <td className="py-2.5 px-2 max-w-[200px] truncate" title={o.reported_defect || o.requested_service}>
-                            {o.requested_service || o.reported_defect || "—"}
-                          </td>
-                          <td className="py-2.5 px-2">
-                            <Badge variant="outline" className={`text-[10px] ${getStatusColor(o.status)}`}>
-                              {getStatusLabel(o.status)}
-                            </Badge>
-                          </td>
-                          <td className="py-2.5 px-2 whitespace-nowrap text-muted-foreground">
-                            {o.estimated_completion ? new Date(o.estimated_completion).toLocaleDateString("pt-BR") : "—"}
-                          </td>
-                          <td className="py-2.5 px-2 text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-xs gap-1 hover:text-primary"
-                              onClick={() => navigate("/ordens-servico")}
-                            >
-                              <Eye className="h-3 w-3" />
-                              Abrir
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <CheckCircle2 className="h-10 w-10 mb-2 text-emerald-500 opacity-60" />
-                  <p className="font-semibold text-sm text-foreground">Bancada Livre!</p>
-                  <p className="text-xs mt-1">Você não possui nenhuma OS pendente no momento.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <TechDashboard
+          userId={user?.id || ""}
+          productivity={techProductivity}
+          timeline={techTimeline}
+          goalsProgress={calculateTechGoalsProgress(
+            techProductivity.totalDelivered,
+            techProductivity.realizedCommission,
+            techGoals
+          )}
+          goalsConfig={techGoals}
+          onUpdateGoals={handleUpdateTechGoals}
+          shopRanking={techShopRanking}
+          activeQueue={techQueue}
+          onNavigateToOS={(osId) => {
+            navigate("/ordens-servico");
+          }}
+          periodLabel={
+            period === "week"
+              ? "Esta Semana"
+              : period === "month"
+              ? "Este Mês"
+              : period === "quarter"
+              ? "Trimestre"
+              : period === "year"
+              ? "Este Ano"
+              : "Personalizado"
+          }
+        />
       )}
 
       {/* VISÃO GERAL ADMINISTRATIVA */}
