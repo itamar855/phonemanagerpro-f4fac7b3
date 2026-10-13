@@ -33,15 +33,18 @@ export function getProjectRefFromUrl(rawUrl?: string): string | null {
 
 /**
  * Valida defensivamente o formato da publishable API key do Supabase.
- * Aceita o padrão moderno ('sb_publishable_...') e mantém compatibilidade
- * transitória com JWT anon legado ('eyJ...').
+ * Trata a chave como string opaca:
+ * - Aceita o padrão moderno ('sb_publishable_...')
+ * - Mantém compatibilidade transitória com anon legado ('eyJ...')
+ * - SEM exigir formato JWT, SEM decodificar payload (zero atob) e SEM key.split('.').
  * Nunca exibe o valor da chave em logs ou mensagens de erro.
  */
 export function isValidPublishableKeyFormat(key?: string): boolean {
   if (!key || typeof key !== 'string') return false;
   const trimmed = key.trim();
+  if (!trimmed) return false;
   if (trimmed.startsWith('sb_publishable_')) return true;
-  if (trimmed.startsWith('eyJ') && trimmed.split('.').length === 3) return true;
+  if (trimmed.startsWith('eyJ')) return true;
   return false;
 }
 

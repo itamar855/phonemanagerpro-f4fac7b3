@@ -43,16 +43,32 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       expect(isValidPublishableKeyFormat('  sb_publishable_with_spaces  ')).toBe(true);
     });
 
-    it('deve aceitar chave JWT anon legada durante o período transitório', () => {
+    it('deve aceitar chave JWT anon legada durante o período transitório como string opaca', () => {
       expect(isValidPublishableKeyFormat(FAKE_LEGACY_JWT)).toBe(true);
+      // Chave legada opaca não exige estrutura estrita de 3 partes com dots
+      expect(isValidPublishableKeyFormat('eyJ_legacy_token_opaque_format')).toBe(true);
     });
 
-    it('deve rejeitar chaves ausentes, vazias ou em formatos inválidos', () => {
+    it('deve rejeitar chaves ausentes, vazias ou em formatos inválidos (falha controlada)', () => {
       expect(isValidPublishableKeyFormat('')).toBe(false);
+      expect(isValidPublishableKeyFormat('   ')).toBe(false);
       expect(isValidPublishableKeyFormat(undefined)).toBe(false);
       expect(isValidPublishableKeyFormat(null as any)).toBe(false);
       expect(isValidPublishableKeyFormat('invalid_random_string')).toBe(false);
-      expect(isValidPublishableKeyFormat('eyJ_incomplete_jwt_only_one_part')).toBe(false);
+      expect(isValidPublishableKeyFormat('random_token_1234567890')).toBe(false);
+    });
+
+    it('não deve utilizar key.split(".") para interpretar ou validar a API key (tratamento opaco)', () => {
+      const splitSpy = vi.spyOn(String.prototype, 'split');
+
+      expect(isValidPublishableKeyFormat(FAKE_MODERN_KEY)).toBe(true);
+      expect(isValidPublishableKeyFormat(FAKE_LEGACY_JWT)).toBe(true);
+
+      // Garante que nenhum split com '.' foi executado sobre as chaves
+      const dotSplitsOnKey = splitSpy.mock.calls.filter((args: any) => args[0] === '.');
+      expect(dotSplitsOnKey).toHaveLength(0);
+
+      splitSpy.mockRestore();
     });
   });
 
@@ -83,7 +99,7 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       expect((client as any).supabaseKey).toBe(FAKE_LEGACY_JWT);
     });
 
-    it('não deve executar nenhuma chamada atob() ao validar ou utilizar chave sb_publishable', () => {
+    it('não deve executar nenhuma chamada atob() ao validar ou utilizar chave sb_publishable ou legacy anon', () => {
       let atobCalled = false;
       const originalAtob = globalThis.atob;
       if (typeof originalAtob === 'function') {
@@ -93,22 +109,30 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
         });
       }
 
-      // Validação do formato
-      const isValid = isValidPublishableKeyFormat(FAKE_MODERN_KEY);
-      expect(isValid).toBe(true);
+      // Validação do formato moderno e legado (zero atob)
+      expect(isValidPublishableKeyFormat(FAKE_MODERN_KEY)).toBe(true);
+      expect(isValidPublishableKeyFormat(FAKE_LEGACY_JWT)).toBe(true);
 
-      // Derivação do ref exclusivamente via URL
+      // Derivação do ref exclusivamente via URL (zero atob)
       const projectRef = getProjectRefFromUrl(VALID_SUPABASE_URL);
       expect(projectRef).toBe('hzrqtolfbwnmmeliazmh');
 
       // Instanciação
-      const client = createClient(VALID_SUPABASE_URL, FAKE_MODERN_KEY, {
+      const clientModern = createClient(VALID_SUPABASE_URL, FAKE_MODERN_KEY, {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
         },
       });
-      expect(client).toBeDefined();
+      expect(clientModern).toBeDefined();
+
+      const clientLegacy = createClient(VALID_SUPABASE_URL, FAKE_LEGACY_JWT, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+      expect(clientLegacy).toBeDefined();
 
       // Confirmação de que atob NUNCA foi chamado
       expect(atobCalled).toBe(false);
