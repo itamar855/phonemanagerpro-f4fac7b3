@@ -5,11 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { 
   Wrench, Clock, CheckCircle2, AlertCircle, Package, 
-  Smartphone, User, Calendar, DollarSign, ChevronRight, Store, FileText
+  Smartphone, Calendar, Store, FileText
 } from "lucide-react";
 
-const formatCurrency = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+interface PublicOrder {
+  order_number: number;
+  status: string;
+  device_brand: string;
+  device_model: string;
+  requested_service: string;
+  estimated_completion: string | null;
+  created_at: string;
+  store_name: string;
+}
 
 const statusConfig: Record<string, { label: string; color: string; icon: any; iconColor: string; desc: string }> = {
   open:             { label: "Recebida pela loja", color: "bg-blue-500/10 border-blue-500/20 text-blue-500", iconColor: "text-blue-500 bg-blue-500/20", icon: Clock,        desc: "Aparelho deu entrada. Aguardando avaliação." },
@@ -27,26 +35,23 @@ const timelineSteps = ["open", "analyzing", "waiting_approval", "repairing", "re
 
 export default function OSPublica() {
   const { id } = useParams<{ id: string }>();
-  const [order, setOrder] = useState<any>(null);
-  const [store, setStore] = useState<any>(null);
+  const [order, setOrder] = useState<PublicOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
-      const { data, error } = await supabase
-        .from("service_orders" as any)
-        .select("*")
-        .eq("id", id)
-        .maybeSingle();
+      const { data, error: rpcError } = await supabase.rpc("get_public_service_order" as any, {
+        p_order_id: id,
+      });
 
-      if (error || !data) { setError(true); setLoading(false); return; }
-      setOrder(data);
-
-      if ((data as any).store_id) {
-        const { data: storeData } = await supabase.from("stores").select("*").eq("id", (data as any).store_id).maybeSingle();
-        setStore(storeData);
+      if (rpcError || !data || data.length === 0) {
+        setError(true);
+        setLoading(false);
+        return;
       }
+
+      setOrder(data[0] as PublicOrder);
       setLoading(false);
     };
     if (id) fetch();
@@ -70,7 +75,6 @@ export default function OSPublica() {
     </div>
   );
 
-  const finalPrice = Number(order.final_price || order.estimated_price || 0);
   const isCancelled = order.status === "cancelled";
   
   // Tenta encontrar em que passo da linha do tempo normal a OS está
@@ -100,7 +104,7 @@ export default function OSPublica() {
           </div>
           
           <h1 className="text-2xl font-display font-black text-white tracking-tight">
-            {store?.name || "Assistência Técnica"}
+            {order.store_name}
           </h1>
           
           <div className="flex items-center gap-3 mt-4 text-xs font-medium text-white/60">
@@ -146,11 +150,8 @@ export default function OSPublica() {
               <div className="relative border-l-2 border-muted ml-3 space-y-8 pb-2">
                 {timelineSteps.map((step, index) => {
                   const sc = statusConfig[step];
-                  const Icon = sc.icon;
-                  // Se a OS for entregue, todos os passos estão verdinhos/prontos. 
-                  // Se não, os passos passados são "prontos" (verdes) e o atual é "ativo".
                   
-                  let state = "pending"; // pending, active, done
+                  let state = "pending";
                   if (order.status === "delivered") {
                     state = "done";
                   } else if (order.status === "ready" && step === "delivered") {
@@ -161,26 +162,20 @@ export default function OSPublica() {
                     state = "active";
                   }
 
-                  // Cores da bolinha
                   let dotColor = "bg-muted border-muted-foreground";
-                  let iconColor = "text-muted-foreground";
                   
                   if (state === "done") {
                     dotColor = "bg-green-500 border-green-500";
-                    iconColor = "text-white";
                   } else if (state === "active") {
-                    dotColor = `bg-background border-4 ${sc.iconColor.split(' ')[0].replace('text-', 'border-')}`; // Pega a cor base original
-                    iconColor = sc.iconColor.split(' ')[0]; // text-blue-500
+                    dotColor = `bg-background border-4 ${sc.iconColor.split(' ')[0].replace('text-', 'border-')}`;
                   }
 
                   return (
                     <div key={step} className="relative pl-6">
-                      {/* Bolinha na linha */}
                       <div className={`absolute -left-[11px] top-1/2 -translate-y-1/2 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors ${dotColor}`}>
                          {state === "done" && <CheckCircle2 className="h-3 w-3 text-white" />}
                       </div>
                       
-                      {/* Conteúdo do bloco */}
                       <div className={`flex flex-col ${state === "pending" ? 'opacity-40 grayscale' : ''}`}>
                          <p className={`font-bold text-sm ${state === "active" ? 'text-foreground' : 'text-muted-foreground'}`}>{sc.label}</p>
                          {state === "active" && step === "repairing" && (
@@ -198,33 +193,15 @@ export default function OSPublica() {
           </Card>
         )}
 
-        {/* ── 4. DADOS DO APARELHO E ORÇAMENTO ────────────────────────────── */}
+        {/* ── 4. DADOS DO APARELHO E SERVIÇO ───────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
           <Card className="border-border shadow-sm bg-muted/20 rounded-2xl overflow-hidden">
             <CardContent className="p-5 flex flex-col justify-center h-full">
                <div className="flex items-center gap-2 mb-3">
                  <Smartphone className="h-4 w-4 text-muted-foreground" />
-                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Seu Aparelho</h3>
+                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Aparelho</h3>
                </div>
                <p className="font-display font-bold text-xl">{order.device_brand} {order.device_model}</p>
-               <div className="flex items-center flex-wrap gap-2 mt-2">
-                 {order.device_color && <Badge variant="secondary" className="text-[10px]">Cor: {order.device_color}</Badge>}
-                 <Badge variant="outline" className="text-[10px] text-muted-foreground">Senha: {order.device_password || "Não informada"}</Badge>
-               </div>
-               
-               <div className="mt-4 pt-4 border-t border-border/50">
-                  <p className="text-xs text-muted-foreground font-semibold uppercase">Defeito Reportado</p>
-                  <p className="text-sm font-medium mt-1">"{order.reported_defect}"</p>
-               </div>
-
-               {order.device_is_off && (
-                 <div className="mt-3 p-3 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold leading-normal">
-                   ⚠️ APARELHO RECEBIDO DESLIGADO
-                   <span className="block font-medium text-muted-foreground mt-0.5 text-[11.5px] leading-relaxed">
-                     Não temos como testar seus periféricos e afirmar que estão em perfeito funcionamento.
-                   </span>
-                 </div>
-               )}
             </CardContent>
           </Card>
 
@@ -249,39 +226,13 @@ export default function OSPublica() {
           </Card>
         </div>
 
-        {/* ── 5. BOTÃO DE ORÇAMENTO TOTAL (PREMIUM) ───────────────────────── */}
-        {finalPrice > 0 && (
-          <div className="mt-6 border-2 border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 to-green-500/5 rounded-2xl p-5 shadow-lg relative overflow-hidden">
-            <div className="absolute right-0 bottom-0 opacity-10">
-              <DollarSign className="h-32 w-32 -mb-8 -mr-8 text-emerald-500" />
-            </div>
-            
-            <p className="text-xs font-black text-emerald-600 uppercase tracking-widest flex items-center gap-1.5 mb-1">
-              {order.status === 'delivered' || order.status === 'ready' ? (
-                <><CheckCircle2 className="h-3.5 w-3.5" /> Total Aprovadoizado</>
-              ) : (
-                "Orçamento Estimado"
-              )}
-            </p>
-            <div className="flex flex-col">
-              <span className="font-display font-black text-3xl md:text-5xl tracking-tighter text-emerald-600">
-                 {formatCurrency(finalPrice)}
-              </span>
-              {(order.status === 'delivered' || order.status === 'ready') && order.payment_method && (
-                 <p className="text-xs text-emerald-700/80 font-medium mt-1">Pago com {order.payment_method}</p>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* ── FOOTER DA ASSISTÊNCIA ───────────────────────────────────────── */}
         <div className="mt-8 pt-6 border-t border-border/50 text-center space-y-2">
            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold flex items-center justify-center gap-1">
-             Garantido por {store?.name || "Nossa Loja"} <CheckCircle2 className="h-3 w-3 text-primary" />
+             Garantido por {order.store_name} <CheckCircle2 className="h-3 w-3 text-primary" />
            </p>
            <p className="text-[10px] text-muted-foreground/60 max-w-sm mx-auto leading-relaxed">
              Dúvidas? Entre em contato com a assistência onde você deixou o aparelho. Mantenha seu canhoto (papel) em segurança para realizar a retirada.
-             {store?.phone && ` Telefone: ${store.phone}`} {store?.whatsapp && ` WhatsApp: ${store.whatsapp}`}
            </p>
            <p className="text-[9px] text-muted-foreground/30 font-mono mt-4 pt-2">
              Powered by Cell Manager PRO v2
