@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Package, Plus, Trash2, Loader2, Cpu, Image, Upload, X, ShoppingCart, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { convertToWebP } from "@/utils/imageOptimizer";
+import { openComprovante, extractStoragePath } from "@/lib/storageHelper";
 
 interface Product {
   id: string;
@@ -50,6 +51,8 @@ interface OsPartsProps {
 
 const formatMonetary = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
   const { user } = useAuth();
@@ -120,11 +123,15 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
   }, [orderId, storeId, readonly]);
 
   const uploadReceipt = async (file: File, prefix: string): Promise<string | null> => {
+    if (!storeId || !UUID_REGEX.test(storeId)) {
+      toast.error("Loja da Ordem de Serviço não identificada ou inválida. Não é possível anexar comprovante sem a loja vinculada.");
+      return null;
+    }
     const optimizedFile = await convertToWebP(file);
     const safeName = `${prefix}-${Date.now()}-${optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_")}`;
     const { data, error } = await supabase.storage
       .from("comprovantes")
-      .upload(`pecas/${safeName}`, optimizedFile, { upsert: true });
+      .upload(`${storeId}/pecas/${safeName}`, optimizedFile, { upsert: false });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;
@@ -184,18 +191,38 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
     }
     if (!user) return;
 
+    if (!storeId || !UUID_REGEX.test(storeId)) {
+      toast.error("Loja da Ordem de Serviço não identificada ou inválida. Não é possível cadastrar a peça.");
+      return;
+    }
+
     setAdding(true);
     try {
       // 1. Upload comprovante de pagamento (se fornecido)
       let receiptUrl: string | null = null;
       if (newPart.receipt) {
         receiptUrl = await uploadReceipt(newPart.receipt, `os-${orderId.slice(0, 8)}`);
+        if (!receiptUrl) {
+          setAdding(false);
+          return;
+        }
       }
 
       // 1b. Upload comprovante do pedido ao fornecedor (se fornecido)
       let orderReceiptUrl: string | null = null;
       if (newPart.orderReceipt) {
         orderReceiptUrl = await uploadReceipt(newPart.orderReceipt, `pedido-os-${orderId.slice(0, 8)}`);
+        if (!orderReceiptUrl) {
+          // Se falhou o segundo upload, desfaz o upload do primeiro para não deixar arquivo órfão
+          if (receiptUrl) {
+            const firstPath = extractStoragePath(receiptUrl);
+            if (firstPath) {
+              await supabase.storage.from("comprovantes").remove([firstPath]);
+            }
+          }
+          setAdding(false);
+          return;
+        }
       }
 
       const costPrice = parseFloat(newPart.cost_price) || 0;
@@ -608,7 +635,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                     href={(item as any).receipt_url || (item as any).products?.parts_payment_voucher}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[10px] text-primary underline flex items-center gap-0.5 mt-0.5"
+                    onClick={(e) => openComprovante((item as any).receipt_url || (item as any).products?.parts_payment_voucher, e)}
+                    className="text-[10px] text-primary underline flex items-center gap-0.5 mt-0.5 cursor-pointer"
                   >
                     <CreditCard className="h-2.5 w-2.5" /> Comprovante de Pagamento
                   </a>
@@ -618,7 +646,8 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
                     href={(item as any).supplier_order_receipt_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[10px] text-blue-500 underline flex items-center gap-0.5 mt-0.5"
+                    onClick={(e) => openComprovante((item as any).supplier_order_receipt_url, e)}
+                    className="text-[10px] text-blue-500 underline flex items-center gap-0.5 mt-0.5 cursor-pointer"
                   >
                     <ShoppingCart className="h-2.5 w-2.5" /> Comprovante do Pedido
                   </a>
