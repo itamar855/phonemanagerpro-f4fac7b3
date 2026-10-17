@@ -21,37 +21,19 @@ import { logAction } from "@/utils/auditLogger";
 import { SuppliersTab } from "@/components/features/caixa/SuppliersTab";
 import { convertToWebP } from "@/utils/imageOptimizer";
 import { openComprovante } from "@/lib/storageHelper";
-
-interface CashEntry {
-  id: string;
-  type: "entrada" | "saida" | "sangria" | "abertura";
-  amount: number;
-  description: string;
-  payment_method: string;
-  confirmed: boolean;
-  receipt_url: string | null;
-  supplier_order_receipt_url?: string | null;
-  created_at: string;
-}
-
-interface CashRegister {
-  id: string;
-  store_id: string;
-  opened_by: string;
-  opened_at: string;
-  closed_at: string | null;
-  opening_amount: number;
-  closing_amount: number | null;
-  expected_amount: number | null;
-  difference: number | null;
-  difference_reason?: string | null;
-  closing_note?: string | null;
-  opening_receipt_url?: string | null;
-  closing_receipt_url?: string | null;
-  status: "open" | "closed";
-  profiles?: { display_name: string };
-  stores?: { name: string };
-}
+import {
+  CashEntry,
+  CashRegister,
+  Supplier,
+  paymentLabels,
+  statusConfig,
+  formatCurrency,
+  getMistoLabel,
+  getMistoValues,
+} from "@/components/features/caixa/types";
+import { CashActionModals } from "@/components/features/caixa/CashActionModals";
+import { CashRegisterDetailModal } from "@/components/features/caixa/CashRegisterDetailModal";
+import { CashEntryDetailModal } from "@/components/features/caixa/CashEntryDetailModal";
 
 const Caixa = () => {
   const { user, userRole, userPermissions, activeStoreId, userStoreIds } = useAuth();
@@ -103,11 +85,6 @@ const Caixa = () => {
   const [loadingHistoryEntries, setLoadingHistoryEntries] = useState(false);
   
   // Suppliers state
-  interface Supplier {
-    id: string; store_id: string | null; name: string; document: string | null;
-    phone: string | null; email: string | null; category: string | null;
-    notes: string | null; credit_balance: number; created_at: string;
-  }
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierDialog, setSupplierDialog] = useState(false);
   const [paySupplierDialog, setPaySupplierDialog] = useState(false);
@@ -120,45 +97,7 @@ const Caixa = () => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [activeTarget, setActiveTarget] = useState<"open" | "close" | "confirm" | null>(null);
 
-  const paymentLabels: Record<string, string> = {
-    dinheiro: "Dinheiro",
-    pix: "PIX",
-    cartao_credito: "Crédito",
-    cartao_debito: "Débito",
-    transferencia: "Transferência",
-    misto: "Misto"
-  };
-
-  const getMistoValues = (description: string | null): Record<string, number> => {
-    if (!description) return {};
-    const match = description.match(/\[MISTO:(\{.*?\})\]/);
-    if (match && match[1]) {
-      try { return JSON.parse(match[1]); } catch { return {}; }
-    }
-    return {};
-  };
-
   const navigate = useNavigate();
-
-  const statusConfig: Record<string, { label: string; color: string }> = {
-    open:             { label: "Aberta",               color: "bg-blue-500/15 text-blue-400 border-blue-500/20" },
-    analyzing:        { label: "Em Análise",           color: "bg-amber-500/15 text-amber-500 border-amber-500/20" },
-    waiting_part:     { label: "Aguardando Peça",      color: "bg-orange-500/15 text-orange-400 border-orange-500/20" },
-    repairing:        { label: "Em Reparo",            color: "bg-purple-500/15 text-purple-400 border-purple-500/20" },
-    waiting_approval: { label: "Aguardando Aprovação", color: "bg-amber-500/15 text-amber-500 border-amber-500/20" },
-    ready:            { label: "Pronta p/ Retirada",   color: "bg-primary/15 text-primary border-primary/20" },
-    delivered:        { label: "Entregue",             color: "bg-muted text-muted-foreground border-border" },
-    cancelled:        { label: "Cancelada",            color: "bg-destructive/15 text-destructive border-destructive/20" },
-  };
-
-  const getMistoLabel = (description: string | null): string => {
-    const vals = getMistoValues(description);
-    const parts: string[] = [];
-    if (vals.dinheiro > 0) parts.push(`Dinheiro: ${formatCurrency(vals.dinheiro)}`);
-    if (vals.pix > 0) parts.push(`PIX: ${formatCurrency(vals.pix)}`);
-    if (vals.cartao_credito > 0) parts.push(`Cartão: ${formatCurrency(vals.cartao_credito)}`);
-    return parts.length > 0 ? `Misto (${parts.join(" | ")})` : "Misto";
-  };
 
   const fetchRegister = async (storeId: string | null) => {
     if (!storeId) return;
@@ -865,7 +804,7 @@ const Caixa = () => {
     setLoading(false);
   };
 
-  const formatCurrency = (val: number | null) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val || 0);
+
 
   return (
     <div className="space-y-4">
@@ -1156,691 +1095,90 @@ const Caixa = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Dialogs */}
-      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        <DialogContent>
-          <DialogTitle>Abrir Caixa</DialogTitle>
-          <div className="space-y-4 mt-2">
-            <Label className="text-xs">Fundo inicial (R$)</Label>
-            <Input type="number" step="0.01" value={openForm.amount} onChange={e => setOpenForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-            <div className="space-y-2">
-              <Label className="text-xs">Comprovante</Label>
-              <Input type="file" onChange={e => setOpenForm(f => ({ ...f, receipt: e.target.files?.[0] || null }))} />
-            </div>
-            <Button className="w-full" onClick={handleOpenRegister} disabled={loading}>Abrir Caixa</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modais de Ação do Caixa */}
+      <CashActionModals
+        openDialog={openDialog}
+        setOpenDialog={setOpenDialog}
+        openForm={openForm}
+        setOpenForm={setOpenForm}
+        handleOpenRegister={handleOpenRegister}
+        confirmDialog={confirmDialog}
+        setConfirmDialog={setConfirmDialog}
+        confirmEntry={confirmEntry}
+        confirmFile={confirmFile}
+        setConfirmFile={setConfirmFile}
+        confirmOrderFile={confirmOrderFile}
+        setConfirmOrderFile={setConfirmOrderFile}
+        handleConfirmEntry={handleConfirmEntry}
+        closeDialog={closeDialog}
+        setCloseDialog={setCloseDialog}
+        closeForm={closeForm}
+        setCloseForm={setCloseForm}
+        handleCloseRegister={handleCloseRegister}
+        isBlind={isBlind}
+        expectedCash={expectedCash}
+        totalPix={totalPix}
+        totalCard={totalCard}
+        totalTotal={totalTotal}
+        difference={difference}
+        sangriaDialog={sangriaDialog}
+        setSangriaDialog={setSangriaDialog}
+        sangriaForm={sangriaForm}
+        setSangriaForm={setSangriaForm}
+        handleSangria={handleSangria}
+        entryDialog={entryDialog}
+        setEntryDialog={setEntryDialog}
+        entryForm={entryForm}
+        setEntryForm={setEntryForm}
+        handleEntry={handleEntry}
+        blockCloseDialog={blockCloseDialog}
+        setBlockCloseDialog={setBlockCloseDialog}
+        pendingCount={pendingCount}
+        justDialogOpened={justDialogOpened}
+        setJustDialogOpened={setJustDialogOpened}
+        justification={justification}
+        setJustification={setJustification}
+        pendingAction={pendingAction}
+        setPendingAction={setPendingAction}
+        handleDeleteEntry={handleDeleteEntry}
+        handleUnconfirmEntry={handleUnconfirmEntry}
+        handleReopenRegister={handleReopenRegister}
+        loading={loading}
+      />
 
-      <Dialog open={confirmDialog} onOpenChange={setConfirmDialog}>
-        <DialogContent>
-          <DialogTitle>Confirmar Lançamento</DialogTitle>
-          <div className="space-y-4 mt-2">
-            <p className="text-xs">{confirmEntry?.description} - {confirmEntry && formatCurrency(Number(confirmEntry.amount))}</p>
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-1"><CreditCard className="h-3 w-3" /> Comprovante de Pagamento (obrigatório)</Label>
-              <Input type="file" accept="image/*,application/pdf" onChange={e => setConfirmFile(e.target.files?.[0] || null)} />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-1 text-blue-500"><Receipt className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor (opcional)</Label>
-              <Input type="file" accept="image/*,application/pdf" onChange={e => setConfirmOrderFile(e.target.files?.[0] || null)} />
-            </div>
-            <Button className="w-full" onClick={() => handleConfirmEntry(false)} disabled={loading || !confirmFile}>Confirmar</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modal de Detalhes do Caixa Fechado (Histórico) */}
+      <CashRegisterDetailModal
+        open={viewDialog}
+        onOpenChange={setViewDialog}
+        viewRegister={viewRegister}
+        historyEntries={historyEntries}
+        loadingHistoryEntries={loadingHistoryEntries}
+      />
 
-      <Dialog open={closeDialog} onOpenChange={setCloseDialog}>
-        <DialogContent>
-          <DialogTitle>Fechar Caixa</DialogTitle>
-          <div className="space-y-4 mt-2">
-            {!isBlind && (
-              <div className="space-y-1 bg-muted/30 p-3 rounded-lg border border-border/50">
-                <div className="flex justify-between text-[10px] uppercase text-muted-foreground font-bold">
-                  <span>Dinheiro (Gaveta):</span>
-                  <span>{formatCurrency(expectedCash)}</span>
-                </div>
-                <div className="flex justify-between text-[10px] uppercase text-muted-foreground font-bold border-b pb-1">
-                  <span>PIX e Cartão:</span>
-                  <span>{formatCurrency(totalPix + totalCard)}</span>
-                </div>
-                <div className="flex justify-between text-xs font-bold pt-1 text-primary">
-                  <span>Total Geral Esperado:</span>
-                  <span>{formatCurrency(totalTotal)}</span>
-                </div>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Valor Total Informado (R$)</Label>
-              <Input type="number" step="0.01" value={closeForm.amount} onChange={e => setCloseForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-              {!isBlind && (
-                <p className={`text-xs font-semibold ${Math.abs(difference) < 0.1 ? "text-primary" : "text-destructive"}`}>
-                  Diferença: {formatCurrency(difference)}
-                </p>
-              )}
-            </div>
-            {Math.abs(difference) > 0.1 && (
-              <Textarea value={closeForm.reason} onChange={e => setCloseForm(f => ({ ...f, reason: e.target.value }))} placeholder="Motivo da diferença..." className="min-h-[60px]" />
-            )}
-            <div className="space-y-2">
-              <Label className="text-xs">Comprovante</Label>
-              <Input type="file" onChange={e => setCloseForm(f => ({ ...f, receipt: e.target.files?.[0] || null }))} />
-            </div>
-            <Button className="w-full bg-destructive text-white" onClick={handleCloseRegister} disabled={loading || !closeForm.amount}>Fechar Caixa</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={sangriaDialog} onOpenChange={setSangriaDialog}>
-        <DialogContent>
-          <DialogTitle>Realizar Sangria</DialogTitle>
-          <div className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Valor da Sangria (Dinheiro)</Label>
-              <Input type="number" step="0.01" value={sangriaForm.amount} onChange={e => setSangriaForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Descrição / Destino</Label>
-              <Input value={sangriaForm.description} onChange={e => setSangriaForm(f => ({ ...f, description: e.target.value }))} placeholder="Ex: Retirada para o banco, pagamento fornecedor..." />
-            </div>
-            <Button className="w-full bg-yellow-600 hover:bg-yellow-700 text-white" onClick={handleSangria} disabled={loading || !sangriaForm.amount}>
-              Confirmar Sangria
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={entryDialog} onOpenChange={setEntryDialog}>
-        <DialogContent>
-          <DialogTitle>Novo Lançamento</DialogTitle>
-          <div className="space-y-4 mt-2">
-             <Select value={entryForm.type} onValueChange={v => setEntryForm(f => ({ ...f, type: v as any }))}>
-               <SelectTrigger><SelectValue /></SelectTrigger>
-               <SelectContent><SelectItem value="entrada">Entrada</SelectItem><SelectItem value="saida">Saída</SelectItem></SelectContent>
-             </Select>
-             <Input value={entryForm.description} onChange={e => setEntryForm(f => ({ ...f, description: e.target.value }))} placeholder="Descrição" />
-             <Input type="number" step="0.01" value={entryForm.amount} onChange={e => setEntryForm(f => ({ ...f, amount: e.target.value }))} placeholder="Valor" />
-             <Button className="w-full" onClick={handleEntry} disabled={loading}>Salvar</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={viewDialog} onOpenChange={setViewDialog}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogTitle>Detalhes do Caixa Fechado</DialogTitle>
-          {viewRegister && (
-            <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-muted/20 p-4 rounded-lg border">
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Abertura</p>
-                  <p className="font-medium text-sm">{new Date(viewRegister.opened_at).toLocaleString("pt-BR")}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Fechamento</p>
-                  <p className="font-medium text-sm">{viewRegister.closed_at ? new Date(viewRegister.closed_at).toLocaleString("pt-BR") : "-"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Usuário</p>
-                  <p className="font-medium text-sm">{viewRegister.profiles?.display_name || "Desconhecido"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Loja</p>
-                  <p className="font-medium text-sm text-primary">{viewRegister.stores?.name || "Desconhecida"}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Card className="border-border/50">
-                  <CardContent className="p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase">Fundo Inicial</p>
-                    <p className="font-bold text-blue-500">{formatCurrency(viewRegister.opening_amount)}</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/50">
-                  <CardContent className="p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase">Valor Informado</p>
-                    <p className="font-bold text-primary">{formatCurrency(viewRegister.closing_amount)}</p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/50">
-                  <CardContent className="p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase">Valor Esperado</p>
-                    <p className="font-bold text-muted-foreground">{formatCurrency(viewRegister.expected_amount)}</p>
-                  </CardContent>
-                </Card>
-                <Card className={`border-border/50 ${Math.abs(viewRegister.difference || 0) > 0 ? "border-destructive/30 bg-destructive/5" : ""}`}>
-                  <CardContent className="p-3">
-                    <p className="text-[10px] text-muted-foreground uppercase">Diferença</p>
-                    <p className={`font-bold ${Math.abs(viewRegister.difference || 0) > 0 ? "text-destructive" : "text-primary"}`}>
-                      {formatCurrency(viewRegister.difference)}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-              
-              {viewRegister.difference_reason && (
-                <div className="bg-destructive/10 border border-destructive/20 p-3 rounded-md text-sm text-destructive">
-                  <p className="font-semibold text-xs uppercase mb-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3"/> Motivo da Diferença</p>
-                  <p>{viewRegister.difference_reason}</p>
-                </div>
-              )}
-              {viewRegister.closing_note && (
-                <div className="bg-muted p-3 rounded-md text-sm">
-                  <p className="font-semibold text-xs uppercase mb-1">Observação do Fechamento</p>
-                  <p>{viewRegister.closing_note}</p>
-                </div>
-              )}
-
-              {(viewRegister.opening_receipt_url || viewRegister.closing_receipt_url) && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {viewRegister.opening_receipt_url && (
-                    <a 
-                      href={viewRegister.opening_receipt_url} 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      onClick={(e) => openComprovante(viewRegister.opening_receipt_url, e)}
-                      className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:underline font-semibold bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20 cursor-pointer"
-                    >
-                      📂 Comprovante de Abertura
-                    </a>
-                  )}
-                  {viewRegister.closing_receipt_url && (
-                    <a 
-                      href={viewRegister.closing_receipt_url} 
-                      target="_blank" 
-                      rel="noreferrer" 
-                      onClick={(e) => openComprovante(viewRegister.closing_receipt_url, e)}
-                      className="inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 cursor-pointer"
-                    >
-                      📂 Comprovante de Fechamento
-                    </a>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-6 border rounded-lg overflow-hidden">
-                <div className="bg-muted px-4 py-2 border-b">
-                  <h3 className="text-sm font-semibold">Lançamentos ({historyEntries.length})</h3>
-                </div>
-                <div className="p-2 space-y-2 max-h-64 overflow-y-auto">
-                  {loadingHistoryEntries ? (
-                    <p className="text-center py-4 text-xs text-muted-foreground">Carregando...</p>
-                  ) : historyEntries.length === 0 ? (
-                    <p className="text-center py-4 text-xs text-muted-foreground">Nenhum lançamento registrado neste caixa.</p>
-                  ) : (
-                    historyEntries.map(entry => (
-                      <div key={entry.id} className="flex items-center justify-between text-xs border rounded-lg p-2 bg-muted/20">
-                        <div className="min-w-0 flex-1 mr-2">
-                          <p className="font-medium truncate">{(entry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
-                          <p className="text-muted-foreground">
-                            {entry.payment_method === "misto" ? getMistoLabel(entry.description) : (paymentLabels[entry.payment_method || ""] || "Outro")} · {new Date(entry.created_at).toLocaleString("pt-BR")}
-                          </p>
-                          {entry.receipt_url && (
-                            <div className="flex items-center gap-2 mt-1">
-                              <a 
-                                href={entry.receipt_url} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                onClick={(e) => openComprovante(entry.receipt_url, e)}
-                                className="inline-flex items-center gap-1 text-[10px] text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 cursor-pointer"
-                              >
-                                📎 Comprovante
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-bold ${["entrada","abertura"].includes(entry.type) ? "text-primary" : "text-destructive"}`}>
-                            {["entrada","abertura"].includes(entry.type) ? "+" : "-"}{formatCurrency(Number(entry.amount))}
-                          </p>
-                          {!entry.confirmed && <Badge className="text-[8px] bg-orange-500/20 text-orange-600 mt-1">Não confirmado</Badge>}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={blockCloseDialog} onOpenChange={setBlockCloseDialog}>
-        <DialogContent>
-          <DialogTitle className="text-destructive flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" /> Fechamento Bloqueado
-          </DialogTitle>
-          <div className="space-y-4 mt-2 text-sm">
-            <p>Você não pode fechar o caixa pois existem pendências ou divergências financeiras:</p>
-            <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-              {pendingCount > 0 && <li>Existem <strong>{pendingCount}</strong> lançamentos pendentes de confirmação.</li>}
-              {Math.abs(difference) > 0.01 && <li>Há uma diferença de caixa no valor de <strong>{formatCurrency(difference)}</strong>.</li>}
-            </ul>
-            <p className="font-semibold text-primary mt-4">Apenas um administrador pode forçar o fechamento neste estado.</p>
-          </div>
-          <div className="flex justify-end mt-4">
-            <Button onClick={() => setBlockCloseDialog(false)}>Entendi</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={justDialogOpened} onOpenChange={setJustDialogOpened}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" /> Justificar Ação
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground italic">
-              {pendingAction?.type === "delete" ? "Esta exclusão é permanente." : 
-               pendingAction?.type === "unconfirm" ? "Este lançamento voltará a ser pendente." : 
-               "O caixa será reaberto."}
-            </p>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-primary">Campo Obrigatório: Motivo</Label>
-              <Input value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Informe o motivo desta alteração..." required className="h-10" />
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setJustDialogOpened(false)}>Cancelar</Button>
-              <Button variant={pendingAction?.type === "delete" ? "destructive" : "default"} className="flex-1" disabled={!justification || loading}
-                onClick={async () => {
-                  if (!pendingAction) return;
-                  if (pendingAction.type === "delete") await handleDeleteEntry(pendingAction.id, justification);
-                  if (pendingAction.type === "unconfirm") await handleUnconfirmEntry(pendingAction.id, justification);
-                  if (pendingAction.type === "reopen") await handleReopenRegister(pendingAction.id, justification);
-                  setJustDialogOpened(false);
-                  setPendingAction(null);
-                }}
-              >
-                {loading ? "Processando..." : "Confirmar"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Detalhes do Lançamento Individual */}
-      <Dialog open={entryDetailDialog} onOpenChange={(open) => { setEntryDetailDialog(open); if (!open) setSelectedEntry(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5 text-primary" /> Detalhes do Lançamento
-            </DialogTitle>
-          </DialogHeader>
-          {selectedEntry && (
-            <div className="space-y-4 py-2">
-              {/* Info principal */}
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2 border border-border/50">
-                <p className="font-semibold text-sm leading-snug">{(selectedEntry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    {selectedEntry.payment_method === "misto" ? getMistoLabel(selectedEntry.description) : (paymentLabels[selectedEntry.payment_method || ""] || "Outro")}
-                  </span>
-                  <span className={`font-bold text-sm ${["entrada","abertura"].includes(selectedEntry.type) ? "text-primary" : "text-destructive"}`}>
-                    {["entrada","abertura"].includes(selectedEntry.type) ? "+" : "-"}{formatCurrency(Number(selectedEntry.amount))}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{new Date(selectedEntry.created_at).toLocaleString("pt-BR")}</span>
-                  {selectedEntry.confirmed
-                    ? <Badge className="text-[10px] bg-primary/20 text-primary border-primary/30">✓ Confirmado</Badge>
-                    : <Badge className="text-[10px] bg-orange-500/20 text-orange-600">⏳ Pendente</Badge>
-                  }
-                </div>
-              </div>
-
-              {/* Informações da Ordem de Serviço / Serviço Vinculado */}
-              {loadingLinkedOrder && (
-                <div className="p-3 bg-muted/20 border border-border/40 rounded-lg text-center text-xs text-muted-foreground animate-pulse flex items-center justify-center gap-2">
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Buscando detalhes do serviço vinculado...
-                </div>
-              )}
-
-              {linkedServiceOrder && !loadingLinkedOrder && (
-                <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-primary flex items-center gap-1.5 uppercase tracking-wide">
-                      <Wrench className="h-3.5 w-3.5" /> Serviço Vinculado (OS #{linkedServiceOrder.order_number})
-                    </span>
-                    {linkedServiceOrder.status && (
-                      <Badge className={`text-[10px] px-2 py-0.5 border ${statusConfig[linkedServiceOrder.status]?.color || "bg-muted text-muted-foreground"}`}>
-                        {statusConfig[linkedServiceOrder.status]?.label || linkedServiceOrder.status}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-primary/10">
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Cliente</span>
-                      <p className="font-medium text-foreground">{linkedServiceOrder.customer_name || "—"}</p>
-                      {linkedServiceOrder.customer_phone && (
-                        <a
-                          href={`https://wa.me/55${linkedServiceOrder.customer_phone.replace(/\D/g, "")}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 mt-0.5"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Phone className="h-3 w-3" /> {linkedServiceOrder.customer_phone}
-                        </a>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Aparelho</span>
-                      <p className="font-medium text-foreground">{linkedServiceOrder.device_brand} {linkedServiceOrder.device_model}</p>
-                      {linkedServiceOrder.device_color && (
-                        <span className="text-[10px] text-muted-foreground block">Cor: {linkedServiceOrder.device_color}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="text-xs pt-1 border-t border-primary/10 space-y-0.5">
-                    {linkedServiceOrder.reported_defect && (
-                      <p><span className="text-muted-foreground text-[11px]">Defeito:</span> <span className="font-medium text-foreground">{linkedServiceOrder.reported_defect}</span></p>
-                    )}
-                    {linkedServiceOrder.requested_service && (
-                      <p><span className="text-muted-foreground text-[11px]">Serviço:</span> <span className="font-medium text-foreground">{linkedServiceOrder.requested_service}</span></p>
-                    )}
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs gap-1.5 border-primary/40 hover:bg-primary/10 text-primary font-semibold mt-1"
-                    onClick={() => handleOpenFullOs(linkedServiceOrder)}
-                  >
-                    <Eye className="h-3.5 w-3.5" /> Abrir Ordem de Serviço #{linkedServiceOrder.order_number}
-                  </Button>
-                </div>
-              )}
-
-              {/* Comprovantes existentes */}
-              {(selectedEntry.receipt_url || (selectedEntry as any).supplier_order_receipt_url) && (
-                <div className="space-y-2">
-                  <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wide">Comprovantes Anexados</p>
-                  {selectedEntry.receipt_url && (
-                    <a
-                      href={selectedEntry.receipt_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => openComprovante(selectedEntry.receipt_url, e)}
-                      className="flex items-center gap-2 text-xs text-primary font-semibold bg-primary/5 border border-primary/20 px-3 py-2 rounded-lg hover:bg-primary/10 transition-colors cursor-pointer"
-                    >
-                      <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                      Comprovante de Pagamento
-                      <ArrowUpRight className="h-3 w-3 ml-auto" />
-                    </a>
-                  )}
-                  {(selectedEntry as any).supplier_order_receipt_url && (
-                    <a
-                      href={(selectedEntry as any).supplier_order_receipt_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => openComprovante((selectedEntry as any).supplier_order_receipt_url, e)}
-                      className="flex items-center gap-2 text-xs text-blue-500 font-semibold bg-blue-500/5 border border-blue-500/20 px-3 py-2 rounded-lg hover:bg-blue-500/10 transition-colors cursor-pointer"
-                    >
-                      <Truck className="h-3.5 w-3.5 shrink-0" />
-                      Comprovante do Pedido (Fornecedor)
-                      <ArrowUpRight className="h-3 w-3 ml-auto" />
-                    </a>
-                  )}
-                </div>
-              )}
-
-              {/* Seção de confirmação embutida — só para pendentes */}
-              {!selectedEntry.confirmed && (
-                <div className="space-y-3 border border-orange-500/30 bg-orange-500/5 rounded-lg p-3">
-                  <p className="text-[10px] uppercase font-semibold text-orange-500 tracking-wide flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Confirmar este lançamento
-                  </p>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1">
-                      <CreditCard className="h-3 w-3 text-primary" /> Comprovante de Pagamento <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      className="h-8 text-xs"
-                      onChange={e => setConfirmFile(e.target.files?.[0] || null)}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1 text-blue-500">
-                      <Truck className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor <span className="text-muted-foreground">(opcional)</span>
-                    </Label>
-                    <Input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      className="h-8 text-xs"
-                      onChange={e => setConfirmOrderFile(e.target.files?.[0] || null)}
-                    />
-                  </div>
-                  <Button
-                    className="w-full h-8 text-xs"
-                    onClick={() => handleConfirmEntry(true)}
-                    disabled={loading || !confirmFile}
-                  >
-                    {loading ? "Confirmando..." : "Confirmar Lançamento"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog Completo de Visualização da OS a partir do Caixa */}
-      <Dialog open={osModalOpen} onOpenChange={setOsModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2 pr-4">
-              <span className="flex items-center gap-2">
-                <Wrench className="h-5 w-5 text-primary" />
-                Ordem de Serviço #{osModalOrder?.order_number}
-              </span>
-              {osModalOrder?.status && (
-                <Badge className={`text-xs px-2.5 py-0.5 border ${statusConfig[osModalOrder.status]?.color || "bg-muted"}`}>
-                  {statusConfig[osModalOrder.status]?.label || osModalOrder.status}
-                </Badge>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-
-          {osModalOrder && (
-            <div className="space-y-4 py-1 text-xs">
-              {/* Header com Loja e Datas */}
-              <div className="flex items-center justify-between text-muted-foreground bg-muted/30 p-2.5 rounded-lg border border-border/40">
-                <span className="flex items-center gap-1.5">
-                  <Store className="h-3.5 w-3.5" />
-                  {storeList.find(s => s.id === osModalOrder.store_id)?.name || currentRegister?.stores?.name || "Loja"}
-                </span>
-                <span>Aberta em: {new Date(osModalOrder.created_at).toLocaleString("pt-BR")}</span>
-              </div>
-
-              {/* Cliente */}
-              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 border border-border/40">
-                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
-                  <User className="h-3 w-3" /> Dados do Cliente
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Nome</span>
-                    <p className="font-medium text-sm text-foreground">{osModalOrder.customer_name || "—"}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Telefone</span>
-                    {osModalOrder.customer_phone ? (
-                      <a
-                        href={`https://wa.me/55${osModalOrder.customer_phone.replace(/\D/g, "")}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-emerald-500 hover:underline flex items-center gap-1 font-medium text-sm"
-                      >
-                        <Phone className="h-3.5 w-3.5" /> {osModalOrder.customer_phone}
-                      </a>
-                    ) : "—"}
-                  </div>
-                  {osModalOrder.customer_cpf && (
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">CPF</span>
-                      <p className="font-medium text-foreground">{osModalOrder.customer_cpf}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Aparelho */}
-              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 border border-border/40">
-                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
-                  <Smartphone className="h-3 w-3" /> Aparelho
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Marca / Modelo</span>
-                    <p className="font-medium text-foreground">{osModalOrder.device_brand} {osModalOrder.device_model}</p>
-                  </div>
-                  {osModalOrder.device_color && (
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Cor</span>
-                      <p className="font-medium text-foreground">{osModalOrder.device_color}</p>
-                    </div>
-                  )}
-                  {osModalOrder.device_imei && (
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">IMEI</span>
-                      <p className="font-medium text-foreground">{osModalOrder.device_imei}</p>
-                    </div>
-                  )}
-                  {osModalOrder.device_condition && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground block text-[11px]">Condição / Avarias</span>
-                      <p className="font-medium text-foreground">{osModalOrder.device_condition}</p>
-                    </div>
-                  )}
-                  {osModalOrder.device_accessories && (
-                    <div className="col-span-2">
-                      <span className="text-muted-foreground block text-[11px]">Acessórios Deixados</span>
-                      <p className="font-medium text-foreground">{osModalOrder.device_accessories}</p>
-                    </div>
-                  )}
-                </div>
-                {osModalOrder.device_is_off && (
-                  <div className="mt-1 p-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded text-[11px] font-semibold">
-                    ⚠️ Aparelho deu entrada desligado no estabelecimento
-                  </div>
-                )}
-              </div>
-
-              {/* Serviço & Diagnóstico */}
-              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 border border-border/40">
-                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
-                  <Wrench className="h-3 w-3" /> Serviço & Valores
-                </p>
-                <div className="space-y-1 pt-1">
-                  <p><span className="text-muted-foreground">Defeito Reclamado:</span> <span className="font-medium text-foreground">{osModalOrder.reported_defect || "—"}</span></p>
-                  <p><span className="text-muted-foreground">Serviço Solicitado:</span> <span className="font-medium text-foreground">{osModalOrder.requested_service || "—"}</span></p>
-                  {osModalOrder.internal_notes && (
-                    <p><span className="text-muted-foreground">Notas Internas:</span> <span className="font-medium text-foreground">{osModalOrder.internal_notes}</span></p>
-                  )}
-                  <div className="flex items-center gap-4 pt-2 border-t border-border/30">
-                    <div>
-                      <span className="text-muted-foreground text-[11px] block">Valor Estimado</span>
-                      <span className="font-semibold">{formatCurrency(Number(osModalOrder.estimated_price || 0))}</span>
-                    </div>
-                    {osModalOrder.final_price && (
-                      <div>
-                        <span className="text-muted-foreground text-[11px] block">Valor Final</span>
-                        <span className="font-bold text-sm text-primary">{formatCurrency(Number(osModalOrder.final_price))}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Peças e Comprovantes Utilizados nesta OS */}
-              <div className="rounded-lg bg-muted/40 p-3 space-y-2 border border-border/40">
-                <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wide flex items-center gap-1">
-                  <Package className="h-3 w-3" /> Peças Utilizadas nesta OS ({osModalItems.length})
-                </p>
-                {loadingOsItems ? (
-                  <p className="text-muted-foreground py-2 text-center">Carregando peças...</p>
-                ) : osModalItems.length === 0 ? (
-                  <p className="text-muted-foreground py-1 text-center italic">Nenhuma peça cadastrada para esta OS.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {osModalItems.map((item: any) => (
-                      <div key={item.id} className="p-2.5 rounded border border-border/60 bg-background/50 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-foreground">
-                            {item.products?.name || "Peça"} {item.products?.brand ? `(${item.products.brand})` : ""}
-                          </span>
-                          <span className="font-bold text-destructive">
-                            -{formatCurrency(Number(item.unit_cost || item.cost_price || 0))}
-                          </span>
-                        </div>
-                        {item.supplier_name && (
-                          <p className="text-muted-foreground text-[11px]">
-                            Fornecedor: <span className="font-medium text-foreground">{item.supplier_name}</span>
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {item.receipt_url && (
-                            <a
-                              href={item.receipt_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => openComprovante(item.receipt_url, e)}
-                              className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium bg-primary/10 px-2 py-0.5 rounded cursor-pointer"
-                            >
-                              <CreditCard className="h-3 w-3" /> Comprovante de Pagamento ↗
-                            </a>
-                          )}
-                          {item.supplier_order_receipt_url && (
-                            <a
-                              href={item.supplier_order_receipt_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => openComprovante(item.supplier_order_receipt_url, e)}
-                              className="text-[11px] text-blue-500 hover:underline flex items-center gap-1 font-medium bg-blue-500/10 px-2 py-0.5 rounded cursor-pointer"
-                            >
-                              <Truck className="h-3 w-3" /> Comprovante do Pedido (Fornecedor) ↗
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Botões de Ação no Rodapé */}
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => {
-                    setOsModalOpen(false);
-                    navigate("/ordens-servico");
-                  }}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> Ir para Tela de Ordens de Serviço
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setOsModalOpen(false)}
-                >
-                  Fechar
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Modal de Detalhes de Lançamento e Ordem de Serviço Vinculada */}
+      <CashEntryDetailModal
+        entryDetailDialog={entryDetailDialog}
+        setEntryDetailDialog={setEntryDetailDialog}
+        selectedEntry={selectedEntry}
+        setSelectedEntry={setSelectedEntry}
+        linkedServiceOrder={linkedServiceOrder}
+        loadingLinkedOrder={loadingLinkedOrder}
+        confirmFile={confirmFile}
+        setConfirmFile={setConfirmFile}
+        confirmOrderFile={confirmOrderFile}
+        setConfirmOrderFile={setConfirmOrderFile}
+        handleConfirmEntry={handleConfirmEntry}
+        loading={loading}
+        handleOpenFullOs={handleOpenFullOs}
+        osModalOpen={osModalOpen}
+        setOsModalOpen={setOsModalOpen}
+        osModalOrder={osModalOrder}
+        osModalItems={osModalItems}
+        loadingOsItems={loadingOsItems}
+        storeList={storeList}
+        currentRegister={currentRegister}
+        navigate={navigate}
+      />
     </div>
   );
 };
