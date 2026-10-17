@@ -15,7 +15,9 @@ import {
 import {
   FileText, TrendingUp, TrendingDown, ShoppingBag, Wrench,
   Wallet, Trophy, Medal, Download, Star, Crown, Users, MessageCircle, Camera, Search,
+  DollarSign, CheckCircle2, History, Receipt, Eye,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
@@ -23,6 +25,16 @@ import { logAction } from "@/utils/auditLogger";
 import { RelatorioDiarioTab } from "@/components/features/relatorios/RelatorioDiarioTab";
 import { OS_STATUS_CONFIG, getStatusLabel, getStatusColor, ALL_OS_STATUSES } from "@/utils/osStatus";
 import { calculateOSItemMetrics } from "@/utils/osCalculations";
+import { CommissionPayoutModal } from "@/components/features/relatorios/CommissionPayoutModal";
+import {
+  fetchSettledItemIds,
+  fetchSettlementsHistory,
+  fetchSettlementItems,
+  generateSettlementReceiptPDF,
+  type CommissionSettlement,
+  type CommissionSettlementItem,
+} from "@/utils/commissionSettlement";
+import { openComprovante } from "@/lib/storageHelper";
 
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -485,8 +497,9 @@ const ExportBtns = ({ onCSV, onPDF }: { onCSV: ()=>void; onPDF: ()=>void }) => (
 );
 
 const Relatorios = () => {
-  const { user, userRole, activeStoreId } = useAuth();
+  const { user, userRole, userPermissions, activeStoreId } = useAuth();
   const isAdmin = userRole === "admin";
+  const canSettleCommissions = isAdmin || userPermissions?.gerenciar_financeiro === true;
   const [tab, setTab] = useState("dre");
   const [stores, setStores] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -520,6 +533,20 @@ const Relatorios = () => {
   const [customerMap, setCustomerMap] = useState<Map<string, any>>(new Map());
   const [financeiroData, setFinanceiroData] = useState<any[]>([]);
   const [financeiroStats, setFinanceiroStats] = useState<any>({ totalEntradas: 0, totalSaidas: 0, saldoLiquido: 0 });
+
+  // ─ Liquidação de Comissões ──────────────────────────
+  const [payoutModalOpen, setPayoutModalOpen] = useState(false);
+  const [payoutUserId, setPayoutUserId] = useState<string>("");
+  const [settledSaleIds, setSettledSaleIds] = useState<Set<string>>(new Set());
+  const [settledOsIds, setSettledOsIds] = useState<Set<string>>(new Set());
+  const [settlementsHistory, setSettlementsHistory] = useState<CommissionSettlement[]>([]);
+  const [viewingSettlement, setViewingSettlement] = useState<CommissionSettlement | null>(null);
+  const [viewingItems, setViewingItems] = useState<CommissionSettlementItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [rawSalesForPayout, setRawSalesForPayout] = useState<any[]>([]);
+  const [rawOsForPayout, setRawOsForPayout] = useState<any[]>([]);
+  const [osItemsForPayout, setOsItemsForPayout] = useState<any[]>([]);
+  const [roleMapForPayout, setRoleMapForPayout] = useState<Map<string, any>>(new Map());
 
   // ─ Diário ───────────────────────────────────────
   const [diarioDay, setDiarioDay] = useState(new Date().toISOString().split("T")[0]);
@@ -771,17 +798,24 @@ const Relatorios = () => {
   const fetchRanking = useCallback(async () => {
     const { start, end } = getPeriodDates(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const [salesRes, productsRes, osRes, rolesRes] = await Promise.all([
-      supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end),
+    const [salesRes, productsRes, osRes, rolesRes, settledIdsRes, historyRes] = await Promise.all([
+      supabase.from("sales").select("*, products(*)").gte("created_at", start).lte("created_at", end),
       supabase.from("products").select("*"),
       supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
       supabase.from("user_roles").select("*"),
+      fetchSettledItemIds(),
+      fetchSettlementsHistory(effectiveStoreId),
     ]);
     const sales = ((salesRes.data ?? []) as any[]).filter(s => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
     const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p]));
     const os = ((osRes.data ?? []) as any[]).filter(o => effectiveStoreId === "all" || o.store_id === effectiveStoreId);
     const roles = (rolesRes.data ?? []) as any[];
     const roleMap = new Map(roles.map((r: any) => [r.user_id, r]));
+
+    const { settledSaleIds: sSaleIds, settledOsIds: sOsIds } = settledIdsRes;
+    setSettledSaleIds(sSaleIds);
+    setSettledOsIds(sOsIds);
+    setSettlementsHistory(historyRes);
 
     // Fetch peças usadas para apurar margem líquida dos reparos
     let osItems: any[] = [];
@@ -792,6 +826,11 @@ const Relatorios = () => {
         .in("service_order_id", os.map((o: any) => o.id));
       osItems = itemsData ?? [];
     }
+
+    setRawSalesForPayout(sales);
+    setRawOsForPayout(os);
+    setOsItemsForPayout(osItems);
+    setRoleMapForPayout(roleMap);
 
     const stats: Record<string, any> = {};
     const ensure = (uid: string) => {
@@ -805,6 +844,8 @@ const Relatorios = () => {
           qtdVendas: 0,
           lucro: 0,
           comissoes: 0,
+          comissoesPendentes: 0,
+          comissoesLiquidadas: 0,
           comissoesVendas: 0,
           comissoesOS: 0,
           osEntregues: 0,
@@ -813,6 +854,7 @@ const Relatorios = () => {
       }
     };
     
+    // CANONICAL_SALES_COMMISSION_OWNER = created_by
     sales.forEach((s: any) => { 
       ensure(s.created_by); 
       stats[s.created_by].totalVendas += Number(s.sale_price); 
@@ -822,6 +864,12 @@ const Relatorios = () => {
       const comm = Number(s.commission_value || 0);
       stats[s.created_by].comissoes += comm; 
       stats[s.created_by].comissoesVendas += comm;
+
+      if (sSaleIds.has(s.id)) {
+        stats[s.created_by].comissoesLiquidadas += comm;
+      } else {
+        stats[s.created_by].comissoesPendentes += comm;
+      }
     });
 
     os.forEach((o: any) => { 
@@ -841,13 +889,19 @@ const Relatorios = () => {
         stats[uid].lucro += metrics.lucroBrutoOS;
         stats[uid].comissoes += metrics.comissaoTecnico;
         stats[uid].comissoesOS += metrics.comissaoTecnico;
+
+        if (sOsIds.has(o.id)) {
+          stats[uid].comissoesLiquidadas += metrics.comissaoTecnico;
+        } else {
+          stats[uid].comissoesPendentes += metrics.comissaoTecnico;
+        }
       }
     });
 
     const sorted = Object.values(stats).sort((a, b) => b.totalVendas - a.totalVendas);
     setRanking(sorted);
     setComissoes(sorted.filter(s => s.comissoes > 0).sort((a, b) => b.comissoes - a.comissoes));
-  }, [rankPeriod, storeId, rankCustomStart, rankCustomEnd, rankSpecificDay, profileMap]);
+  }, [rankPeriod, storeId, rankCustomStart, rankCustomEnd, rankSpecificDay, profileMap, isAdmin, activeStoreId]);
 
   const fetchLeads = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
@@ -1496,12 +1550,49 @@ const Relatorios = () => {
               {rankPeriod==="day"&&(<div className="space-y-1"><Label className="text-xs">Dia</Label><Input type="date" value={rankSpecificDay} onChange={e=>setRankSpecificDay(e.target.value)} className="h-9 w-36" /></div>)}
               {isAdmin&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
             </div>
-            <ExportBtns onCSV={()=>exportCSV(comissoes.map((c,i)=>({posicao:i+1,vendedor:c.nome,vendas:c.qtdVendas,total_vendido:formatCurrency(c.totalVendas),lucro:formatCurrency(c.lucro),comissao:formatCurrency(c.comissoes)})),"comissoes.csv")} onPDF={()=>exportComissoesPDF(comissoes,currentRankPeriodLabel,currentStoreName)} />
+            <div className="flex items-center gap-2">
+              {canSettleCommissions && (
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-9 text-xs bg-primary text-primary-foreground font-semibold shadow-sm hover:bg-primary/90"
+                  onClick={() => setPayoutModalOpen(true)}
+                >
+                  <DollarSign className="h-3.5 w-3.5" /> Liquidar Comissões
+                </Button>
+              )}
+              <ExportBtns onCSV={()=>exportCSV(comissoes.map((c,i)=>({posicao:i+1,vendedor:c.nome,vendas:c.qtdVendas,total_vendido:formatCurrency(c.totalVendas),lucro:formatCurrency(c.lucro),comissao:formatCurrency(c.comissoes)})),"comissoes.csv")} onPDF={()=>exportComissoesPDF(comissoes,currentRankPeriodLabel,currentStoreName)} />
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total a Pagar</p><p className="font-display text-xl font-bold mt-1 text-primary">{formatCurrency(comissoes.reduce((s,c)=>s+c.comissoes,0))}</p></CardContent></Card>
-            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Colaboradores c/ Comissão</p><p className="font-display text-xl font-bold mt-1">{comissoes.length}</p></CardContent></Card>
+
+          {/* Cards de Resumo */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Card className="border-border/50">
+              <CardContent className="p-4">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Pendente a Pagar</p>
+                <p className="font-display text-xl font-bold mt-1 text-yellow-500">
+                  {formatCurrency(comissoes.reduce((s, c) => s + (c.comissoesPendentes ?? c.comissoes), 0))}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50">
+              <CardContent className="p-4">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Já Liquidado no Período</p>
+                <p className="font-display text-xl font-bold mt-1 text-emerald-500">
+                  {formatCurrency(comissoes.reduce((s, c) => s + (c.comissoesLiquidadas ?? 0), 0))}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="border-border/50">
+              <CardContent className="p-4">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Colaboradores c/ Comissão</p>
+                <p className="font-display text-xl font-bold mt-1 text-foreground">
+                  {comissoes.length}
+                </p>
+              </CardContent>
+            </Card>
           </div>
+
+          {/* Listagem de Colaboradores */}
           <Card className="border-border/50">
             <CardHeader className="pb-2">
               <CardTitle className="font-display text-sm flex items-center gap-2">
@@ -1529,9 +1620,30 @@ const Relatorios = () => {
                               </Badge>
                             )}
                           </div>
-                          <Badge className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30 font-bold">
-                            {formatCurrency(v.comissoes)}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            {v.comissoesLiquidadas > 0 && (
+                              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 font-semibold text-[11px]">
+                                Liquidado: {formatCurrency(v.comissoesLiquidadas)}
+                              </Badge>
+                            )}
+                            <Badge className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30 font-bold">
+                              Pendente: {formatCurrency(v.comissoesPendentes ?? v.comissoes)}
+                            </Badge>
+                            {canSettleCommissions && (v.comissoesPendentes ?? v.comissoes) > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-[11px] font-semibold gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer shadow-xs"
+                                onClick={() => {
+                                  setPayoutUserId(v.uid);
+                                  setPayoutModalOpen(true);
+                                }}
+                                title={`Liquidar comissões de ${v.nome}`}
+                              >
+                                <DollarSign className="h-3 w-3" /> Liquidar
+                              </Button>
+                            )}
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-3 gap-3 text-xs">
@@ -1554,12 +1666,12 @@ const Relatorios = () => {
                             <span className="text-muted-foreground">Detalhamento:</span>
                             {v.comissoesVendas > 0 && (
                               <span className="text-foreground">
-                                Comissão Vendas: <strong className="text-primary">{formatCurrency(v.comissoesVendas)}</strong>
+                                Vendas: <strong className="text-primary">{formatCurrency(v.comissoesVendas)}</strong>
                               </span>
                             )}
                             {v.comissoesOS > 0 && (
                               <span className="text-foreground">
-                                Comissão OS: <strong className="text-yellow-500">{formatCurrency(v.comissoesOS)}</strong>
+                                OS: <strong className="text-yellow-500">{formatCurrency(v.comissoesOS)}</strong>
                               </span>
                             )}
                           </div>
@@ -1588,6 +1700,264 @@ const Relatorios = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Histórico de Liquidações Realizadas */}
+          {settlementsHistory.length > 0 && (
+            <Card className="border-border/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="font-display text-sm flex items-center gap-2">
+                  <History className="h-4 w-4 text-primary" /> Histórico de Liquidações Realizadas ({settlementsHistory.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-muted-foreground">
+                        {["Data da Baixa", "Colaborador", "Loja", "Método", "Valor Total", "Ações"].map((h) => (
+                          <th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settlementsHistory.map((s, idx) => (
+                        <tr key={s.id || idx} className="border-b border-border/30 hover:bg-muted/30">
+                          <td className="py-2 px-2 whitespace-nowrap font-mono">
+                            {new Date(s.paid_at || s.created_at).toLocaleDateString("pt-BR")}{" "}
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(s.paid_at || s.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 font-semibold text-foreground">
+                            {profileMap.get(s.user_id) || "Colaborador"}
+                          </td>
+                          <td className="py-2 px-2 text-muted-foreground">
+                            {storeMap.get(s.store_id)?.name || "Loja"}
+                          </td>
+                          <td className="py-2 px-2">
+                            <Badge variant="outline" className="text-[10px] capitalize">
+                              {s.payment_method === "dinheiro" ? "💵 Dinheiro" : s.payment_method.toUpperCase()}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-2 font-mono font-bold text-emerald-500 whitespace-nowrap">
+                            {formatCurrency(Number(s.total_amount))}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                                onClick={async () => {
+                                  setViewingSettlement(s);
+                                  setLoadingItems(true);
+                                  try {
+                                    const items = await fetchSettlementItems(s.id);
+                                    setViewingItems(items);
+                                  } catch {
+                                    toast.error("Erro ao carregar itens da liquidação");
+                                  } finally {
+                                    setLoadingItems(false);
+                                  }
+                                }}
+                                title="Ver itens deste pagamento"
+                              >
+                                <Eye className="h-3 w-3" /> Detalhes
+                              </Button>
+                              {s.receipt_url && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[11px] gap-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"
+                                  onClick={(e) => openComprovante(s.receipt_url, e)}
+                                  title="Ver comprovante anexado"
+                                >
+                                  <Receipt className="h-3 w-3" /> Comprovante
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px] gap-1 text-primary hover:text-primary hover:bg-primary/10"
+                              onClick={async () => {
+                                try {
+                                  const items = await fetchSettlementItems(s.id);
+                                  const sName = storeMap.get(s.store_id)?.name || "Cell Pro 360";
+                                  const colName = profileMap.get(s.user_id) || "Colaborador";
+                                  const manName = profileMap.get(s.created_by) || "Gestão Financeira";
+                                  generateSettlementReceiptPDF({
+                                    settlement: s,
+                                    items,
+                                    storeName: sName,
+                                    collaboratorName: colName,
+                                    managerName: manName,
+                                  });
+                                  toast.success("Segunda via do recibo baixada!");
+                                } catch (e) {
+                                  toast.error("Erro ao gerar 2ª via do recibo");
+                                }
+                              }}
+                            >
+                                <Download className="h-3 w-3" /> 2ª Via PDF
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Modal de Liquidação */}
+          <CommissionPayoutModal
+            open={payoutModalOpen}
+            onOpenChange={(open) => {
+              setPayoutModalOpen(open);
+              if (!open) setPayoutUserId("");
+            }}
+            storeId={storeId}
+            stores={stores}
+            profiles={profiles}
+            collaborators={comissoes}
+            allSales={rawSalesForPayout}
+            allServiceOrders={rawOsForPayout}
+            osItems={osItemsForPayout}
+            userRolesMap={roleMapForPayout}
+            settledSaleIds={settledSaleIds}
+            settledOsIds={settledOsIds}
+            initialUserId={payoutUserId}
+            currentUserName={profileMap.get(user?.id ?? "") || "Gestor"}
+            onSuccess={() => fetchRanking()}
+          />
+
+          {/* Modal de Detalhes da Liquidação */}
+          <Dialog open={!!viewingSettlement} onOpenChange={(open) => { if (!open) setViewingSettlement(null); }}>
+            <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-6">
+              <DialogHeader>
+                <DialogTitle className="text-base flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <History className="h-4 w-4 text-primary" />
+                    Detalhes da Liquidação — {viewingSettlement ? profileMap.get(viewingSettlement.user_id) : ""}
+                  </span>
+                  {viewingSettlement && (
+                    <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                      Total: {formatCurrency(Number(viewingSettlement.total_amount))}
+                    </Badge>
+                  )}
+                </DialogTitle>
+              </DialogHeader>
+
+              {viewingSettlement && (
+                <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-muted/40 p-3 rounded-lg border border-border/50">
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase">Data do Pagamento</span>
+                      <strong className="text-foreground">
+                        {new Date(viewingSettlement.paid_at || viewingSettlement.created_at).toLocaleString("pt-BR")}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase">Período Apurado</span>
+                      <strong className="text-foreground">
+                        {new Date(viewingSettlement.period_start + "T12:00:00").toLocaleDateString("pt-BR")} a{" "}
+                        {new Date(viewingSettlement.period_end + "T12:00:00").toLocaleDateString("pt-BR")}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase">Forma de Pagamento</span>
+                      <strong className="text-foreground capitalize">
+                        {viewingSettlement.payment_method === "dinheiro" ? "💵 Dinheiro (Caixa)" : viewingSettlement.payment_method.toUpperCase()}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[10px] uppercase">Autorizado Por</span>
+                      <strong className="text-foreground">
+                        {profileMap.get(viewingSettlement.created_by) || "Gestão Financeira"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {viewingSettlement.notes && (
+                    <div className="text-xs bg-muted/20 p-2.5 rounded border border-border/40 text-muted-foreground">
+                      <strong>Observações:</strong> {viewingSettlement.notes}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-semibold mb-2 flex items-center justify-between text-muted-foreground uppercase tracking-wide">
+                      <span>Operações Quitadas ({viewingItems.length})</span>
+                      {loadingItems && <span className="text-[10px] animate-pulse">Carregando itens...</span>}
+                    </p>
+                    <div className="rounded-lg border border-border/50 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50 text-muted-foreground border-b border-border/50">
+                          <tr>
+                            <th className="py-2 px-3 text-left">Tipo</th>
+                            <th className="py-2 px-3 text-left">Referência</th>
+                            <th className="py-2 px-3 text-right">Faturado</th>
+                            <th className="py-2 px-3 text-right">Custo / Peças</th>
+                            <th className="py-2 px-3 text-right">Lucro Bruto</th>
+                            <th className="py-2 px-3 text-right">% Com.</th>
+                            <th className="py-2 px-3 text-right">Comissão</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewingItems.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                                {loadingItems ? "Carregando demonstrativo..." : "Nenhum item encontrado."}
+                              </td>
+                            </tr>
+                          ) : (
+                            viewingItems.map((it) => (
+                              <tr key={it.id} className="border-b border-border/30 hover:bg-muted/20">
+                                <td className="py-2 px-3 font-medium">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {it.item_type === "sale" ? "Venda" : "OS"}
+                                  </Badge>
+                                </td>
+                                <td className="py-2 px-3 font-mono text-[11px]">
+                                  {it.sale_id ? `Venda #${it.sale_id.slice(0, 8)}` : `OS #${it.service_order_id?.slice(0, 8)}`}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono">{formatCurrency(Number(it.gross_amount))}</td>
+                                <td className="py-2 px-3 text-right font-mono text-muted-foreground">
+                                  {it.cost_amount !== null ? formatCurrency(Number(it.cost_amount)) : "—"}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono text-emerald-500">
+                                  {it.profit_amount !== null ? formatCurrency(Number(it.profit_amount)) : "—"}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono">{it.commission_percent}%</td>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-foreground">
+                                  {formatCurrency(Number(it.commission_amount))}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                        {viewingItems.length > 0 && (
+                          <tfoot className="bg-muted/40 font-semibold border-t border-border">
+                            <tr>
+                              <td colSpan={6} className="py-2 px-3 text-right uppercase text-[10px] text-muted-foreground">
+                                Total da Liquidação:
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-emerald-500">
+                                {formatCurrency(Number(viewingSettlement.total_amount))}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

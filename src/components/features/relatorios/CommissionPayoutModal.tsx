@@ -1,0 +1,748 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
+import {
+  Wallet,
+  CheckCircle2,
+  AlertTriangle,
+  Receipt,
+  FileText,
+  DollarSign,
+  ArrowRight,
+  ShieldCheck,
+  Building2,
+  Calendar,
+  User,
+} from "lucide-react";
+import {
+  settleCommissionsRPC,
+  generateSettlementReceiptPDF,
+  fetchSettlementItems,
+  toBrasiliaDateString,
+  formatBrasiliaDate,
+  type SettleCommissionsPayload,
+} from "@/utils/commissionSettlement";
+import { convertToWebP } from "@/utils/imageOptimizer";
+
+interface PendingCommissionItem {
+  id: string;
+  type: "sale" | "service_order";
+  date: string;
+  label: string;
+  grossAmount: number;
+  costAmount: number | null;
+  profitAmount: number | null;
+  commissionPercent: number;
+  commissionAmount: number;
+}
+
+interface CommissionPayoutModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  storeId: string;
+  stores: any[];
+  profiles: any[];
+  collaborators: any[]; // Colaboradores com dados de ranking/comissões
+  allSales: any[];
+  allServiceOrders: any[];
+  osItems: any[];
+  userRolesMap: Map<string, any>;
+  settledSaleIds: Set<string>;
+  settledOsIds: Set<string>;
+  currentUserName: string;
+  initialUserId?: string;
+  onSuccess: () => void;
+}
+
+export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
+  open,
+  onOpenChange,
+  storeId,
+  stores,
+  profiles,
+  collaborators,
+  allSales,
+  allServiceOrders,
+  osItems,
+  userRolesMap,
+  settledSaleIds,
+  settledOsIds,
+  currentUserName,
+  initialUserId,
+  onSuccess,
+}) => {
+  const [selectedUserId, setSelectedUserId] = useState<string>(initialUserId || "");
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(storeId === "all" ? (stores[0]?.id ?? "") : storeId);
+  const [paymentMethod, setPaymentMethod] = useState<"dinheiro" | "pix" | "transferencia">("pix");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  const [openRegisters, setOpenRegisters] = useState<any[]>([]);
+  const [selectedCashRegisterId, setSelectedCashRegisterId] = useState<string>("");
+  const [loadingOpenRegister, setLoadingOpenRegister] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sincroniza usuário inicial quando o modal abre
+  useEffect(() => {
+    if (open && initialUserId) {
+      setSelectedUserId(initialUserId);
+    }
+  }, [open, initialUserId]);
+
+  // Período de apuração customizável (defaults: início do mês até hoje no fuso canônico)
+  const [startDate, setStartDate] = useState<string>(() => {
+    const todayBrasilia = toBrasiliaDateString(new Date());
+    return todayBrasilia.slice(0, 8) + "01";
+  });
+  const [endDate, setEndDate] = useState<string>(() => {
+    return toBrasiliaDateString(new Date());
+  });
+
+  const profileMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.display_name ?? p.user_id])), [profiles]);
+  const storeMap = useMemo(() => new Map(stores.map((s) => [s.id, s.name])), [stores]);
+
+  // Se modal abrir ou storeId mudar, sincroniza loja
+  useEffect(() => {
+    if (storeId && storeId !== "all") {
+      setSelectedStoreId(storeId);
+    } else if (stores.length > 0 && !selectedStoreId) {
+      setSelectedStoreId(stores[0].id);
+    }
+  }, [storeId, stores]);
+
+  // Carrega contas bancárias da loja para pagamentos Pix/Transferência
+  useEffect(() => {
+    if (!selectedStoreId) return;
+    supabase
+      .from("store_bank_accounts" as any)
+      .select("*")
+      .eq("store_id", selectedStoreId)
+      .then(({ data }) => {
+        const list = (data as any[]) ?? [];
+        setBankAccounts(list);
+        if (list.length > 0 && !selectedAccountId) {
+          setSelectedAccountId(list[0].id);
+        }
+      });
+  }, [selectedStoreId]);
+
+  // Verifica se há caixa aberto na loja selecionada para pagamento em dinheiro
+  useEffect(() => {
+    if (!selectedStoreId) return;
+    setLoadingOpenRegister(true);
+    supabase
+      .from("cash_registers" as any)
+      .select("*")
+      .eq("store_id", selectedStoreId)
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        const list = (data as any[]) ?? [];
+        setOpenRegisters(list);
+        if (list.length > 0) {
+          setSelectedCashRegisterId(list[0].id);
+        } else {
+          setSelectedCashRegisterId("");
+        }
+        setLoadingOpenRegister(false);
+      });
+  }, [selectedStoreId]);
+
+  // Apura as comissões pendentes (NÃO liquidadas) do colaborador selecionado
+  const pendingItems = useMemo<PendingCommissionItem[]>(() => {
+    if (!selectedUserId || !selectedStoreId) return [];
+
+    const items: PendingCommissionItem[] = [];
+
+    // 1. Vendas pendentes (CANONICAL_SALES_COMMISSION_OWNER = created_by)
+    allSales.forEach((s) => {
+      if (s.created_by === selectedUserId && s.store_id === selectedStoreId) {
+        if (!settledSaleIds.has(s.id)) {
+          const commVal = Number(s.commission_value || 0);
+          if (commVal > 0) {
+            // Validação estrita de período de apuração no fuso canônico (America/Sao_Paulo)
+            const saleDate = s.created_at ? toBrasiliaDateString(s.created_at) : "";
+            if (startDate && saleDate < startDate) return;
+            if (endDate && saleDate > endDate) return;
+
+            const salePrice = Number(s.sale_price || 0);
+            items.push({
+              id: s.id,
+              type: "sale",
+              date: formatBrasiliaDate(s.created_at),
+              label: `Venda: ${s.products?.name || "Aparelho"} (${s.customer_name || "Avulso"})`,
+              grossAmount: salePrice,
+              costAmount: null,
+              profitAmount: null,
+              commissionPercent: Number(s.commission_percent || 0),
+              commissionAmount: commVal,
+            });
+          }
+        }
+      }
+    });
+
+    // 2. Ordens de Serviço entregues pendentes
+    allServiceOrders.forEach((o) => {
+      if (o.technician_id === selectedUserId && o.store_id === selectedStoreId && o.status === "delivered") {
+        if (!settledOsIds.has(o.id)) {
+          const roleData = userRolesMap.get(selectedUserId);
+          // Validação estrita da habilitação e percentual de comissão sobre serviços
+          if (roleData?.commission_on_services !== true) return;
+          const commPct = Number(roleData?.commission_services_percent || 0);
+          if (commPct <= 0) return;
+
+          // Validação estrita de período de apuração no fuso canônico (America/Sao_Paulo)
+          const osDate = o.delivered_at ? toBrasiliaDateString(o.delivered_at) : "";
+          if (!osDate) return;
+          if (startDate && osDate < startDate) return;
+          if (endDate && osDate > endDate) return;
+
+          const gross = Number(o.final_price || o.estimated_price || 0);
+          const partsForOs = osItems.filter((i) => i.service_order_id === o.id);
+          const partsCost = partsForOs.reduce(
+            (sum, p) => sum + Number(p.unit_cost || 0) * Number(p.quantity || 1),
+            0
+          );
+          const profit = gross - partsCost;
+          if (profit <= 0) return; // Elegibilidade individual: margem estritamente positiva
+
+          const commAmount = (profit * commPct) / 100;
+
+          if (commAmount > 0) {
+            items.push({
+              id: o.id,
+              type: "service_order",
+              date: formatBrasiliaDate(o.delivered_at),
+              label: `OS #${o.order_number}: ${o.device_brand || ""} ${o.device_model || ""} - ${o.requested_service || "Serviço"}`,
+              grossAmount: gross,
+              costAmount: partsCost,
+              profitAmount: profit,
+              commissionPercent: commPct,
+              commissionAmount: commAmount,
+            });
+          }
+        }
+      }
+    });
+
+    return items;
+  }, [selectedUserId, selectedStoreId, allSales, allServiceOrders, osItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate]);
+
+  // Por padrão, ao selecionar um colaborador, seleciona todos os itens pendentes
+  useEffect(() => {
+    if (pendingItems.length > 0) {
+      setSelectedItemIds(new Set(pendingItems.map((i) => i.id)));
+    } else {
+      setSelectedItemIds(new Set());
+    }
+  }, [pendingItems]);
+
+  const toggleItem = (id: string) => {
+    setSelectedItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedItemIds.size === pendingItems.length) {
+      setSelectedItemIds(new Set());
+    } else {
+      setSelectedItemIds(new Set(pendingItems.map((i) => i.id)));
+    }
+  };
+
+  // Cálculos consolidados da seleção
+  const selectedItems = useMemo(
+    () => pendingItems.filter((i) => selectedItemIds.has(i.id)),
+    [pendingItems, selectedItemIds]
+  );
+
+  const totalToPayout = useMemo(
+    () => selectedItems.reduce((acc, it) => acc + it.commissionAmount, 0),
+    [selectedItems]
+  );
+
+  const selectedSalesIds = useMemo(
+    () => selectedItems.filter((i) => i.type === "sale").map((i) => i.id),
+    [selectedItems]
+  );
+
+  const selectedOsIds = useMemo(
+    () => selectedItems.filter((i) => i.type === "service_order").map((i) => i.id),
+    [selectedItems]
+  );
+
+  const isCashBlocked = paymentMethod === "dinheiro" && (!openRegisters.length || !selectedCashRegisterId);
+  const canSubmit =
+    Boolean(selectedUserId) &&
+    Boolean(selectedStoreId) &&
+    selectedItems.length > 0 &&
+    totalToPayout > 0 &&
+    !isCashBlocked &&
+    (paymentMethod === "dinheiro" || Boolean(selectedAccountId)) &&
+    !isSubmitting;
+
+  const handleExecutePayout = async () => {
+    if (!canSubmit) return;
+
+    setIsSubmitting(true);
+    try {
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!selectedStoreId || !UUID_REGEX.test(selectedStoreId)) {
+        toast.error("Loja da liquidação não identificada ou inválida. Não é possível prosseguir.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      let uploadedReceiptUrl: string | null = null;
+      if (receiptFile) {
+        const optimized = await convertToWebP(receiptFile);
+        const safeName = `liquidacao-${selectedUserId.slice(0, 8)}-${Date.now()}.webp`;
+        const { data: upData, error: upError } = await supabase.storage
+          .from("comprovantes")
+          .upload(`${selectedStoreId}/comissoes/${safeName}`, optimized, { upsert: false });
+        if (upError) {
+          toast.error("Erro no upload do comprovante: " + upError.message);
+          setIsSubmitting(false);
+          return;
+        }
+        if (upData) {
+          const { data: pubData } = supabase.storage.from("comprovantes").getPublicUrl(upData.path);
+          uploadedReceiptUrl = pubData.publicUrl;
+        }
+      }
+
+      const payload: SettleCommissionsPayload = {
+        store_id: selectedStoreId,
+        user_id: selectedUserId,
+        period_start: startDate,
+        period_end: endDate,
+        payment_method: paymentMethod,
+        source_type: paymentMethod === "dinheiro" ? "caixa" : "banco",
+        cash_register_id: paymentMethod === "dinheiro" ? selectedCashRegisterId : null,
+        source_account_id: paymentMethod === "dinheiro" ? null : selectedAccountId,
+        notes: notes.trim() || null,
+        receipt_url: uploadedReceiptUrl,
+        sale_ids: selectedSalesIds,
+        service_order_ids: selectedOsIds,
+      };
+
+      const result = await settleCommissionsRPC(payload);
+
+      toast.success(
+        `Liquidação concluída! ${new Intl.NumberFormat("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        }).format(result.total_amount)} pagos para ${result.user_name}.`
+      );
+
+      // Busca os itens do settlement para gerar o PDF formal de quitação
+      try {
+        const items = await fetchSettlementItems(result.settlement_id);
+        const targetStoreName = storeMap.get(selectedStoreId) || "Cell Pro 360";
+        generateSettlementReceiptPDF({
+          settlement: {
+            id: result.settlement_id,
+            paid_at: new Date().toISOString(),
+            period_start: startDate,
+            period_end: endDate,
+            total_sales_commission: result.total_sales_commission,
+            total_service_commission: result.total_service_commission,
+            total_amount: result.total_amount,
+            payment_method: paymentMethod,
+            source_type: payload.source_type,
+            notes,
+          },
+          items,
+          storeName: targetStoreName,
+          collaboratorName: result.user_name,
+          managerName: currentUserName || "Gestão Financeira",
+        });
+        toast.info("Recibo de quitação em PDF gerado e baixado automaticamente!");
+      } catch (pdfErr) {
+        console.error("Erro ao gerar PDF do recibo:", pdfErr);
+      }
+
+      onSuccess();
+      onOpenChange(false);
+      // Reset form
+      setSelectedUserId("");
+      setSelectedItemIds(new Set());
+      setNotes("");
+      setReceiptFile(null);
+    } catch (err: any) {
+      console.error("Erro ao liquidar comissões:", err);
+      toast.error(`Falha na liquidação: ${err.message || "Erro desconhecido"}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="p-5 pb-3 border-b border-border/50 bg-muted/20">
+          <div className="flex items-center gap-2.5">
+            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <Wallet className="h-5 w-5" />
+            </div>
+            <div>
+              <DialogTitle className="font-display text-lg font-bold">
+                Liquidação de Comissões
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Baixa atômica de comissões com quitação formal e débito no financeiro
+              </p>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* 1. Seleção de Loja e Colaborador */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Loja de Origem</Label>
+              <Select
+                value={selectedStoreId}
+                onValueChange={(v) => {
+                  setSelectedStoreId(v);
+                  setSelectedUserId("");
+                }}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione a loja..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {stores.map((s) => (
+                    <SelectItem key={s.id} value={s.id} className="text-xs">
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Colaborador (Vendedor ou Técnico)</Label>
+              <Select
+                value={selectedUserId}
+                onValueChange={(uid) => setSelectedUserId(uid)}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione quem receberá..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {collaborators.map((c) => (
+                    <SelectItem key={c.uid} value={c.uid} className="text-xs">
+                      {c.nome} ({c.role === "tecnico" ? "Técnico" : "Vendedor"})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* 2. Filtro de Período de Apuração */}
+          <div className="grid grid-cols-2 gap-3 p-3 bg-muted/20 rounded-lg border border-border/40">
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <Calendar className="h-3 w-3" /> Data Inicial
+              </Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-8 text-xs bg-background"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] text-muted-foreground flex items-center gap-1">
+                <Calendar className="h-3 w-3" /> Data Final
+              </Label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-8 text-xs bg-background"
+              />
+            </div>
+          </div>
+
+          {/* 3. Lista de Vendas e OSs Pendentes */}
+          {selectedUserId ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-foreground">
+                    Operações Pendentes ({pendingItems.length})
+                  </span>
+                  {pendingItems.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] h-5">
+                      {selectedItemIds.size} selecionadas
+                    </Badge>
+                  )}
+                </div>
+                {pendingItems.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-primary"
+                    onClick={toggleSelectAll}
+                  >
+                    {selectedItemIds.size === pendingItems.length
+                      ? "Desmarcar Todos"
+                      : "Selecionar Todos"}
+                  </Button>
+                )}
+              </div>
+
+              {pendingItems.length === 0 ? (
+                <div className="py-8 text-center bg-muted/10 rounded-lg border border-dashed border-border text-muted-foreground text-xs">
+                  Nenhuma comissão pendente encontrada para este colaborador na loja selecionada.
+                </div>
+              ) : (
+                <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-2 bg-background">
+                  {pendingItems.map((item) => {
+                    const isChecked = selectedItemIds.has(item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => toggleItem(item.id)}
+                        className={`flex items-center justify-between p-2 rounded-md border text-xs cursor-pointer transition-colors ${
+                          isChecked
+                            ? "bg-primary/5 border-primary/30"
+                            : "bg-muted/10 border-border/40 hover:bg-muted/20"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={() => toggleItem(item.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] py-0 h-4 font-mono ${
+                                  item.type === "sale"
+                                    ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                    : "bg-purple-500/10 text-purple-500 border-purple-500/20"
+                                }`}
+                              >
+                                {item.type === "sale" ? "VENDA" : "OS"}
+                              </Badge>
+                              <span className="font-semibold text-foreground truncate">
+                                {item.label}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              {item.date} · Faturado: {formatCurrency(item.grossAmount)}
+                              {item.profitAmount !== null && ` · Lucro: ${formatCurrency(item.profitAmount)}`}
+                              {` (${item.commissionPercent}%)`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 pl-2">
+                          <span className="font-mono font-bold text-primary text-xs">
+                            {formatCurrency(item.commissionAmount)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-muted-foreground text-xs bg-muted/10 rounded-lg border border-dashed">
+              Selecione um colaborador acima para visualizar suas vendas e serviços pendentes.
+            </div>
+          )}
+
+          {/* 4. Forma de Pagamento e Conta/Caixa */}
+          <div className="p-3 bg-muted/20 rounded-lg border border-border/40 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Forma de Pagamento</Label>
+                <Select
+                  value={paymentMethod}
+                  onValueChange={(v: any) => setPaymentMethod(v)}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pix" className="text-xs">
+                      📱 PIX (Conta Bancária)
+                    </SelectItem>
+                    <SelectItem value="transferencia" className="text-xs">
+                      🏦 Transferência / TED
+                    </SelectItem>
+                    <SelectItem value="dinheiro" className="text-xs">
+                      💵 Dinheiro (Saída da Gaveta do Caixa)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {paymentMethod === "dinheiro" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Sessão do Caixa</Label>
+                  {loadingOpenRegister ? (
+                    <div className="h-9 px-3 rounded-md border text-xs flex items-center bg-background text-muted-foreground">
+                      Verificando...
+                    </div>
+                  ) : openRegisters.length === 0 ? (
+                    <div className="h-9 px-3 rounded-md border text-xs flex items-center justify-between bg-background text-destructive font-medium">
+                      <span className="flex items-center gap-1">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Sem caixa aberto
+                      </span>
+                    </div>
+                  ) : openRegisters.length === 1 ? (
+                    <div className="h-9 px-3 rounded-md border text-xs flex items-center justify-between bg-background text-primary font-medium">
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Caixa Aberto
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        #{openRegisters[0].id.slice(0, 8)}
+                      </span>
+                    </div>
+                  ) : (
+                    <Select
+                      value={selectedCashRegisterId}
+                      onValueChange={(v) => setSelectedCashRegisterId(v)}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue placeholder="Selecione o caixa aberto..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {openRegisters.map((reg) => (
+                          <SelectItem key={reg.id} value={reg.id} className="text-xs">
+                            Caixa #{reg.id.slice(0, 8)} ({new Date(reg.opened_at || reg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Conta Bancária de Saída</Label>
+                  <Select
+                    value={selectedAccountId}
+                    onValueChange={(v) => setSelectedAccountId(v)}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Selecione a conta..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bankAccounts.map((b) => (
+                        <SelectItem key={b.id} value={b.id} className="text-xs">
+                          {b.bank_name} ({b.owner_type || "PJ"})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            {/* Alerta de Caixa Fechado */}
+            {isCashBlocked && (
+              <div className="p-2.5 bg-destructive/10 border border-destructive/20 rounded-md text-xs text-destructive flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Atenção:</strong> É obrigatório ter uma sessão de caixa aberta nesta loja para efetuar liquidações em dinheiro físico.
+                </span>
+              </div>
+            )}
+
+            {/* Observações e Comprovante */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Observações (opcional)</Label>
+                <Input
+                  placeholder="Ex: Adiantamento quinzenal, acerto fechamento..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="h-8 text-xs bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Comprovante de Transferência (opcional)</Label>
+                <Input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+                  className="h-8 text-xs bg-background file:text-xs file:py-0"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer com Totalizador e Ação */}
+        <DialogFooter className="p-4 border-t border-border/50 bg-muted/20 flex sm:items-center sm:justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                Total da Baixa ({selectedItems.length} itens)
+              </p>
+              <p className="font-mono text-xl font-bold text-primary">
+                {formatCurrency(totalToPayout)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-9 text-xs gap-1.5 bg-primary text-primary-foreground font-semibold shadow-sm"
+              onClick={handleExecutePayout}
+              disabled={!canSubmit}
+            >
+              {isSubmitting ? (
+                <>Processando Liquidação...</>
+              ) : (
+                <>
+                  <ShieldCheck className="h-4 w-4" /> Confirmar e Liquidar
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
