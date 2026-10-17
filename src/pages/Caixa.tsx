@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
 import { SuppliersTab } from "@/components/features/caixa/SuppliersTab";
 import { convertToWebP } from "@/utils/imageOptimizer";
+import { openComprovante } from "@/lib/storageHelper";
 
 interface CashEntry {
   id: string;
@@ -344,8 +345,13 @@ const Caixa = () => {
 
   const handleSaveSupplier = async () => {
     if (!supplierForm.name) { toast.error("Informe o nome do fornecedor!"); return; }
+    if (!activeStoreId || activeStoreId === "all") {
+      toast.error("Selecione uma loja específica no topo antes de cadastrar um fornecedor.");
+      return;
+    }
     const { error } = await supabase.from("suppliers" as any).insert({
-      store_id: activeStoreId === "all" ? null : activeStoreId,
+      store_id: activeStoreId,
+      created_by: user?.id,
       name: supplierForm.name,
       document: supplierForm.document || null,
       phone: supplierForm.phone || null,
@@ -370,7 +376,8 @@ const Caixa = () => {
 
     let receiptUrl: string | null = null;
     if (payForm.receipt) {
-      receiptUrl = await uploadReceipt(payForm.receipt, `fornecedor/${selectedSupplier.id}-${Date.now()}`);
+      const storePrefix = selectedSupplier.store_id || currentRegister.store_id || activeStoreId;
+      receiptUrl = await uploadReceipt(payForm.receipt, `${storePrefix}/fornecedor/${selectedSupplier.id}-${Date.now()}`);
     }
 
     // 1. Cash out from register
@@ -482,7 +489,8 @@ const Caixa = () => {
     if (!user || !activeStoreId) return;
     setLoading(true);
     let receiptUrl: string | null = null;
-    if (openForm.receipt) receiptUrl = await uploadReceipt(openForm.receipt, `abertura/${activeStoreId}-${Date.now()}-${openForm.receipt.name}`);
+    const targetStoreId = activeStoreId === "all" ? userStoreIds[0] : activeStoreId;
+    if (openForm.receipt) receiptUrl = await uploadReceipt(openForm.receipt, `${targetStoreId}/abertura/${Date.now()}-${openForm.receipt.name}`);
 
     const { data: reg, error } = await supabase.from("cash_registers" as any).insert({
       store_id: activeStoreId === "all" ? userStoreIds[0] : activeStoreId,
@@ -529,7 +537,7 @@ const Caixa = () => {
     }
     setLoading(true);
     let receiptUrl: string | null = null;
-    if (closeForm.receipt) receiptUrl = await uploadReceipt(closeForm.receipt, `fechamento/${currentRegister.id}-${Date.now()}`);
+    if (closeForm.receipt) receiptUrl = await uploadReceipt(closeForm.receipt, `${currentRegister.store_id}/fechamento/${currentRegister.id}-${Date.now()}`);
 
     const { error: updateError } = await supabase.from("cash_registers" as any).update({
       closing_amount: closingAmount, expected_amount: totalTotal, difference,
@@ -786,10 +794,11 @@ const Caixa = () => {
   const handleConfirmEntry = async (fromDetailDialog = false) => {
     if (!confirmEntry || !confirmFile) return;
     setLoading(true);
-    const url = await uploadReceipt(confirmFile, `confirmacao/${confirmEntry.id}-${Date.now()}`);
+    const confirmStoreId = (confirmEntry as any).store_id || activeStoreId;
+    const url = await uploadReceipt(confirmFile, `${confirmStoreId}/confirmacao/${confirmEntry.id}-${Date.now()}`);
     let orderUrl: string | null = null;
     if (confirmOrderFile) {
-      orderUrl = await uploadReceipt(confirmOrderFile, `pedido-confirmacao/${confirmEntry.id}-${Date.now()}`);
+      orderUrl = await uploadReceipt(confirmOrderFile, `${confirmStoreId}/pedido-confirmacao/${confirmEntry.id}-${Date.now()}`);
     }
     if (url) {
       await supabase.from("cash_entries" as any).update({
@@ -1329,7 +1338,8 @@ const Caixa = () => {
                       href={viewRegister.opening_receipt_url} 
                       target="_blank" 
                       rel="noreferrer" 
-                      className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:underline font-semibold bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20"
+                      onClick={(e) => openComprovante(viewRegister.opening_receipt_url, e)}
+                      className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:underline font-semibold bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20 cursor-pointer"
                     >
                       📂 Comprovante de Abertura
                     </a>
@@ -1339,7 +1349,8 @@ const Caixa = () => {
                       href={viewRegister.closing_receipt_url} 
                       target="_blank" 
                       rel="noreferrer" 
-                      className="inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20"
+                      onClick={(e) => openComprovante(viewRegister.closing_receipt_url, e)}
+                      className="inline-flex items-center gap-1.5 text-xs text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 cursor-pointer"
                     >
                       📂 Comprovante de Fechamento
                     </a>
@@ -1370,7 +1381,8 @@ const Caixa = () => {
                                 href={entry.receipt_url} 
                                 target="_blank" 
                                 rel="noreferrer" 
-                                className="inline-flex items-center gap-1 text-[10px] text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20"
+                                onClick={(e) => openComprovante(entry.receipt_url, e)}
+                                className="inline-flex items-center gap-1 text-[10px] text-emerald-500 hover:underline font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 cursor-pointer"
                               >
                                 📎 Comprovante
                               </a>
@@ -1553,7 +1565,8 @@ const Caixa = () => {
                       href={selectedEntry.receipt_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-2 text-xs text-primary font-semibold bg-primary/5 border border-primary/20 px-3 py-2 rounded-lg hover:bg-primary/10 transition-colors"
+                      onClick={(e) => openComprovante(selectedEntry.receipt_url, e)}
+                      className="flex items-center gap-2 text-xs text-primary font-semibold bg-primary/5 border border-primary/20 px-3 py-2 rounded-lg hover:bg-primary/10 transition-colors cursor-pointer"
                     >
                       <CreditCard className="h-3.5 w-3.5 shrink-0" />
                       Comprovante de Pagamento
@@ -1565,7 +1578,8 @@ const Caixa = () => {
                       href={(selectedEntry as any).supplier_order_receipt_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-2 text-xs text-blue-500 font-semibold bg-blue-500/5 border border-blue-500/20 px-3 py-2 rounded-lg hover:bg-blue-500/10 transition-colors"
+                      onClick={(e) => openComprovante((selectedEntry as any).supplier_order_receipt_url, e)}
+                      className="flex items-center gap-2 text-xs text-blue-500 font-semibold bg-blue-500/5 border border-blue-500/20 px-3 py-2 rounded-lg hover:bg-blue-500/10 transition-colors cursor-pointer"
                     >
                       <Truck className="h-3.5 w-3.5 shrink-0" />
                       Comprovante do Pedido (Fornecedor)
@@ -1777,7 +1791,8 @@ const Caixa = () => {
                               href={item.receipt_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium bg-primary/10 px-2 py-0.5 rounded"
+                              onClick={(e) => openComprovante(item.receipt_url, e)}
+                              className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium bg-primary/10 px-2 py-0.5 rounded cursor-pointer"
                             >
                               <CreditCard className="h-3 w-3" /> Comprovante de Pagamento ↗
                             </a>
@@ -1787,7 +1802,8 @@ const Caixa = () => {
                               href={item.supplier_order_receipt_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-[11px] text-blue-500 hover:underline flex items-center gap-1 font-medium bg-blue-500/10 px-2 py-0.5 rounded"
+                              onClick={(e) => openComprovante(item.supplier_order_receipt_url, e)}
+                              className="text-[11px] text-blue-500 hover:underline flex items-center gap-1 font-medium bg-blue-500/10 px-2 py-0.5 rounded cursor-pointer"
                             >
                               <Truck className="h-3 w-3" /> Comprovante do Pedido (Fornecedor) ↗
                             </a>

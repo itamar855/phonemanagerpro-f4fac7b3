@@ -1768,6 +1768,7 @@ export type Database = {
           reconciled: boolean | null
           metadata: Json | null
           reference_key: string | null
+          sale_id: string | null
           source_account_id: string | null
           store_id: string | null
           type: string
@@ -1787,6 +1788,7 @@ export type Database = {
           reconciled?: boolean | null
           metadata?: Json | null
           reference_key?: string | null
+          sale_id?: string | null
           source_account_id?: string | null
           store_id?: string | null
           type: string
@@ -1806,6 +1808,7 @@ export type Database = {
           reconciled?: boolean | null
           metadata?: Json | null
           reference_key?: string | null
+          sale_id?: string | null
           source_account_id?: string | null
           store_id?: string | null
           type?: string

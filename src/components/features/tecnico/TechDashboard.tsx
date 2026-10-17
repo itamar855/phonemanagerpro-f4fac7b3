@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,8 +39,17 @@ import {
   Timer,
   ShieldCheck,
   TrendingUp,
+  Receipt,
+  Download,
 } from "lucide-react";
+import { toast } from "sonner";
 import { getStatusLabel, getStatusColor } from "@/utils/osStatus";
+import {
+  fetchSettlementsHistory,
+  fetchSettlementItems,
+  generateSettlementReceiptPDF,
+  type CommissionSettlement,
+} from "@/utils/commissionSettlement";
 import type {
   TechProductivityResult,
   TimelineDataPoint,
@@ -81,6 +90,36 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
   const [tempOrdersTarget, setTempOrdersTarget] = useState(goalsConfig.targetOrders);
   const [tempCommissionTarget, setTempCommissionTarget] = useState(goalsConfig.targetCommission);
   const [queueFilter, setQueueFilter] = useState<"all" | "bench" | "waiting_part" | "waiting_approval" | "ready">("all");
+  const [techSettlements, setTechSettlements] = useState<CommissionSettlement[]>([]);
+  const [loadingSettlements, setLoadingSettlements] = useState(false);
+  const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    let isMounted = true;
+    setLoadingSettlements(true);
+    fetchSettlementsHistory(undefined, userId)
+      .then((data) => {
+        if (isMounted) setTechSettlements(data);
+      })
+      .catch((err) => {
+        console.error("Erro ao carregar liquidações do técnico:", err);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingSettlements(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
+
+  const totalLiquidado = useMemo(() => {
+    return techSettlements.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
+  }, [techSettlements]);
+
+  const pendenteLiquidar = useMemo(() => {
+    return Math.max(0, productivity.realizedCommission - totalLiquidado);
+  }, [productivity.realizedCommission, totalLiquidado]);
 
   const handleSaveGoals = () => {
     const newConfig: TechGoalConfig = {
@@ -283,17 +322,31 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
           <div className="absolute top-0 right-0 p-3 opacity-10">
             <Coins className="h-16 w-16 text-yellow-400" />
           </div>
-          <CardContent className="p-4 space-y-1">
+          <CardContent className="p-4 space-y-1.5">
             <div className="flex items-center justify-between text-muted-foreground">
               <span className="text-[11px] uppercase font-bold tracking-wider">Comissão Realizada</span>
               <Coins className="h-4 w-4 text-yellow-400" />
             </div>
-            <p className="font-display text-2xl font-black text-yellow-400">
-              {formatCurrency(productivity.realizedCommission)}
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              {productivity.totalDelivered} reparos entregues no período
-            </p>
+            <div>
+              <p className="font-display text-2xl font-black text-yellow-400">
+                {formatCurrency(productivity.realizedCommission)}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {productivity.totalDelivered} reparos entregues no período
+              </p>
+            </div>
+            {techSettlements.length > 0 && (
+              <div className="pt-1 flex flex-wrap gap-1.5 text-[10px]">
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                  Liquidado: {formatCurrency(totalLiquidado)}
+                </Badge>
+                {pendenteLiquidar > 0 && (
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30">
+                    A Pagar: {formatCurrency(pendenteLiquidar)}
+                  </Badge>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -687,6 +740,118 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
           )}
         </CardContent>
       </Card>
+
+      {/* ─────────────────────────────────────────────────────────────
+          HISTÓRICO & EXTRATO DE COMISSÕES LIQUIDADAS
+          ───────────────────────────────────────────────────────────── */}
+      {techSettlements.length > 0 && (
+        <Card className="border-border/60 shadow-sm">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                  <Receipt className="h-4 w-4" />
+                </div>
+                <div>
+                  <CardTitle className="font-display text-base flex items-center gap-2">
+                    Extrato de Comissões Recebidas
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px]">
+                      {techSettlements.length} {techSettlements.length === 1 ? "baixa" : "baixas"}
+                    </Badge>
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Histórico de pagamentos de comissão efetuados pela administração com comprovante
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[11px] text-muted-foreground">Total Já Recebido:</span>
+                <p className="font-mono font-bold text-emerald-500 text-base">
+                  {formatCurrency(totalLiquidado)}
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-3">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="text-left py-2 px-2 font-medium">Data do Pagamento</th>
+                    <th className="text-left py-2 px-2 font-medium">Forma</th>
+                    <th className="text-left py-2 px-2 font-medium">Período de Apuração</th>
+                    <th className="text-left py-2 px-2 font-medium">Itens</th>
+                    <th className="text-right py-2 px-2 font-medium">Valor Pago</th>
+                    <th className="text-right py-2 px-2 font-medium">Comprovante</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {techSettlements.map((s) => (
+                    <tr key={s.id} className="border-b border-border/30 hover:bg-muted/30">
+                      <td className="py-2.5 px-2 whitespace-nowrap font-mono font-medium">
+                        {new Date(s.paid_at || s.created_at).toLocaleDateString("pt-BR")}{" "}
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(s.paid_at || s.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2">
+                        <Badge variant="outline" className="text-[10px] capitalize">
+                          {s.payment_method === "dinheiro" ? "💵 Dinheiro" : s.payment_method.toUpperCase()}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 px-2 text-muted-foreground">
+                        {s.period_start && s.period_end ? (
+                          <span>
+                            {new Date(s.period_start + "T00:00:00").toLocaleDateString("pt-BR")} até{" "}
+                            {new Date(s.period_end + "T00:00:00").toLocaleDateString("pt-BR")}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-2.5 px-2 text-muted-foreground">
+                        {s.items_count ?? 1} {s.items_count === 1 ? "item" : "itens"}
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono font-bold text-emerald-500 whitespace-nowrap">
+                        {formatCurrency(Number(s.total_amount))}
+                      </td>
+                      <td className="py-2.5 px-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={downloadingPdfId === s.id}
+                          className="h-7 px-2 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/10"
+                          onClick={async () => {
+                            try {
+                              setDownloadingPdfId(s.id);
+                              const items = await fetchSettlementItems(s.id);
+                              generateSettlementReceiptPDF({
+                                settlement: s,
+                                items,
+                                storeName: "Cell Pro 360",
+                                collaboratorName: "Técnico Responsável",
+                                managerName: "Gestão Financeira",
+                              });
+                              toast.success("Recibo baixado com sucesso!");
+                            } catch (e) {
+                              toast.error("Erro ao gerar recibo em PDF");
+                            } finally {
+                              setDownloadingPdfId(null);
+                            }
+                          }}
+                        >
+                          <Download className="h-3 w-3" />
+                          {downloadingPdfId === s.id ? "Gerando..." : "Recibo PDF"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: AJUSTE DE METAS DO TÉCNICO

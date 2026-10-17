@@ -456,6 +456,7 @@ const Vendas = () => {
         const { error: txError } = await supabase.from("transactions").insert({
           type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
           description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
+          sale_id: (saleData as any).id,
           created_by: user.id, destination_account_id: form.destination_account_id || null,
           expected_settlement_date: expectedDate.toISOString(),
           ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -483,6 +484,7 @@ const Vendas = () => {
           const { error: txError } = await supabase.from("transactions").insert({
             type: "sale", amount: totalConsolidated, net_amount: totalNet,
             description: descMisto, store_id: selectedProduct.store_id, product_id: form.product_id,
+            sale_id: (saleData as any).id,
             created_by: user.id, destination_account_id: form.destination_account_id || null,
             expected_settlement_date: expectedDate.toISOString(),
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -497,6 +499,7 @@ const Vendas = () => {
             const { error: txError1 } = await supabase.from("transactions").insert({
               type: "sale", amount: cashVal, net_amount: cashVal,
               description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+              sale_id: (saleData as any).id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -510,6 +513,7 @@ const Vendas = () => {
             const { error: txError2 } = await supabase.from("transactions").insert({
               type: "sale", amount: cardVal, net_amount: net,
               description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+              sale_id: (saleData as any).id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -523,6 +527,7 @@ const Vendas = () => {
             const { error: txError3 } = await supabase.from("transactions").insert({
               type: "sale", amount: pixVal, net_amount: net,
               description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
+              sale_id: (saleData as any).id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -550,22 +555,22 @@ const Vendas = () => {
   const handleDeleteSale = async (item: { id: string, type: "sale" | "pdv" }, reason: string) => {
     setLoading(true);
     try {
-      // 1. Excluir comprovantes fisicos e cash_entries vinculadas pelo novo reference_id
-      const { data: entriesToDel } = await supabase.from("cash_entries").select("receipt_url").eq("reference_id", item.id).not("receipt_url", "is", null);
-      if (entriesToDel && entriesToDel.length > 0) {
-        for (const entry of entriesToDel) {
-          if (entry.receipt_url) {
-            const path = entry.receipt_url.split("/comprovantes/")[1];
-            if (path) await supabase.storage.from("comprovantes").remove([path]);
-          }
-        }
-      }
-      await supabase.from("cash_entries").delete().eq("reference_id", item.id);
-
       if (item.type === "pdv") {
         const pdvSale = pdvSales.find(s => s.id === item.id);
         if (!pdvSale) return;
         
+        // Mapear comprovantes vinculados ao PDV
+        const { data: entriesToDel } = await supabase.from("cash_entries").select("receipt_url").eq("reference_id", item.id).not("receipt_url", "is", null);
+        const receiptPaths: string[] = [];
+        if (entriesToDel && entriesToDel.length > 0) {
+          for (const entry of entriesToDel) {
+            if (entry.receipt_url) {
+              const path = entry.receipt_url.split("/comprovantes/")[1];
+              if (path) receiptPaths.push(path);
+            }
+          }
+        }
+
         // Restaurar estoque dos acessórios via metadata
         const { data: pdvTx } = await supabase.from("transactions").select("metadata").eq("id", item.id).maybeSingle();
         const meta = pdvTx?.metadata as any;
@@ -582,9 +587,19 @@ const Vendas = () => {
         const { error: txError } = await supabase.from("transactions").delete().eq("id", pdvSale.id);
         if (txError) throw txError;
         
-        // Fallback: Excluir cash_entries por descrição para vendas legadas
+        // Excluir cash_entries
+        await supabase.from("cash_entries").delete().eq("reference_id", item.id);
         if (pdvSale.description) {
            await supabase.from("cash_entries").delete().eq("description", pdvSale.description);
+        }
+
+        // Limpar storage após sucesso das mutações no banco
+        if (receiptPaths.length > 0) {
+          try {
+            await supabase.storage.from("comprovantes").remove(receiptPaths);
+          } catch (storageErr) {
+            console.warn("Falha não bloqueante ao remover comprovante do storage:", storageErr);
+          }
         }
         
         logAction("DELETE_RECORD", "transactions", pdvSale.id, pdvSale, { reason }, pdvSale.store_id);
@@ -592,22 +607,48 @@ const Vendas = () => {
       } else {
         const sale = sales.find(s => s.id === item.id);
         if (!sale) return;
-        
-        // 1. Restaurar o produto para 'in_stock'
-        await supabase.from("products").update({ status: "in_stock", sale_price: null }).eq("id", sale.product_id);
-        
-        // 2. Se houver trade-in, apagar o produto que foi criado
-        if (sale.trade_in_product_id) {
-          await supabase.from("products").delete().eq("id", sale.trade_in_product_id);
+
+        // Mapear caminhos de comprovantes ANTES da exclusão, mas NÃO apagar do Storage ainda
+        const { data: entriesToDel } = await supabase
+          .from("cash_entries")
+          .select("receipt_url")
+          .eq("reference_id", item.id)
+          .not("receipt_url", "is", null);
+
+        const receiptPaths: string[] = [];
+        if (entriesToDel && entriesToDel.length > 0) {
+          for (const entry of entriesToDel) {
+            if (entry.receipt_url) {
+              const path = entry.receipt_url.split("/comprovantes/")[1];
+              if (path) receiptPaths.push(path);
+            }
+          }
         }
-        
-        // 3. Apagar as transações vinculadas
-        await supabase.from("transactions").delete().eq("product_id", sale.product_id).eq("type", "sale");
-        
-        // 4. Apagar a venda
-        const { error } = await supabase.from("sales").delete().eq("id", sale.id);
-        if (error) throw error;
-        
+
+        // 1. Executar cancelamento ATÔMICO no PostgreSQL via RPC
+        const { error: cancelError } = await supabase.rpc("cancel_sale" as any, {
+          p_sale_id: item.id,
+          p_reason: reason,
+        });
+
+        if (cancelError) {
+          if (cancelError.message?.includes("SALE_COMMISSION_ALREADY_SETTLED")) {
+            toast.error("Esta venda já possui comissão liquidada (SALE_COMMISSION_ALREADY_SETTLED) e não pode ser cancelada.");
+          } else {
+            toast.error("Erro ao cancelar venda: " + cancelError.message);
+          }
+          return; // Zero arquivos de storage apagados; zero mutações parciais no banco
+        }
+
+        // 2. RPC cancelou com sucesso: SOMENTE AGORA remover comprovantes do Storage
+        if (receiptPaths.length > 0) {
+          try {
+            await supabase.storage.from("comprovantes").remove(receiptPaths);
+          } catch (storageErr) {
+            console.warn("Aviso: falha não bloqueante ao limpar arquivos do storage após cancelamento:", storageErr);
+          }
+        }
+
         logAction("DELETE_RECORD", "sales", sale.id, sale, { reason }, sale.store_id);
         toast.success("Venda cancelada! Aparelho devolvido ao estoque, financeiro e arquivos revertidos.");
       }

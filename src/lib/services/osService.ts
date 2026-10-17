@@ -1,7 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export const deleteServiceOrder = async (id: string) => {
-  const { error } = await supabase.from("service_orders").delete().eq("id", id);
+export const deleteServiceOrder = async (id: string, reason?: string) => {
+  const { error } = await supabase.rpc("cancel_service_order" as any, {
+    p_service_order_id: id,
+    p_reason: reason,
+  });
   if (error) throw error;
 };
 

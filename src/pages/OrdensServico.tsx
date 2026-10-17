@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { convertToWebP } from "@/utils/imageOptimizer";
+import { openComprovante, getSignedComprovanteUrl } from "@/lib/storageHelper";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { OsChecklist, ChecklistData, CHECKLIST_ITEMS, VISUAL_CHECKLIST_ITEMS } from "@/components/OsChecklist";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -520,7 +521,8 @@ const OrdensServico = () => {
   const uploadReceipt = async (file: File): Promise<string | null> => {
     const optimizedFile = await convertToWebP(file);
     const fileName = `${detailOrder?.order_number}-${Date.now()}-${optimizedFile.name}`;
-    const { data, error } = await supabase.storage.from("comprovantes").upload(`os-pagamentos/${fileName}`, optimizedFile, { upsert: true });
+    const storePrefix = detailOrder?.store_id || activeStoreId || "geral";
+    const { data, error } = await supabase.storage.from("comprovantes").upload(`${storePrefix}/os-pagamentos/${fileName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;
@@ -905,32 +907,43 @@ const OrdensServico = () => {
 
   const handleDeleteOS = async (id: string, reason: string) => {
     setLoading(true);
-    // Reverter peças vinculadas de volta para in_stock antes de excluir a OS
-    const { data: items } = await supabase
-      .from("service_order_items" as any)
-      .select("product_id")
-      .eq("service_order_id", id);
-    if (items && items.length > 0) {
-      const prodIds = items.map((i: any) => i.product_id).filter(Boolean);
-      if (prodIds.length > 0) {
-        await supabase
-          .from("products")
-          .update({ status: "in_stock" })
-          .in("id", prodIds)
-          .eq("status", "sold");
-      }
-    }
+    try {
+      const receiptUrl = detailOrder?.receipt_url;
 
-    const { error } = await supabase.from("service_orders").delete().eq("id", id);
-    if (error) {
-      toast.error("Erro ao excluir: " + error.message);
-    } else {
+      // 1. Invocar RPC atômica cancel_service_order
+      const { error } = await supabase.rpc("cancel_service_order" as any, {
+        p_service_order_id: id,
+        p_reason: reason,
+      });
+
+      if (error) {
+        if (error.message?.includes("OS_COMMISSION_ALREADY_SETTLED")) {
+          toast.error("Esta OS possui comissão liquidada (OS_COMMISSION_ALREADY_SETTLED) e não pode ser cancelada/excluída.");
+        } else {
+          toast.error("Erro ao excluir: " + error.message);
+        }
+        return;
+      }
+
+      // 2. Limpeza de storage de comprovante SOMENTE APÓS sucesso da RPC
+      if (receiptUrl) {
+        try {
+          const path = receiptUrl.split("/comprovantes/")[1];
+          if (path) await supabase.storage.from("comprovantes").remove([path]);
+        } catch (storageErr) {
+          console.warn("Aviso: falha não bloqueante ao remover comprovante do storage:", storageErr);
+        }
+      }
+
       toast.success("Ordem de Serviço removida!");
       setDetailOrder(null);
       fetchData();
       logAction("DELETE_RECORD", "service_orders", id, null, { reason }, activeStoreId);
+    } catch (err: any) {
+      toast.error("Erro ao excluir: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleMoveStore = async (newStoreId: string, reason: string) => {
@@ -988,13 +1001,13 @@ const OrdensServico = () => {
       // Faz upload do PDF para o Supabase Storage e compartilha o link
       const pdfBlob = doc.output("blob");
       const fileName = `os-${order.order_number}-${Date.now()}.pdf`;
+      const storePrefix = order.store_id || activeStoreId || "geral";
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("comprovantes").upload(`os-pdfs/${fileName}`, pdfBlob, { upsert: true, contentType: "application/pdf" });
+        .from("comprovantes").upload(`${storePrefix}/os-pdfs/${fileName}`, pdfBlob, { upsert: true, contentType: "application/pdf" });
 
       let shareUrl = publicUrl;
       if (!uploadError && uploadData) {
-        const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
-        shareUrl = urlData.publicUrl;
+        shareUrl = await getSignedComprovanteUrl(uploadData.path, 60 * 60 * 24 * 7); // 7 dias
       }
 
       const phone = order.customer_phone.replace(/\D/g, "");
@@ -1459,7 +1472,8 @@ const OrdensServico = () => {
                     {detailOrder.receipt_url && (
                       <div className="mt-2 pt-2 border-t border-border/50">
                         <a href={detailOrder.receipt_url} target="_blank" rel="noreferrer"
-                           className="text-[10px] text-primary underline flex items-center gap-1 font-semibold">
+                           onClick={(e) => openComprovante(detailOrder.receipt_url, e)}
+                           className="text-[10px] text-primary underline flex items-center gap-1 font-semibold cursor-pointer">
                           <Receipt className="h-3 w-3" /> Ver Comprovante de Pagamento
                         </a>
                       </div>

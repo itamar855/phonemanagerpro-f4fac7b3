@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Plus, ArrowUpDown, ArrowUpRight, ArrowDownRight, Tag, Trash2, Edit2, Camera, Upload, Receipt, CheckCircle, Loader2, AlertTriangle, Store } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
 import { convertToWebP } from "@/utils/imageOptimizer";
+import { openComprovante } from "@/lib/storageHelper";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -107,7 +108,8 @@ const Transacoes = () => {
     const optimizedFile = await convertToWebP(file);
     const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
     const fileName = `${user?.id}-${Date.now()}-${safeName}`;
-    const { data, error } = await supabase.storage.from("comprovantes").upload(`transacoes/${fileName}`, optimizedFile, { upsert: true });
+    const storePrefix = (selectedStoreId && selectedStoreId !== "all") ? selectedStoreId : (txForm.store_id || "geral");
+    const { data, error } = await supabase.storage.from("comprovantes").upload(`${storePrefix}/transacoes/${fileName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);
     return urlData.publicUrl;
@@ -606,8 +608,8 @@ const Transacoes = () => {
                     )}
                     {tx.receipt_url && (
                       <a href={tx.receipt_url} target="_blank" rel="noreferrer"
-                         className="text-[10px] text-primary underline flex items-center gap-0.5"
-                         onClick={e => e.stopPropagation()}>
+                         className="text-[10px] text-primary underline flex items-center gap-0.5 cursor-pointer"
+                         onClick={e => { e.stopPropagation(); openComprovante(tx.receipt_url, e); }}>
                         <Receipt className="h-2.5 w-2.5" /> Ver Comprovante
                       </a>
                     )}
@@ -721,7 +723,8 @@ const Transacoes = () => {
                 <div className="flex items-center gap-2 rounded bg-green-500/10 p-2 text-[10px] text-green-600 border border-green-500/20 font-medium font-display">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate flex-1">Comprovante já enviado</span>
-                  <button onClick={() => setExistingReceiptUrl(null)} className="text-destructive hover:underline">Trocar</button>
+                  <button type="button" onClick={() => openComprovante(existingReceiptUrl)} className="text-primary hover:underline font-semibold mr-1">Visualizar</button>
+                  <button type="button" onClick={() => setExistingReceiptUrl(null)} className="text-destructive hover:underline">Trocar</button>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">

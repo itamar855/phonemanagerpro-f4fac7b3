@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, UploadCloud, Image as ImageIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { convertToWebP } from "@/utils/imageOptimizer";
+import { openComprovante, useSignedUrl, extractStoragePath } from "@/lib/storageHelper";
 
 interface Photo {
   id: string;
@@ -58,7 +59,15 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
       const optimizedFile = await convertToWebP(file);
       const fileExt = optimizedFile.name.split('.').pop();
       const fileName = `${orderId}-${Math.random()}.${fileExt}`;
-      const filePath = `os-photos/${fileName}`;
+
+      // Obter store_id da OS para prefixação segura no Storage
+      const { data: orderData } = await supabase
+        .from("service_orders" as any)
+        .select("store_id")
+        .eq("id", orderId)
+        .maybeSingle();
+      const storePrefix = (orderData as any)?.store_id || "geral";
+      const filePath = `${storePrefix}/os-photos/${fileName}`;
 
       // Upload image
       const { error: uploadError } = await supabase.storage
@@ -95,10 +104,11 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
 
   const handleDelete = async (photoId: string, photoUrl: string) => {
     try {
-      // Remover do Storage (opcional, dependendo da necessidade de retenção de dados)
-      const pathParts = photoUrl.split('/');
-      const fileName = pathParts[pathParts.length - 1];
-      await supabase.storage.from('comprovantes').remove([`os-photos/${fileName}`]);
+      // Remover do Storage com caminho exato normalizado
+      const storagePath = extractStoragePath(photoUrl);
+      if (storagePath) {
+        await supabase.storage.from('comprovantes').remove([storagePath]);
+      }
 
       // Remover do banco de dados
       const { error } = await supabase
@@ -179,38 +189,65 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {photos.map(photo => (
-            <Card key={photo.id} className="group relative overflow-hidden border-border/50 shadow-sm hover:shadow-md transition-all">
-              <div className="aspect-square bg-muted">
-                <img 
-                  src={photo.photo_url} 
-                  alt={`Condição de ${stageLabels[photo.stage]}`} 
-                  className="w-full h-full object-cover" 
-                  onClick={() => window.open(photo.photo_url, "_blank")}
-                />
-              </div>
-              
-              <div className="absolute top-2 left-2 pointer-events-none">
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${stageBadgeColors[photo.stage] || "bg-muted text-muted-foreground"}`}>
-                  {stageLabels[photo.stage] || photo.stage}
-                </span>
-              </div>
-
-              {!readonly && (
-                <div className="absolute top-2 right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                  <Button 
-                    type="button"
-                    className="h-7 w-7 sm:h-6 sm:w-6 p-0 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-full shadow-lg active:scale-90"
-                    onClick={(e) => { e.stopPropagation(); handleDelete(photo.id, photo.photo_url); }}
-                    title="Excluir foto"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
-                  </Button>
-                </div>
-              )}
-            </Card>
+            <OsPhotoCard
+              key={photo.id}
+              photo={photo}
+              readonly={readonly}
+              stageLabels={stageLabels}
+              stageBadgeColors={stageBadgeColors}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function OsPhotoCard({
+  photo,
+  readonly,
+  stageLabels,
+  stageBadgeColors,
+  onDelete,
+}: {
+  photo: Photo;
+  readonly: boolean;
+  stageLabels: Record<string, string>;
+  stageBadgeColors: Record<string, string>;
+  onDelete: (id: string, url: string) => void;
+}) {
+  const signedUrl = useSignedUrl(photo.photo_url);
+
+  return (
+    <Card className="group relative overflow-hidden border-border/50 shadow-sm hover:shadow-md transition-all">
+      <div className="aspect-square bg-muted cursor-pointer">
+        <img 
+          src={signedUrl || photo.photo_url} 
+          alt={`Condição de ${stageLabels[photo.stage] || photo.stage}`} 
+          className="w-full h-full object-cover" 
+          onClick={() => openComprovante(photo.photo_url)}
+        />
+      </div>
+      
+      <div className="absolute top-2 left-2 pointer-events-none">
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${stageBadgeColors[photo.stage] || "bg-muted text-muted-foreground"}`}>
+          {stageLabels[photo.stage] || photo.stage}
+        </span>
+      </div>
+
+      {!readonly && (
+        <div className="absolute top-2 right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          <Button 
+            type="button"
+            className="h-7 w-7 sm:h-6 sm:w-6 p-0 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-full shadow-lg active:scale-90"
+            onClick={(e) => { e.stopPropagation(); onDelete(photo.id, photo.photo_url); }}
+            title="Excluir foto"
+          >
+            <Trash2 className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
