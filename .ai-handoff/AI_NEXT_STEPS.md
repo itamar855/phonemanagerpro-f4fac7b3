@@ -1,82 +1,47 @@
-# AI NEXT STEPS — CHECKLIST ORDENADO DE HARDENING E ROLLOUT
+# AI NEXT STEPS — CHECKLIST ORDENADO E PRÓXIMAS ETAPAS
 
-> **AVISO PARA A NOVA IA:**  
+> **AVISO PARA A NOVA IA APÓS REINÍCIO:**  
 > **NÃO execute automaticamente nenhuma dessas etapas ao iniciar o novo chat.**  
-> Leia primeiro o [AI_HANDOFF.md](file:///c:/Users/Hard%20Work/Desktop/cellmanagerpro/phonemanagerpro-f4fac7b3/AI_HANDOFF.md), apresente o resumo do estado atual, diagnostique o ponto exato de parada e aguarde a autorização explícita do usuário antes de realizar qualquer alteração.
+> Leia primeiro o [AI_HANDOFF.md](file:///c:/Users/Hard%20Work/Desktop/cellmanagerpro/phonemanagerpro-f4fac7b3/AI_HANDOFF.md), apresente o resumo do ponto exato de parada e aguarde a autorização explícita do usuário antes de realizar qualquer alteração.
 
 ---
 
 ## Sequência Ordenada de Execução
 
-### ETAPA 1 — Quarentenar Integrações Adiadas (CONCLUÍDA)
-- [x] Diagnóstico read-only dos webhooks externos.
-- [x] Undeploy remoto de `instagram-webhook` (HTTP 404).
-- [x] Undeploy remoto de `whatsapp-financial-assistant` (HTTP 404).
-- [x] `whatsapp-webhook` seguro na borda com `verify_jwt: true`.
-- [x] Neutralizar `.github/workflows/backup.yml` (movido para `docs/disabled-workflows/backup.yml.disabled` e commit `a67b812`).
+### ✅ ETAPA 1 — Fix Comprovantes do Técnico (CONCLUÍDA)
+- [x] Correção de upload isolado por `store_id` em `src/components/OsParts.tsx`.
+- [x] Remoção de fallback `geral` e verificação estrita de UUID de loja.
+- [x] Visualização com URL assinada segura em `src/lib/storageHelper.ts`.
+- [x] Branch `fix/upload-comprovantes-tecnico` commitada (`f4961d0`) e enviada ao remoto.
 
 ---
 
-### ETAPA 2 — Saneamento de Segurança do `.env` Local (CONCLUÍDA)
-- [x] Auditoria segura do `.env` (apenas anon JWT, sem segredos privados).
-- [x] Desindexação do `.env` no Git (`git rm --cached -- .env` no commit `e5a8b5e`).
-- [x] Proteção confirmada por `.gitignore:28` e ausência no GitHub (HTTP 404).
+### ✅ ETAPA 2 — Liquidação de Comissões e Relatórios Financeiros (CONCLUÍDA)
+- [x] Criação de schema de comissões `commission_settlements`.
+- [x] Integração no frontend em `src/pages/Relatorios.tsx` e `CommissionPayoutModal.tsx`.
+- [x] 63 testes unitários criados e aprovados.
+- [x] Branch `feat/commission-settlements` commitada (`ea8c97b`) e enviada ao remoto.
 
 ---
 
-### ETAPA 3 — Fase A: Código Frontend Compatível com `sb_publishable_...` (CONCLUÍDA)
-- [x] `src/integrations/supabase/client.ts` sem dependência de JWT (`atob`/`split('.')`).
-- [x] Derivação segura do ref a partir da URL (`getProjectRefFromUrl`).
-- [x] `isValidPublishableKeyFormat` defensivo (aceita `sb_publishable_...` e legacy JWT transitório).
-- [x] `src/pages/AIAssistant.tsx` corrigido com headers `apikey` e `Authorization: Bearer session.access_token`.
-- [x] 14 novos testes em `src/__tests__/business-rules/supabase-client-config.test.ts` (375/375 testes PASS).
+### ✅ ETAPA 3 — Hardening de Service Orders, Fornecedores e Storage Privado (Phase 1B & 1C) (CONCLUÍDA)
+- [x] 4 migrations atômicas preparadas.
+- [x] 8 arquivos frontend adaptados (OS, Vendas, Caixa, Transações, Técnico, etc.).
+- [x] 363 testes passando com 0 erros de TypeScript.
+- [x] Branch `feat/security-hardening-phase1b-1c` commitada (`10c5450`) e enviada ao remoto.
 
 ---
 
-### ETAPA 4 — Fase B: Troca Local para `sb_publishable_...` (CONCLUÍDA)
-- [x] `.env` local atualizado com a chave moderna `sb_publishable_...`.
-- [x] Build local inspecionado: `BUNDLE_HAS_SB_PUBLISHABLE = SIM`, `BUNDLE_HAS_LEGACY_ANON_JWT = NÃO`.
-- [x] Smoke test local autenticado (`http://localhost:8080`) com dados reais e 0 erros.
+### ✅ ETAPA 4 — Extensão Chrome de Leads & WhatsApp Bridge (CONCLUÍDA)
+- [x] Criar branch `feat/extension-leads-bridge` a partir do estado atual.
+- [x] Adicionar os 10 arquivos cirúrgicos (`extension/*`, 2 migrations de bridge/RLS e 2 testes unitários).
+- [x] Executar gates de qualidade (`npx tsc --noEmit` e `npm test -- --run` — 363/363 PASS).
+- [x] Fazer commit isolado (`2f36a45`) e enviar para `origin/feat/extension-leads-bridge`.
+- [x] Não mesclar em `main` nem aplicar SQL no banco remoto.
 
 ---
 
-### ETAPA 5 — Fase C1: Deploy de Compatibilidade em Produção (CONCLUÍDA)
-- [x] Commit cirúrgico `e280cd8` enviado para `origin/main`.
-- [x] Deploy no Vercel gerado e promovido.
-- [x] Smoke test em produção comprovou `NOVO_CODIGO + LEGACY_ENV = FUNCIONANDO`.
+### ⏳ ETAPA 5 — Consolidação e Rollout Remoto (Quando solicitado pelo usuário)
+- [ ] Revisão geral dos Pull Requests no GitHub.
+- [ ] Planejamento da ordem de merge ou aplicação de migrations no banco remoto Supabase (sob instrução expressa).
 
----
-
-### ETAPA 6 — Fase C2: Troca em Produção no Vercel (EM ANDAMENTO / PRÓXIMO PASSO)
-- [ ] No Vercel (Project Settings ➔ Environment Variables): colar a chave moderna `sb_publishable_...` em `VITE_SUPABASE_PUBLISHABLE_KEY` (ambiente Production) e Salvar.
-- [ ] Fazer Redeploy do commit `e280cd8` desmarcando *"Use existing Build Cache"*.
-- [ ] Inspecionar bundle de produção (`fetch_fresh.mjs`):
-  * `PRODUCTION_BUNDLE_HAS_SB_PUBLISHABLE = SIM`
-  * `PRODUCTION_BUNDLE_HAS_LEGACY_ANON_JWT = NÃO`
-- [ ] Smoke test autenticado na URL de produção `https://cellpromanager.vercel.app/`.
-
----
-
-### ETAPA 7 — Auditoria Final dos Consumidores Legacy
-- [ ] Confirmar `ACTIVE_LEGACY_ANON_ONLY_CONSUMERS = []`.
-- [ ] Confirmar `ACTIVE_LEGACY_SERVICE_ROLE_ONLY_CONSUMERS = []`.
-- [ ] Chegar ao marco: `SAFE_TO_DISABLE_LEGACY_API_KEYS = SIM`.
-
----
-
-### ETAPA 8 — Desativar Chaves Legadas no Supabase
-- [ ] Acessar Supabase Dashboard ➔ Project Settings ➔ API.
-- [ ] Desativar Legacy API Keys (anon e service_role).
-- [ ] Validar que produção e local continuam 100% operacionais.
-
----
-
-### ETAPA 9 — Executar Script da Fase 0B no Banco
-- [ ] Executar script transacional canônico da Fase 0B no SQL Editor do Supabase.
-- [ ] Aplicar 17 policies, 63 grants, integridade multi-tenant em `member_stores` e schema `private`.
-- [ ] Validar suíte SQL de RLS.
-
----
-
-### ETAPA 10 — Retomada Futura das Integrações Externas (Quando Solicitado)
-- [ ] Retomar `whatsapp-webhook`, `instagram-webhook` e `whatsapp-financial-assistant`.

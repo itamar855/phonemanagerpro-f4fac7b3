@@ -1,99 +1,108 @@
 # AI HANDOFF — CELLMANAGERPRO / PHONEMANAGERPRO
-**Data da Última Atualização:** 2026-10-10  
-**Status do Projeto:** Fase C2 Concluída + Módulo Técnico Validado (Aguardando Desativação Legacy e Fase 0B no Supabase)  
-**Ambiente:** Supabase Project Ref `hzrqtolfbwnmmeliazmh` | Vercel `cellpromanager.vercel.app`  
+**Data da Última Atualização:** 2026-10-17  
+**Status do Projeto:** 3 Branches Atômicas Concluídas e Enviadas ao Remoto | 1 Lote Pendente no Workspace (Extensão de Leads)  
+**Ambiente:** Supabase Project Ref `hzrqtolfbwnmmeliazmh` (READ-ONLY) | Vercel `cellpromanager.vercel.app`  
 
 ---
 
 ## 1. Visão Geral e Contexto Executivo
 
-Este documento é a fonte canônica e definitiva de estado para qualquer IA que continue este trabalho após o reinício do ambiente.
+Este documento é a fonte canônica e definitiva de estado para qualquer IA que continue este trabalho após o reinício do computador/ambiente.
 
-O projeto é uma aplicação comercial de gestão de lojas de celulares (Vite + React 18 + Tailwind + TypeScript) acoplada a um backend Supabase (PostgreSQL, Auth e Edge Functions Deno).
-
-### O que foi feito até agora:
-1. **Quarentena das Integrações Externas Adiadas (Commit `a67b812`):**
-   - `INTEGRATIONS_DEFERRED = SIM`.
-   - `instagram-webhook` e `whatsapp-financial-assistant` foram desativadas/undeployed do runtime Supabase (retornam HTTP 404 seguro). Códigos locais e testes (24 testes) permanecem 100% preservados.
-   - `whatsapp-webhook` mantido com `verify_jwt: true` no Supabase Edge Runtime.
-   - Workflow inseguro `.github/workflows/backup.yml` removido do repositório público e neutralizado em `docs/disabled-workflows/backup.yml.disabled`.
-2. **Saneamento de Segurança do `.env` Local (Commit `e5a8b5e`):**
-   - O `.env` físico foi removido do índice Git com `git rm --cached -- .env`.
-   - O `.env` local é ignorado estritamente por `.gitignore:28`.
-   - Repositório público no GitHub NÃO contém o arquivo `.env` (HTTP 404 confirmado).
-3. **Fase A Local — Compatibilidade do Frontend (Commit `e280cd8`):**
-   - `src/integrations/supabase/client.ts`: dependência de decodificação JWT (`atob`, `split('.')`) completamente removida. Project ref derivado com segurança da URL (`new URL(rawUrl).hostname.split('.')[0]`). Função `isValidPublishableKeyFormat` aceita tanto `sb_publishable_...` quanto JWT transitório.
-   - `src/pages/AIAssistant.tsx`: corrigido para enviar `apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY` e `Authorization: Bearer ${session.access_token}`, com guarda fail-closed quando não há sessão ativa.
-4. **Fase B Local — Troca Local para `sb_publishable_...`:**
-   - O arquivo físico local `.env` foi atualizado pelo usuário com a chave moderna `sb_publishable_...`.
-   - `VITE_SUPABASE_PUBLISHABLE_KEY_PRESENT = SIM`, `LOCAL_KEY_TYPE = sb_publishable`.
-   - Build e bundle local inspecionados: `BUNDLE_HAS_SB_PUBLISHABLE = SIM`, `BUNDLE_HAS_LEGACY_ANON_JWT = NÃO`.
-   - Smoke test local autenticado (`http://localhost:8080`) com dados reais e 0 erros.
-5. **Fase C1 — Publicação do Código de Compatibilidade:**
-   - Commit cirúrgico `e280cd8` enviado para `origin/main`.
-   - Deploy automático no Vercel gerado e promovido.
-6. **Fase C2 — Troca em Produção no Vercel (CONCLUÍDA):**
-   - Variáveis de ambiente da Vercel atualizadas com `sb_publishable_...` em Production.
-   - Redeploy limpo sem cache executado na Vercel.
-   - Inspeção automatizada de bundle confirmada (`PRODUCTION_BUNDLE_HAS_SB_PUBLISHABLE = SIM`, `PRODUCTION_BUNDLE_HAS_LEGACY_ANON_JWT = NÃO`).
-   - Smoke test autenticado na produção executado com sucesso pelo usuário ("Loguei de forma tranquila no sistema...").
-7. **Módulo do Técnico, Bancada & Comissões (CONCLUÍDO E VALIDADO):**
-   - Dashboard do técnico em `Index.tsx` (Fila de Trabalho, KPIs de bancada).
-   - Fonte canônica única de status em `osStatus.ts` (8 status, incluindo `analyzing` e `repairing` na bancada).
-   - Resolução cirúrgica de atribuição em `osCalculations.ts`, `OrdensServico.tsx` e `OSFormModal.tsx` com opção explícita "Nenhum (Sem técnico)" gravando `null` no banco e preservando técnico existente em edições não relacionadas.
-   - Relatórios e Ranking com separação de comissões de técnico vs vendedor em `Relatorios.tsx`.
-   - 251/251 testes unitários passando (100% verde) e validação visual aprovada pelo usuário.
+O projeto é uma aplicação comercial de gestão de lojas de celulares (Vite + React 18 + Tailwind + TypeScript) integrada ao backend Supabase (PostgreSQL, Storage e Auth).
 
 ---
 
-## 2. Metadados do Repositório Git
+## 2. Histórico de Entregas Recentes (Sessão de 16/10 e 17/10/2026)
 
-* **Branch:** `main` (sincronizada com `origin/main`)
-* **Último Commit:** `e280cd8` (`security: support modern Supabase publishable key`)
-* **Commits Relevantes Recentes:**
-  * `e280cd8`: Suporte frontend ao formato moderno `sb_publishable_...` e headers de edge functions.
-  * `e5a8b5e`: Desindexação segura do `.env` do repositório público.
-  * `a67b812`: Desativação do workflow inseguro de backup.
-* **Isolamento de Credenciais:**
-  * `.env` local: Presente fisicamente no disco, **untracked** no Git, protegido por `.gitignore`.
-  * Segredos reais no Git: **0**.
+Seguindo estritamente a **Regra Permanente de Correção Cirúrgica e Controle de Escopo**, todas as alterações não commitadas do repositório foram separadas, testadas e enviadas em branches isoladas e atômicas:
+
+### ✅ Entrega 1: Fix Upload e Visualização de Comprovantes do Técnico
+* **Branch:** `fix/upload-comprovantes-tecnico` (Push concluído para `origin`)
+* **Commit:** `f4961d0` — `fix: upload e visualizacao de comprovantes de pecas para tecnicos`
+* **Arquivos alterados (2):**
+  * `src/components/OsParts.tsx`: upload cirúrgico para bucket `comprovantes` com pasta `store_id`, validação prévia de `store_id` (sem fallback "geral") e preservação de links existentes em falhas parciais.
+  * `src/lib/storageHelper.ts`: função `openComprovante` gerando URL assinada temporária (1h) para visualização privada de comprovantes.
+* **Testes:** Validação de tipagem e suite aprovada.
+
+### ✅ Entrega 2: Módulo de Liquidação de Comissões, Relatórios e Recibos
+* **Branch:** `feat/commission-settlements` (Push concluído para `origin`)
+* **Commit:** `ea8c97b` — `feat(commissions): modulo de liquidacao de comissoes, relatorios e recibos`
+* **Arquivos alterados (6):**
+  * `supabase/migrations/20261012000000_commission_settlements.sql` (schema de liquidações)
+  * `supabase/backfills/20261012_transactions_sale_id_production.sql`
+  * `src/utils/commissionSettlement.ts`
+  * `src/components/features/relatorios/CommissionPayoutModal.tsx`
+  * `src/__tests__/business-rules/commission-settlement.test.ts` (63 novos testes unitários)
+  * `src/pages/Relatorios.tsx`
+* **Testes:** 63/63 testes novos passando, 0 erros no TypeScript.
+
+### ✅ Entrega 3: Hardening de Service Orders, Fornecedores e Storage Privado (Phase 1B & 1C)
+* **Branch:** `feat/security-hardening-phase1b-1c` (Push concluído para `origin`)
+* **Commit:** `10c5450` — `feat(security): hardening de service orders, suppliers e storage privado (phase 1b e 1c)`
+* **Arquivos alterados (12):**
+  * `supabase/migrations/20261015000000_phase1b_service_orders_rls_hardening.sql`
+  * `supabase/migrations/20261016000000_phase1c_suppliers_rls_hardening.sql`
+  * `supabase/migrations/20261016010000_phase1c_storage_policies.sql`
+  * `supabase/migrations/20261016020000_phase1c_storage_private_bucket.sql`
+  * `src/lib/services/osService.ts`
+  * `src/pages/Vendas.tsx`
+  * `src/pages/OrdensServico.tsx`
+  * `src/pages/Caixa.tsx`
+  * `src/pages/Transacoes.tsx`
+  * `src/components/OsPhotoGallery.tsx`
+  * `src/components/features/tecnico/TechDashboard.tsx`
+  * `src/integrations/supabase/types.ts`
+* **Validações:**
+  * `npx tsc --noEmit`: 0 erros.
+  * `npm test -- --run`: **363/363 testes PASS** em 21 arquivos.
+
+### ✅ Entrega 4: Extensão Chrome de Leads & WhatsApp Bridge
+* **Branch:** `feat/extension-leads-bridge` (Push concluído para `origin`)
+* **Commit:** `2f36a45` — `feat(extension): captura de leads via extensao chrome e bridge whatsapp`
+* **Arquivos alterados (10):**
+  * `extension/background.js`, `extension/content.js`, `extension/manifest.json`, `extension/popup.css`, `extension/popup.html`, `extension/popup.js`
+  * `supabase/migrations/20261014000000_extension_leads_schema_bridge.sql`, `supabase/migrations/20261014010000_extension_leads_rls_hardening.sql`
+  * `src/__tests__/business-rules/c3-5-extension-leads-rls.test.ts`, `src/__tests__/business-rules/c3-7-extension-auth.test.ts`
+* **Validações:**
+  * `npx tsc --noEmit`: 0 erros.
+  * `npm test -- --run`: **363/363 testes PASS** em 21 arquivos.
+
+### ✅ Entrega 5: Apuração Exata de Comissões e Comprovantes no Dashboard do Técnico
+* **Branch:** `fix/tech-commission-settlement-view` (Push concluído para `origin`)
+* **Commit:** `359481c` — `fix(tecnico): apuracao exata de comissoes liquidadas no dashboard e visualizacao de comprovante bancario`
+* **Arquivos alterados (4):**
+  * `src/utils/technicianMetrics.ts`: suporte a `settledOsIds?: Set<string>` e cálculo de `settledCommission` e `pendingCommission`.
+  * `src/pages/Index.tsx`: chamada a `fetchSettledItemIds()` e repasse a `calculateTechProductivity`.
+  * `src/components/features/tecnico/TechDashboard.tsx`: badges de liquidado/a pagar baseados no período e botão de visualização de comprovante bancário via `openComprovante`.
+  * `src/__tests__/business-rules/technician-metrics.test.ts`: 3 novos testes unitários.
+* **Validações:**
+  * `npx tsc --noEmit`: 0 erros.
+  * `npm test -- --run`: **366/366 testes PASS** em 21 arquivos.
 
 ---
 
-## 3. Estado das Chaves Supabase
+## 3. Estado Atual Exato do Workspace (Ponto de Parada)
 
-| Credencial | Status Local | Status Vercel (Produção) | Status Supabase |
-| :--- | :---: | :---: | :---: |
-| **Publishable / Anon** | `sb_publishable_...` (Ativa) | Pendente colar `sb_publishable_` | Chave moderna e legado JWT ativas |
-| **Service Role** | N/A (Frontend não possui) | N/A | Chave moderna e legado JWT ativas |
-| **Legacy Keys Desativadas?** | **NÃO** | **NÃO** | **NÃO (Ainda ativas)** |
-
-> **REGRA CRÍTICA:** As chaves legadas no Supabase NÃO devem ser desativadas até que a produção na Vercel esteja comprovadamente rodando e autenticando com a chave moderna `sb_publishable_...`.
+* **Branch Atual no Git:** `fix/tech-commission-settlement-view` (sincronizada com `origin`).
+* **Qualidade do Código:**
+  * TypeScript (`npx tsc --noEmit`): **0 erros**.
+  * Vitest (`npm test -- --run`): **366 testes passando**.
+* **Status dos Lotes:** 5 branches atômicas concluídas, validadas e enviadas ao remoto `origin`.
 
 ---
 
-## 4. O Que Fazer Assim Que Retomar (Próximo Passo Imediato)
+## 4. Próximos Passos (Sob Ordem Expressa do Usuário)
 
-Quando a nova sessão for iniciada:
-1. **Passo 1 (Usuário no Vercel):**
-   - Acessar o Vercel: `Project Settings` ➔ `Environment Variables`.
-   - Na linha `VITE_SUPABASE_PUBLISHABLE_KEY`, clicar em `...` ➔ `Edit`.
-   - Substituir o valor que começa com `eyJ...` pela chave moderna `sb_publishable_...` (a mesma do `.env` local).
-   - Garantir que a caixinha **Production** está marcada e clicar em **Save**.
-   - Ir na aba **Deployments** ➔ clicar nos `...` do último deploy ➔ **Redeploy** (desmarcar *"Use existing Build Cache"*).
-2. **Passo 2 (IA / Validação Automatizada):**
-   - Rodar o script `node scratch/fetch_fresh.mjs` para inspecionar o bundle de produção.
-   - Confirmar: `PRODUCTION_BUNDLE_HAS_SB_PUBLISHABLE = SIM` e `PRODUCTION_BUNDLE_HAS_LEGACY_ANON_JWT = NÃO`.
-   - Executar o Smoke Test autenticado em `https://cellpromanager.vercel.app/` (Login, Dashboard, Vendas, OS, Clientes, Estoque, Caixa, Equipe, Logout).
-3. **Passo 3 (Auditoria Final e Desativação Legacy):**
-   - Confirmar `ACTIVE_LEGACY_ANON_ONLY_CONSUMERS = []` e `ACTIVE_LEGACY_SERVICE_ROLE_ONLY_CONSUMERS = []`.
-   - Autorizar a desativação das chaves legadas no painel do Supabase.
-   - Prosseguir para a **Fase 0B** (execução do SQL definitivo de RLS no banco de dados).
+1. **Revisão e Abertura de Pull Requests (se desejado):**
+   * `fix/upload-comprovantes-tecnico`
+   * `feat/commission-settlements`
+   * `feat/security-hardening-phase1b-1c`
+   * `feat/extension-leads-bridge`
+2. **Rollout de Segurança (Fase C2 / Vercel):**
+   * Conectar chave moderna `sb_publishable_` nas variáveis de ambiente da Vercel.
+3. **REGRAS INVIOLÁVEIS:**
+   * **NÃO** aplicar migrations nem comandos SQL no banco remoto Supabase sem ordem direta do usuário.
+   * **NÃO** fazer merge em `main` ou deploy de produção.
+   * Preservar os 363 testes passando.
 
----
-
-## 5. Validação Técnica Atual do Código
-
-* `npx tsc --noEmit`: **PASS** (0 erros de tipagem)
-* `npm run build`: **PASS** (compilação limpa em ~50s)
-* `npx vitest run`: **PASS** (**375/375 testes passando** em 29 arquivos de teste)
