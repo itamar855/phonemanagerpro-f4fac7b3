@@ -30,28 +30,17 @@ import { useCartManager } from "@/hooks/features/vendas/useCartManager";
 import { useVendas } from "@/hooks/features/vendas/useVendas";
 import { PdvFormModal } from "@/components/features/vendas/PdvFormModal";
 import { DetalhesVendaModal } from "@/components/features/vendas/DetalhesVendaModal";
-
-const formatCurrency = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
-
-type Sale = {
-  id: string; product_id: string; store_id: string; sale_price: number;
-  has_trade_in: boolean; trade_in_device_name: string | null; trade_in_device_brand: string | null;
-  trade_in_device_model: string | null; trade_in_device_imei: string | null;
-  trade_in_value: number | null; payment_cash: number; payment_card: number;
-  payment_pix: number; customer_name: string | null; customer_phone: string | null;
-  customer_cpf: string | null; customer_address: string | null;
-  customer_id: string | null;
-  notes: string | null; created_by: string; created_at: string;
-  commission_value: number | null; commission_percent: number | null;
-  discount: number | null;
-  warranty_days: number | null; installments: number | null; seller_id: string | null;
-  trade_in_product_id: string | null;
-};
-
-type Customer = Tables<"customers">;
-type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
-type CartItem = { acc: Accessory; qty: number; price: number };
+import { NovaVendaModal } from "@/components/features/vendas/NovaVendaModal";
+import { EditarVendaModal } from "@/components/features/vendas/EditarVendaModal";
+import { EditarPdvModal } from "@/components/features/vendas/EditarPdvModal";
+import { DeleteSaleDialog } from "@/components/features/vendas/DeleteSaleDialog";
+import {
+  Sale,
+  Customer,
+  Accessory,
+  CartItem,
+  formatCurrency,
+} from "@/components/features/vendas/types";
 
 import { createPendingCashEntry, formatDescription } from "@/lib/services/salesService";
 // Note: cash_register_id is now delegated to salesService.ts to keep this component clean.
@@ -985,128 +974,7 @@ const Vendas = () => {
     setNotaLoading(null);
   };
 
-  // ── Customer search UI ────────────────────────────────────────────────────
-  const CustomerSection = () => (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-          <UserIcon className="h-3 w-3" /> Cliente
-        </p>
-        {currentProfile && (
-          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-            Vendedor: <span className="font-semibold text-primary">{currentProfile.display_name ?? user?.email}</span>
-          </span>
-        )}
-      </div>
-
-      {selectedCustomer ? (
-        <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                {selectedCustomer.name.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <p className="text-sm font-semibold">{selectedCustomer.name}</p>
-                <div className="flex gap-2 flex-wrap">
-                  {selectedCustomer.phone && <p className="text-[10px] text-muted-foreground">{selectedCustomer.phone}</p>}
-                  {selectedCustomer.cpf && <p className="text-[10px] text-muted-foreground">CPF: {selectedCustomer.cpf}</p>}
-                </div>
-              </div>
-            </div>
-            <Button className="h-7 px-2 bg-transparent border border-border text-foreground hover:bg-muted text-[10px]" onClick={clearCustomer}>Trocar</Button>
-          </div>
-          {selectedCustomer.address && <p className="text-[10px] text-muted-foreground">📍 {selectedCustomer.address}</p>}
-
-          {/* Histórico */}
-          {customerSalesHistory.length > 0 && (
-            <div>
-              <button className="flex items-center gap-1 text-[10px] text-primary font-medium" onClick={() => setShowCustomerHistory(v => !v)}>
-                <History className="h-3 w-3" /> {customerSalesHistory.length} compra(s) anterior(es)
-                {showCustomerHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              </button>
-              {showCustomerHistory && (
-                <div className="mt-2 space-y-1">
-                  {customerSalesHistory.map(s => {
-                    const p = productMap.get(s.product_id) as any;
-                    return (
-                      <div key={s.id} className="flex justify-between rounded bg-muted/50 px-2 py-1 text-[10px]">
-                        <span className="truncate">{p?.name ?? "Produto"}</span>
-                        <span className="text-primary font-semibold shrink-0 ml-2">{formatCurrency(Number(s.sale_price))}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-2" ref={searchRef}>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input value={customerSearch} onChange={e => setCustomerSearch(e.target.value)} placeholder="Buscar cliente por nome, telefone ou CPF..." className="pl-9 h-10" />
-          </div>
-          {customerResults.length > 0 && (
-            <div className="rounded-lg border border-border bg-card shadow-lg overflow-hidden">
-              {customerResults.map(c => (
-                <button key={c.id} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50 transition-colors text-left border-b border-border/50 last:border-0"
-                  onClick={() => selectCustomer(c)}>
-                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                    {c.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{c.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{c.phone ?? ""}{c.cpf ? ` · ${c.cpf}` : ""}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-          <Button className="w-full gap-2 h-9 text-xs border border-dashed bg-transparent text-foreground hover:bg-muted"
-            onClick={() => setShowNewCustomerForm(v => !v)}>
-            <UserPlus className="h-3.5 w-3.5" /> Cadastrar novo cliente
-          </Button>
-          {showNewCustomerForm && (
-            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
-              <p className="text-xs font-semibold text-primary">Novo Cliente</p>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Nome *</Label>
-                <Input value={newCustomerForm.name} onChange={e => setNewCustomerForm(f => ({ ...f, name: e.target.value }))} placeholder="Nome completo" className="h-9" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Telefone</Label>
-                  <Input value={newCustomerForm.phone} onChange={e => setNewCustomerForm(f => ({ ...f, phone: e.target.value }))} placeholder="(87) 99999-9999" className="h-9" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">CPF</Label>
-                  <Input value={newCustomerForm.cpf} onChange={e => setNewCustomerForm(f => ({ ...f, cpf: e.target.value }))} placeholder="000.000.000-00" className="h-9" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Endereço</Label>
-                <Input value={newCustomerForm.address} onChange={e => setNewCustomerForm(f => ({ ...f, address: e.target.value }))} placeholder="Rua, número, bairro..." className="h-9" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">E-mail</Label>
-                  <Input type="email" value={newCustomerForm.email} onChange={e => setNewCustomerForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemplo.com" className="h-9" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Data de Nascimento</Label>
-                  <Input type="date" value={newCustomerForm.birth} onChange={e => setNewCustomerForm(f => ({ ...f, birth: e.target.value }))} className="h-9" />
-                </div>
-              </div>
-              <Button className="w-full h-9" onClick={handleCreateCustomer} disabled={loading || !newCustomerForm.name}>
-                {loading ? "Salvando..." : "Salvar e Selecionar"}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  // CustomerSection foi modularizado dentro de NovaVendaModal
 
   return (
     <div className="space-y-4">
@@ -1173,406 +1041,50 @@ const Vendas = () => {
           />
 
           {/* Nova Venda */}
-          <Dialog open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (!open) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 h-10" disabled={activeStoreId === "all"}>
-                <Plus className="h-4 w-4" /> Nova Venda
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-              <DialogHeader><DialogTitle className="font-display">Registrar Venda</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-
-                {/* ── Cliente ── */}
-                {CustomerSection()}
-
-                {/* ── Produto ── */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Produto</Label>
-                  <Select value={form.product_id} onValueChange={v => {
-                    const prod = products.find(p => p.id === v);
-                    setForm({ ...form, product_id: v, sale_price: prod?.sale_price ? String(prod.sale_price) : "" });
-                  }}>
-                    <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o aparelho" /></SelectTrigger>
-                    <SelectContent>
-                      {availableProducts.map(p => {
-                        const storeName = (storeMap.get(p.store_id) as any)?.name || "?";
-                        return (
-                          <SelectItem key={p.id} value={p.id} className="py-2.5 focus:bg-accent">
-                            <div className="flex flex-col gap-1 w-full text-left">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-semibold text-sm text-foreground">{p.name}</span>
-                                {p.brand && (
-                                  <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                                    {p.brand}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-                                {p.imei && (
-                                  <span className="font-mono bg-muted/80 border border-border/80 px-1.5 py-0.2 rounded text-[11px] text-foreground/80">
-                                    IMEI: {p.imei}
-                                  </span>
-                                )}
-                                <span className="flex items-center gap-1 bg-secondary/80 px-1.5 py-0.2 rounded text-[10px] font-medium text-secondary-foreground">
-                                  📍 {storeName}
-                                </span>
-                              </div>
-                            </div>
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {selectedProduct && (
-                  <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                    {/* Header do card do produto */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border-b border-border">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Smartphone className="h-4 w-4 text-primary shrink-0" />
-                        <span className="font-semibold text-sm text-foreground truncate">{selectedProduct.name}</span>
-                      </div>
-                      {selectedProduct.brand && (
-                        <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/20 shrink-0 ml-2">
-                          {selectedProduct.brand}
-                        </span>
-                      )}
-                    </div>
-                    {/* Detalhes */}
-                    <div className="px-3 py-2.5 space-y-2">
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                        {selectedProduct.model && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Modelo</span>
-                            <span className="font-medium">{selectedProduct.model}</span>
-                          </div>
-                        )}
-                        {(selectedProduct as any).color && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Cor</span>
-                            <span className="font-medium flex items-center gap-1">
-                              <span className="inline-block h-2.5 w-2.5 rounded-full border border-border" style={{ background: (selectedProduct as any).color }} />
-                              {(selectedProduct as any).color}
-                            </span>
-                          </div>
-                        )}
-                        {selectedProduct.capacity && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Capacidade</span>
-                            <span className="font-medium">{selectedProduct.capacity}</span>
-                          </div>
-                        )}
-                        {selectedProduct.battery_percentage !== null && selectedProduct.battery_percentage !== undefined && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Saúde da Bateria</span>
-                            <span className="font-medium">{selectedProduct.battery_percentage}%</span>
-                          </div>
-                        )}
-                        {selectedProduct.condition && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Condição</span>
-                            <span className="font-medium capitalize">{selectedProduct.condition}</span>
-                          </div>
-                        )}
-                        {selectedProduct.imei && (
-                          <div className="flex flex-col gap-0.5 col-span-2">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">IMEI</span>
-                            <span className="font-mono text-[11px] bg-muted/70 px-1.5 py-0.5 rounded border border-border/70">{selectedProduct.imei}</span>
-                          </div>
-                        )}
-                        {selectedProduct.store_id && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Loja</span>
-                            <span className="font-medium flex items-center gap-1">
-                              <Store className="h-3 w-3 text-muted-foreground" />
-                              {(storeMap.get(selectedProduct.store_id) as any)?.name ?? "—"}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Custo</span>
-                          <span className="font-semibold text-foreground">{formatCurrency(Number(selectedProduct.cost_price))}</span>
-                        </div>
-                      </div>
-                      {salePrice > 0 && (
-                        <div className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold border ${
-                          profit >= 0
-                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
-                            : "bg-destructive/10 border-destructive/20 text-destructive"
-                        }`}>
-                          <span>Lucro estimado</span>
-                          <span className="text-sm">{formatCurrency(profit)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Valor de Venda (R$)</Label>
-                    <Input type="number" step="0.01" value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} placeholder="3500.00" required className="h-10" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1"><Tag className="h-3 w-3" /> Desconto (R$)</Label>
-                    <Input type="number" step="0.01" min="0" value={form.discount} onChange={e => setForm({ ...form, discount: e.target.value })} placeholder="0.00" className="h-10" />
-                  </div>
-                </div>
-
-                {discount > 0 && (
-                  <div className="flex items-center justify-between rounded-lg bg-yellow-500/10 border border-yellow-500/20 px-3 py-2 text-xs">
-                    <span className="text-yellow-500">Valor com desconto</span>
-                    <span className="font-bold text-yellow-500">{formatCurrency(salePriceAfterDiscount)}</span>
-                  </div>
-                )}
-
-                {/* Trade-in */}
-                <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-4 w-4 text-muted-foreground" />
-                    <div><p className="text-sm font-medium">Aparelho na troca</p><p className="text-[11px] text-muted-foreground">Cliente entrega como parte do pagamento</p></div>
-                  </div>
-                  <Switch checked={form.has_trade_in} onCheckedChange={v => setForm({ ...form, has_trade_in: v, trade_in_devices: v ? [{ name: "", brand: "iPhone", model: "", imei: "", value: "" }] : [] })} />
-                </div>
-
-                {form.has_trade_in && (
-                  <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                    <div className="flex items-center justify-between border-b border-primary/10 pb-2">
-                      <p className="text-xs font-semibold text-primary">Aparelhos na Troca</p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[10px] gap-1 border-primary/30 text-primary hover:bg-primary/10 bg-background shadow-none"
-                        onClick={() => {
-                          const devices = form.trade_in_devices || [];
-                          setForm({
-                            ...form,
-                            trade_in_devices: [...devices, { name: "", brand: "iPhone", model: "", imei: "", value: "" }]
-                          });
-                        }}
-                      >
-                        <Plus className="h-3 w-3" /> Adicionar Aparelho
-                      </Button>
-                    </div>
-
-                    {(form.trade_in_devices || []).map((device, index) => (
-                      <div key={index} className="space-y-3 p-2.5 rounded-md border border-border/50 bg-background/50 relative">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Aparelho #{index + 1}</p>
-                          {(form.trade_in_devices || []).length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                const devices = [...(form.trade_in_devices || [])];
-                                devices.splice(index, 1);
-                                setForm({ ...form, trade_in_devices: devices });
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Nome *</Label>
-                            <Input
-                              value={device.name}
-                              onChange={e => {
-                                const devices = [...(form.trade_in_devices || [])];
-                                devices[index].name = e.target.value;
-                                setForm({ ...form, trade_in_devices: devices });
-                              }}
-                              placeholder="Ex: iPhone 11 64GB"
-                              className="h-10 bg-background"
-                              required
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Marca</Label>
-                            <Select
-                              value={device.brand}
-                              onValueChange={v => {
-                                const devices = [...(form.trade_in_devices || [])];
-                                devices[index].brand = v;
-                                setForm({ ...form, trade_in_devices: devices });
-                              }}
-                            >
-                              <SelectTrigger className="h-10 bg-background"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                {["iPhone", "Samsung", "Xiaomi", "Outro"].map(b => (
-                                  <SelectItem key={b} value={b}>{b}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">Modelo</Label>
-                            <Input
-                              value={device.model}
-                              onChange={e => {
-                                const devices = [...(form.trade_in_devices || [])];
-                                devices[index].model = e.target.value;
-                                setForm({ ...form, trade_in_devices: devices });
-                              }}
-                              placeholder="Ex: A2221"
-                              className="h-10 bg-background"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-xs">IMEI</Label>
-                            <Input
-                              value={device.imei}
-                              onChange={e => {
-                                const devices = [...(form.trade_in_devices || [])];
-                                devices[index].imei = e.target.value;
-                                setForm({ ...form, trade_in_devices: devices });
-                              }}
-                              placeholder="Opcional"
-                              className="h-10 bg-background"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Valor da troca (R$) *</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={device.value}
-                            onChange={e => {
-                              const devices = [...(form.trade_in_devices || [])];
-                              devices[index].value = e.target.value;
-                              setForm({ ...form, trade_in_devices: devices });
-                            }}
-                            placeholder="0.00"
-                            className="h-10 bg-background"
-                            required
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Pagamento */}
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Forma de Pagamento</p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1.5"><Label className="text-xs flex items-center gap-1"><Banknote className="h-3 w-3" /> Dinheiro</Label><Input type="number" step="0.01" value={form.payment_cash} onChange={e => setForm({ ...form, payment_cash: e.target.value })} placeholder="0.00" className="h-10" /></div>
-                    <div className="space-y-1.5"><Label className="text-xs flex items-center gap-1"><CreditCard className="h-3 w-3" /> Cartão</Label><Input type="number" step="0.01" value={form.payment_card} onChange={e => setForm({ ...form, payment_card: e.target.value })} placeholder="0.00" className="h-10" /></div>
-                    <div className="space-y-1.5"><Label className="text-xs flex items-center gap-1"><QrCode className="h-3 w-3" /> PIX</Label><Input type="number" step="0.01" value={form.payment_pix} onChange={e => setForm({ ...form, payment_pix: e.target.value })} placeholder="0.00" className="h-10" /></div>
-                  </div>
-
-                  {cardVal > 0 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs flex items-center gap-1"><CreditCard className="h-3 w-3" /> Parcelas no Cartão</Label>
-                      <Select value={form.installments} onValueChange={v => setForm({ ...form, installments: v })}>
-                        <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (
-                            <SelectItem key={n} value={String(n)}>{n}x {n > 1 ? `de ${formatCurrency(cardVal / n)}` : "à vista"}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {(cardVal > 0 || pixVal > 0) && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs flex items-center gap-1"><Landmark className="h-3 w-3" /> Conta / Maquininha Destino</Label>
-                      <Select value={form.destination_account_id} onValueChange={v => setForm({ ...form, destination_account_id: v })}>
-                        <SelectTrigger className="h-10"><SelectValue placeholder="Selecione onde vai cair..." /></SelectTrigger>
-                        <SelectContent>
-                          {bankAccounts.filter(a => a.store_id === selectedProduct.store_id).map(acc => (
-                            <SelectItem key={acc.id} value={acc.id}>{acc.bank_name} ({acc.account_type})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[10px] text-muted-foreground">As taxas configuradas serão aplicadas automaticamente e refletirão no saldo disponível.</p>
-                    </div>
-                  )}
-
-                  <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Valor de venda</span><span className="font-semibold">{formatCurrency(salePrice)}</span></div>
-                    {discount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Desconto</span><span className="font-semibold text-yellow-500">-{formatCurrency(discount)}</span></div>}
-                    {form.has_trade_in && <div className="flex justify-between"><span className="text-muted-foreground">Aparelho na troca</span><span className="font-semibold text-primary">-{formatCurrency(tradeInVal)}</span></div>}
-                    <div className="flex justify-between"><span className="text-muted-foreground">Dinheiro + Cartão + PIX</span><span className="font-semibold">{formatCurrency(cashVal + cardVal + pixVal)}</span></div>
-                    <div className="border-t border-border pt-1 flex justify-between">
-                      <span className="font-medium">Restante</span>
-                      <span className={`font-bold ${Math.abs(remaining) < 0.01 ? "text-primary" : "text-destructive"}`}>{formatCurrency(remaining)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Garantia + Comissão */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1"><Shield className="h-3 w-3" /> Garantia (dias)</Label>
-                    <Select value={form.warranty_days} onValueChange={v => setForm({ ...form, warranty_days: v })}>
-                      <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {[7, 15, 30, 60, 90, 180, 365].map(d => <SelectItem key={d} value={String(d)}>{d} dias{d === 90 ? " (padrão)" : ""}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1">
-                      <Percent className="h-3 w-3" /> Comissão (%)
-                      {userRole === "vendedor" && <span className="ml-1 text-[9px] text-muted-foreground font-normal">(somente admin)</span>}
-                    </Label>
-                    {userRole === "vendedor" ? (
-                      <div className="h-10 rounded-md border border-border bg-muted/40 flex items-center px-3 text-sm text-muted-foreground gap-2 cursor-not-allowed">
-                        <Shield className="h-3.5 w-3.5 shrink-0" />
-                        <span>{form.commission_percent}% — definido pelo admin</span>
-                      </div>
-                    ) : (
-                      <Input type="number" step="0.5" min="0" max="100" value={form.commission_percent} onChange={e => setForm({ ...form, commission_percent: e.target.value })} className="h-10" />
-                    )}
-                  </div>
-                </div>
-
-                {commissionValue > 0 && (
-                  <div className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 flex justify-between text-xs">
-                    <span className="text-muted-foreground">Comissão calculada</span>
-                    <span className="font-bold text-primary">{formatCurrency(commissionValue)}</span>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Observações</Label>
-                  <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Observações da venda..." className="min-h-[60px]" />
-                </div>
-
-                {/* Data Retroativa */}
-                <div className="border border-amber-500/30 rounded-xl p-3 bg-amber-500/5 space-y-1.5">
-                  <Label className="text-xs font-bold text-amber-600 flex items-center gap-1.5">
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    Data da Venda (Retroativa)
-                  </Label>
-                  <p className="text-[11px] text-muted-foreground">Opcional. Escolha a data se o aparelho foi vendido em uma data retroativa.</p>
-                  <Input
-                    type="date"
-                    value={form.retro_date}
-                    onChange={e => setForm({ ...form, retro_date: e.target.value })}
-                    className="h-10 border-amber-500/30"
-                  />
-                </div>
-
-                <Button type="submit" className="w-full h-11 font-semibold" disabled={loading || !form.product_id || Math.abs(remaining) > 0.01}>
-                  {loading ? "Registrando..." : "Registrar Venda"}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <NovaVendaModal
+            dialogOpen={dialogOpen}
+            setDialogOpen={setDialogOpen}
+            resetForm={resetForm}
+            handleSubmit={handleSubmit}
+            form={form}
+            setForm={setForm}
+            products={products}
+            availableProducts={availableProducts}
+            selectedProduct={selectedProduct}
+            storeMap={storeMap}
+            bankAccounts={bankAccounts}
+            salePrice={salePrice}
+            discount={discount}
+            salePriceAfterDiscount={salePriceAfterDiscount}
+            profit={profit}
+            tradeInVal={tradeInVal}
+            cashVal={cashVal}
+            cardVal={cardVal}
+            pixVal={pixVal}
+            remaining={remaining}
+            commissionValue={commissionValue}
+            userRole={userRole}
+            activeStoreId={activeStoreId}
+            loading={loading}
+            formatCurrency={formatCurrency}
+            currentProfile={currentProfile}
+            user={user}
+            selectedCustomer={selectedCustomer}
+            clearCustomer={clearCustomer}
+            customerSalesHistory={customerSalesHistory}
+            showCustomerHistory={showCustomerHistory}
+            setShowCustomerHistory={setShowCustomerHistory}
+            productMap={productMap}
+            customerSearch={customerSearch}
+            setCustomerSearch={setCustomerSearch}
+            customerResults={customerResults}
+            selectCustomer={selectCustomer}
+            showNewCustomerForm={showNewCustomerForm}
+            setShowNewCustomerForm={setShowNewCustomerForm}
+            newCustomerForm={newCustomerForm}
+            setNewCustomerForm={setNewCustomerForm}
+            handleCreateCustomer={handleCreateCustomer}
+          />
         </div>
 
       {/* Busca de vendas */}
@@ -1764,560 +1276,46 @@ const Vendas = () => {
       />
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" /> Confirmar Exclusão de Venda
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              Esta ação é permanente. O produto voltará para o estoque e as transações vinculadas serão removidas.
-            </p>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Motivo da Exclusão</Label>
-              <Input 
-                value={justification} 
-                onChange={(e) => setJustification(e.target.value)} 
-                placeholder="Ex: Erro no lançamento, cancelamento pelo cliente..." 
-                required 
-                className="h-10"
-              />
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
-              <Button 
-                variant="destructive" 
-                className="flex-1" 
-                disabled={!justification || loading}
-                onClick={async () => {
-                  if (deleteItem) {
-                    await handleDeleteSale(deleteItem, justification);
-                    setDeleteDialogOpen(false);
-                  }
-                }}
-              >
-                {loading ? "Excluindo..." : "Confirmar Exclusão"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeleteSaleDialog
+        deleteDialogOpen={deleteDialogOpen}
+        setDeleteDialogOpen={setDeleteDialogOpen}
+        deleteItem={deleteItem}
+        justification={justification}
+        setJustification={setJustification}
+        handleDeleteSale={handleDeleteSale}
+        loading={loading}
+      />
 
       {/* Edit Sale Dialog */}
-      <Dialog open={!!editSale} onOpenChange={open => { if (!open) setEditSale(null); }}>
-        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2 text-primary">
-              <Pencil className="h-5 w-5" /> Editar Lançamento de Venda
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSaveEdit} className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold">Cliente</Label>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  className="h-auto p-0 text-xs text-primary hover:bg-transparent hover:underline"
-                  onClick={() => setShowEditNewCustomerForm(v => !v)}
-                >
-                  <UserPlus className="h-3 w-3 mr-1" />
-                  {showEditNewCustomerForm ? "Cancelar cadastro" : "Cadastrar novo cliente"}
-                </Button>
-              </div>
-
-              {!showEditNewCustomerForm ? (
-                <Select
-                  value={editSaleCustomerId}
-                  onValueChange={v => {
-                    setEditSaleCustomerId(v);
-                    if (v !== "manual") {
-                      const c = customers.find(x => x.id === v);
-                      if (c) setEditForm(prev => ({ ...prev, customer_name: c.name }));
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Selecione um cliente cadastrado..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">✍️ Digitar nome manualmente...</SelectItem>
-                    {customers.map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} {c.phone ? `(${c.phone})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <p className="text-xs font-semibold text-primary">Novo Cliente (para esta venda)</p>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Nome *</Label>
-                    <Input 
-                      value={editNewCustomerForm.name} 
-                      onChange={e => setEditNewCustomerForm(f => ({ ...f, name: e.target.value }))} 
-                      placeholder="Nome completo" 
-                      className="h-9" 
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Telefone</Label>
-                      <Input 
-                        value={editNewCustomerForm.phone} 
-                        onChange={e => setEditNewCustomerForm(f => ({ ...f, phone: e.target.value }))} 
-                        placeholder="(87) 99999-9999" 
-                        className="h-9" 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">CPF</Label>
-                      <Input 
-                        value={editNewCustomerForm.cpf} 
-                        onChange={e => setEditNewCustomerForm(f => ({ ...f, cpf: e.target.value }))} 
-                        placeholder="000.000.000-00" 
-                        className="h-9" 
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Endereço</Label>
-                    <Input 
-                      value={editNewCustomerForm.address} 
-                      onChange={e => setEditNewCustomerForm(f => ({ ...f, address: e.target.value }))} 
-                      placeholder="Rua, número, bairro..." 
-                      className="h-9" 
-                    />
-                  </div>
-                  <Button 
-                    type="button"
-                    className="w-full h-9" 
-                    onClick={handleCreateCustomerForEdit} 
-                    disabled={loading || !editNewCustomerForm.name}
-                  >
-                    {loading ? "Salvando..." : "Salvar e Selecionar"}
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {!showEditNewCustomerForm && editSaleCustomerId === "manual" && (
-              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                <Label className="text-xs font-semibold">Nome do Cliente (Manual/Novo)</Label>
-                <Input
-                  value={editForm.customer_name}
-                  onChange={e => setEditForm({ ...editForm, customer_name: e.target.value })}
-                  placeholder="Ex: Luana Yasmim"
-                  className="h-10"
-                />
-              </div>
-            )}
-
-            {/* Dados do Aparelho Vendido (Editável pelo Admin ou Vendedor com registro de auditoria) */}
-            <div className="border border-border/80 rounded-xl p-3 bg-muted/20 space-y-3">
-              <span className="text-xs font-bold text-foreground uppercase tracking-wide">Dados do Aparelho Vendido</span>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Nome do Aparelho</Label>
-                <Input
-                  value={editForm.product_name}
-                  onChange={e => setEditForm({ ...editForm, product_name: e.target.value })}
-                  placeholder="Ex: iPhone 11 64GB"
-                  className="h-10"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Custo do Aparelho (R$)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={editForm.product_cost}
-                    onChange={e => setEditForm({ ...editForm, product_cost: e.target.value })}
-                    placeholder="0.00"
-                    className="h-10"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">IMEI do Aparelho</Label>
-                  <Input
-                    value={editForm.product_imei}
-                    onChange={e => setEditForm({ ...editForm, product_imei: e.target.value })}
-                    placeholder="Sem IMEI / Opcional"
-                    className="h-10 font-mono"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Valor Bruto da Venda (R$)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editForm.sale_price}
-                  onChange={e => setEditForm({ ...editForm, sale_price: e.target.value })}
-                  placeholder="0.00"
-                  required
-                  className="h-10 font-medium text-foreground"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Desconto (R$)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editForm.discount}
-                  onChange={e => setEditForm({ ...editForm, discount: e.target.value })}
-                  placeholder="0.00"
-                  className="h-10 text-yellow-500 font-semibold"
-                />
-              </div>
-            </div>
-
-            <div className="border-t border-border/60 pt-3">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Formas de Pagamento</span>
-              <div className="grid grid-cols-3 gap-3 mt-2">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Banknote className="h-3 w-3" /> Dinheiro</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={editForm.payment_cash}
-                    onChange={e => setEditForm({ ...editForm, payment_cash: e.target.value })}
-                    placeholder="0.00"
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><CreditCard className="h-3 w-3" /> Cartão</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={editForm.payment_card}
-                    onChange={e => setEditForm({ ...editForm, payment_card: e.target.value })}
-                    placeholder="0.00"
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><QrCode className="h-3 w-3" /> PIX</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={editForm.payment_pix}
-                    onChange={e => setEditForm({ ...editForm, payment_pix: e.target.value })}
-                    placeholder="0.00"
-                    className="h-9"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Resumo de pagamento em tempo real */}
-            {(() => {
-              const _net = Math.max(0, (parseFloat(editForm.sale_price) || 0) - (parseFloat(editForm.discount) || 0));
-              const _cash = parseFloat(editForm.payment_cash) || 0;
-              const _card = parseFloat(editForm.payment_card) || 0;
-              const _pix = parseFloat(editForm.payment_pix) || 0;
-              const _tradeIn = editForm.has_trade_in ? (parseFloat(editForm.trade_in_value) || 0) : 0;
-              const _total = _cash + _card + _pix + _tradeIn;
-              const _rem = _net - _total;
-              return (
-                <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Valor líquido</span><span className="font-semibold">{formatCurrency(_net)}</span></div>
-                  {_tradeIn > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Trade-in</span><span className="font-semibold text-primary">-{formatCurrency(_tradeIn)}</span></div>}
-                  <div className="flex justify-between"><span className="text-muted-foreground">Total pago (dinheiro + cartão + PIX)</span><span className="font-semibold">{formatCurrency(_cash + _card + _pix)}</span></div>
-                  <div className="border-t border-border pt-1 flex justify-between">
-                    <span className="font-medium">Restante</span>
-                    <span className={`font-bold ${Math.abs(_rem) < 0.01 ? "text-primary" : "text-destructive"}`}>{formatCurrency(_rem)}</span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Trade-in */}
-            <div className="flex items-center justify-between rounded-lg border border-border p-3">
-              <div className="flex items-center gap-2">
-                <Smartphone className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Aparelho na troca</p>
-                  <p className="text-[11px] text-muted-foreground">Cliente entrega como parte do pagamento</p>
-                </div>
-              </div>
-              <Switch
-                checked={editForm.has_trade_in}
-                onCheckedChange={v => setEditForm({ ...editForm, has_trade_in: v })}
-              />
-            </div>
-
-            {editForm.has_trade_in && (
-              <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <p className="text-xs font-semibold text-primary">Dados do aparelho na troca</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Nome</Label>
-                    <Input
-                      value={editForm.trade_in_device_name}
-                      onChange={e => setEditForm({ ...editForm, trade_in_device_name: e.target.value })}
-                      placeholder="iPhone 11 64GB"
-                      className="h-10"
-                      required={editForm.has_trade_in}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Marca</Label>
-                    <Select
-                      value={editForm.trade_in_device_brand}
-                      onValueChange={v => setEditForm({ ...editForm, trade_in_device_brand: v })}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["iPhone", "Samsung", "Xiaomi", "Outro"].map(b => (
-                          <SelectItem key={b} value={b}>
-                            {b}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Modelo</Label>
-                    <Input
-                      value={editForm.trade_in_device_model || ""}
-                      onChange={e => setEditForm({ ...editForm, trade_in_device_model: e.target.value })}
-                      placeholder="A2221"
-                      className="h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">IMEI</Label>
-                    <Input
-                      value={editForm.trade_in_device_imei}
-                      onChange={e => setEditForm({ ...editForm, trade_in_device_imei: e.target.value })}
-                      placeholder="Opcional"
-                      className="h-10"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Valor da troca (R$)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={editForm.trade_in_value}
-                    onChange={e => setEditForm({ ...editForm, trade_in_value: e.target.value })}
-                    placeholder="1500.00"
-                    required={editForm.has_trade_in}
-                    className="h-10"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Parcelas no Cartão</Label>
-                <Select value={editForm.installments} onValueChange={v => setEditForm({ ...editForm, installments: v })}>
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Selecione as parcelas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
-                      <SelectItem key={n} value={n.toString()}>
-                        {n}x {n === 1 ? "à vista" : "sem juros"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Garantia (dias)</Label>
-                <Select value={editForm.warranty_days} onValueChange={v => setEditForm({ ...editForm, warranty_days: v })}>
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Selecione a garantia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Sem garantia</SelectItem>
-                    <SelectItem value="30">30 dias</SelectItem>
-                    <SelectItem value="90">90 dias (padrão)</SelectItem>
-                    <SelectItem value="180">180 dias</SelectItem>
-                    <SelectItem value="365">1 ano</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold flex items-center gap-1">
-                Comissão do Vendedor (%)
-                {userRole === "vendedor" && <span className="ml-1 text-[9px] text-muted-foreground font-normal">(somente admin)</span>}
-              </Label>
-              {userRole === "vendedor" ? (
-                <div className="h-10 rounded-md border border-border bg-muted/40 flex items-center px-3 text-sm text-muted-foreground gap-2 cursor-not-allowed">
-                  <Shield className="h-3.5 w-3.5 shrink-0" />
-                  <span>{editForm.commission_percent}% — somente o admin pode alterar</span>
-                </div>
-              ) : (
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={editForm.commission_percent}
-                  onChange={e => setEditForm({ ...editForm, commission_percent: e.target.value })}
-                  placeholder="0"
-                  className="h-10"
-                />
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Observações</Label>
-              <Textarea
-                value={editForm.notes}
-                onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
-                placeholder="Ex: Observações gerais da alteração de venda..."
-                className="min-h-[80px]"
-              />
-            </div>
-
-            {/* Data Retroativa */}
-            <div className="border border-amber-500/30 rounded-xl p-3 bg-amber-500/5 space-y-1.5">
-              <Label className="text-xs font-bold text-amber-600 flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Data da Venda (Retroativa)
-              </Label>
-              <p className="text-[11px] text-muted-foreground">Altere a data caso a venda tenha ocorrido em data diferente do lançamento no sistema.</p>
-              <Input
-                type="date"
-                value={editForm.retro_date}
-                onChange={e => setEditForm({ ...editForm, retro_date: e.target.value })}
-                className="h-10 border-amber-500/30"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setEditSale(null)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90" disabled={loading}>
-                {loading ? "Salvando..." : "Salvar Alterações"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <EditarVendaModal
+        editSale={editSale}
+        setEditSale={setEditSale}
+        handleSaveEdit={handleSaveEdit}
+        editForm={editForm}
+        setEditForm={setEditForm}
+        editSaleCustomerId={editSaleCustomerId}
+        setEditSaleCustomerId={setEditSaleCustomerId}
+        showEditNewCustomerForm={showEditNewCustomerForm}
+        setShowEditNewCustomerForm={setShowEditNewCustomerForm}
+        editNewCustomerForm={editNewCustomerForm}
+        setEditNewCustomerForm={setEditNewCustomerForm}
+        handleCreateCustomerForEdit={handleCreateCustomerForEdit}
+        customers={customers}
+        userRole={userRole}
+        loading={loading}
+        formatCurrency={formatCurrency}
+      />
 
       {/* Edit PDV Sale Dialog */}
-      <Dialog open={!!editPdvSale} onOpenChange={open => { if (!open) setEditPdvSale(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2 text-yellow-500">
-              <Zap className="h-4 w-4" /> Editar Venda PDV
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSavePdvEdit} className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Descrição</Label>
-              <Input
-                value={editPdvForm.description}
-                onChange={e => setEditPdvForm({ ...editPdvForm, description: e.target.value })}
-                placeholder="Ex: PDV: 2x Capinha..."
-                className="h-10"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Valor Total (R$)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={editPdvForm.amount}
-                onChange={e => setEditPdvForm({ ...editPdvForm, amount: e.target.value })}
-                placeholder="0.00"
-                required
-                className="h-10 font-medium"
-              />
-            </div>
-            
-            <div className="border-t border-border/60 pt-3">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Formas de Pagamento</span>
-              <div className="grid grid-cols-3 gap-3 mt-2">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><Banknote className="h-3 w-3" /> Dinheiro</Label>
-                  <Input
-                    type="number" step="0.01"
-                    value={editPdvForm.payment_cash}
-                    onChange={e => setEditPdvForm({ ...editPdvForm, payment_cash: e.target.value })}
-                    placeholder="0.00" className="h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><CreditCard className="h-3 w-3" /> Cartão</Label>
-                  <Input
-                    type="number" step="0.01"
-                    value={editPdvForm.payment_card}
-                    onChange={e => setEditPdvForm({ ...editPdvForm, payment_card: e.target.value })}
-                    placeholder="0.00" className="h-9"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] text-muted-foreground flex items-center gap-1"><QrCode className="h-3 w-3" /> PIX</Label>
-                  <Input
-                    type="number" step="0.01"
-                    value={editPdvForm.payment_pix}
-                    onChange={e => setEditPdvForm({ ...editPdvForm, payment_pix: e.target.value })}
-                    placeholder="0.00" className="h-9"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {(() => {
-              const _net = parseFloat(editPdvForm.amount) || 0;
-              const _cash = parseFloat(editPdvForm.payment_cash) || 0;
-              const _card = parseFloat(editPdvForm.payment_card) || 0;
-              const _pix = parseFloat(editPdvForm.payment_pix) || 0;
-              const _rem = _net - (_cash + _card + _pix);
-              return (
-                <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Valor Total</span><span className="font-semibold">{formatCurrency(_net)}</span></div>
-                  <div className="border-t border-border pt-1 flex justify-between">
-                    <span className="font-medium">Restante a informar</span>
-                    <span className={`font-bold ${Math.abs(_rem) < 0.01 ? "text-primary" : "text-destructive"}`}>{formatCurrency(_rem)}</span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            <div className="border border-amber-500/30 rounded-xl p-3 bg-amber-500/5 space-y-1.5">
-              <Label className="text-xs font-bold text-amber-600 flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                Data da Venda (Retroativa)
-              </Label>
-              <p className="text-[11px] text-muted-foreground">Altere a data caso o lançamento precise ser corrigido.</p>
-              <Input
-                type="date"
-                value={editPdvForm.retro_date}
-                onChange={e => setEditPdvForm({ ...editPdvForm, retro_date: e.target.value })}
-                className="h-10 border-amber-500/30"
-              />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setEditPdvSale(null)}>Cancelar</Button>
-              <Button type="submit" className="flex-1" disabled={loading}>
-                {loading ? "Salvando..." : "Salvar Alterações"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <EditarPdvModal
+        editPdvSale={editPdvSale}
+        setEditPdvSale={setEditPdvSale}
+        handleSavePdvEdit={handleSavePdvEdit}
+        editPdvForm={editPdvForm}
+        setEditPdvForm={setEditPdvForm}
+        loading={loading}
+        formatCurrency={formatCurrency}
+      />
     </div>
   );
 };
