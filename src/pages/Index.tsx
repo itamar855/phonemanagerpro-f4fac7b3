@@ -25,6 +25,7 @@ import {
 import { getStatusLabel, getStatusColor } from "@/utils/osStatus";
 import { calculateOSItemMetrics, isOrderOnBench } from "@/utils/osCalculations";
 import { TechDashboard } from "@/components/features/tecnico/TechDashboard";
+import { fetchSettledItemIds } from "@/utils/commissionSettlement";
 import {
   calculateTechProductivity,
   calculateTechTimeline,
@@ -154,11 +155,12 @@ const Dashboard = () => {
       shopOrdersQuery = shopOrdersQuery.eq("store_id", effectiveStoreId);
     }
 
-    const [ordersRes, roleRes, shopOrdersRes, profilesRes] = await Promise.all([
+    const [ordersRes, roleRes, shopOrdersRes, profilesRes, settledIds] = await Promise.all([
       q.order("created_at", { ascending: false }),
       supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle(),
       shopOrdersQuery,
       supabase.from("profiles").select("user_id, display_name"),
+      fetchSettledItemIds().catch(() => ({ settledSaleIds: new Set<string>(), settledOsIds: new Set<string>() })),
     ]);
 
     const allMyOrders = (ordersRes.data ?? []) as any[];
@@ -187,7 +189,7 @@ const Dashboard = () => {
       parts = partsData ?? [];
     }
 
-    const prodMetrics = calculateTechProductivity(allMyOrders, parts, roleData, user.id, start, end);
+    const prodMetrics = calculateTechProductivity(allMyOrders, parts, roleData, user.id, start, end, settledIds?.settledOsIds);
     const startDate = new Date(start);
     const endDate = new Date(end);
     const deliveredInPeriod = allMyOrders.filter((o) => {

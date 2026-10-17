@@ -208,4 +208,38 @@ describe("Módulo de Produtividade, SLA e Metas do Técnico (technicianMetrics.t
       expect(timeline[1].commission).toBe(100); // 20% de 500
     });
   });
+
+  // ─── 6. SEGREGAÇÃO DE COMISSÃO LIQUIDADA VS PENDENTE (settledOsIds) ───────
+  describe("6. Segregação de Comissões Liquidadas vs Pendentes do Período", () => {
+    const deliveredOrders = [
+      { id: "os-paga", status: "delivered", technician_id: techId, created_at: "2026-10-02T10:00:00.000Z", delivered_at: "2026-10-02T14:00:00.000Z", final_price: 300 }, // 300 * 20% = 60
+      { id: "os-pendente", status: "delivered", technician_id: techId, created_at: "2026-10-03T11:00:00.000Z", delivered_at: "2026-10-03T16:00:00.000Z", final_price: 500 }, // 500 * 20% = 100
+    ];
+
+    it("separa corretamente comissões de OS já liquidadas das que estão a pagar", () => {
+      const settledIds = new Set(["os-paga"]);
+      const res = calculateTechProductivity(deliveredOrders, [], roleTecnico, techId, undefined, undefined, settledIds);
+
+      expect(res.realizedCommission).toBe(160);
+      expect(res.settledCommission).toBe(60);
+      expect(res.pendingCommission).toBe(100);
+    });
+
+    it("atribui toda comissão a pendente caso nenhuma OS tenha sido liquidada", () => {
+      const settledIds = new Set<string>();
+      const res = calculateTechProductivity(deliveredOrders, [], roleTecnico, techId, undefined, undefined, settledIds);
+
+      expect(res.realizedCommission).toBe(160);
+      expect(res.settledCommission).toBe(0);
+      expect(res.pendingCommission).toBe(160);
+    });
+
+    it("preserva comportamento retrocompatível quando settledOsIds é omitido", () => {
+      const res = calculateTechProductivity(deliveredOrders, [], roleTecnico, techId);
+
+      expect(res.realizedCommission).toBe(160);
+      expect(res.settledCommission).toBe(0);
+      expect(res.pendingCommission).toBe(160);
+    });
+  });
 });

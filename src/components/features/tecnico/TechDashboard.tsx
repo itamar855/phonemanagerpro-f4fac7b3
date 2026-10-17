@@ -43,7 +43,7 @@ import {
   Download,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getStatusLabel, getStatusColor } from "@/utils/osStatus";
+import { openComprovante } from "@/lib/storageHelper";
 import {
   fetchSettlementsHistory,
   fetchSettlementItems,
@@ -113,13 +113,12 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
     };
   }, [userId]);
 
-  const totalLiquidado = useMemo(() => {
+  const comissaoLiquidadaPeriodo = productivity.settledCommission ?? 0;
+  const comissaoPendentePeriodo = productivity.pendingCommission ?? productivity.realizedCommission;
+
+  const totalHistoricoLiquidado = useMemo(() => {
     return techSettlements.reduce((acc, s) => acc + Number(s.total_amount || 0), 0);
   }, [techSettlements]);
-
-  const pendenteLiquidar = useMemo(() => {
-    return Math.max(0, productivity.realizedCommission - totalLiquidado);
-  }, [productivity.realizedCommission, totalLiquidado]);
 
   const handleSaveGoals = () => {
     const newConfig: TechGoalConfig = {
@@ -335,14 +334,16 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
                 {productivity.totalDelivered} reparos entregues no período
               </p>
             </div>
-            {techSettlements.length > 0 && (
+            {productivity.realizedCommission > 0 && (
               <div className="pt-1 flex flex-wrap gap-1.5 text-[10px]">
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
-                  Liquidado: {formatCurrency(totalLiquidado)}
-                </Badge>
-                {pendenteLiquidar > 0 && (
+                {comissaoLiquidadaPeriodo > 0 && (
+                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
+                    Liquidado: {formatCurrency(comissaoLiquidadaPeriodo)}
+                  </Badge>
+                )}
+                {comissaoPendentePeriodo > 0 && (
                   <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30">
-                    A Pagar: {formatCurrency(pendenteLiquidar)}
+                    A Pagar: {formatCurrency(comissaoPendentePeriodo)}
                   </Badge>
                 )}
               </div>
@@ -767,7 +768,7 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
               <div className="text-right">
                 <span className="text-[11px] text-muted-foreground">Total Já Recebido:</span>
                 <p className="font-mono font-bold text-emerald-500 text-base">
-                  {formatCurrency(totalLiquidado)}
+                  {formatCurrency(totalHistoricoLiquidado)}
                 </p>
               </div>
             </div>
@@ -816,33 +817,46 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
                         {formatCurrency(Number(s.total_amount))}
                       </td>
                       <td className="py-2.5 px-2 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={downloadingPdfId === s.id}
-                          className="h-7 px-2 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/10"
-                          onClick={async () => {
-                            try {
-                              setDownloadingPdfId(s.id);
-                              const items = await fetchSettlementItems(s.id);
-                              generateSettlementReceiptPDF({
-                                settlement: s,
-                                items,
-                                storeName: "Cell Pro 360",
-                                collaboratorName: "Técnico Responsável",
-                                managerName: "Gestão Financeira",
-                              });
-                              toast.success("Recibo baixado com sucesso!");
-                            } catch (e) {
-                              toast.error("Erro ao gerar recibo em PDF");
-                            } finally {
-                              setDownloadingPdfId(null);
-                            }
-                          }}
-                        >
-                          <Download className="h-3 w-3" />
-                          {downloadingPdfId === s.id ? "Gerando..." : "Recibo PDF"}
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {s.receipt_url && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs gap-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"
+                              onClick={(e) => openComprovante(s.receipt_url, e)}
+                              title="Ver comprovante bancário anexado"
+                            >
+                              <Receipt className="h-3 w-3" /> Comprovante
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={downloadingPdfId === s.id}
+                            className="h-7 px-2 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/10"
+                            onClick={async () => {
+                              try {
+                                setDownloadingPdfId(s.id);
+                                const items = await fetchSettlementItems(s.id);
+                                generateSettlementReceiptPDF({
+                                  settlement: s,
+                                  items,
+                                  storeName: "Cell Pro 360",
+                                  collaboratorName: "Técnico Responsável",
+                                  managerName: "Gestão Financeira",
+                                });
+                                toast.success("Recibo baixado com sucesso!");
+                              } catch (e) {
+                                toast.error("Erro ao gerar recibo em PDF");
+                              } finally {
+                                setDownloadingPdfId(null);
+                              }
+                            }}
+                          >
+                            <Download className="h-3 w-3" />
+                            {downloadingPdfId === s.id ? "Gerando..." : "Recibo PDF"}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -13,6 +13,8 @@ export interface TechProductivityResult {
   avgTotalLeadTimeDays: number; // Tempo total (created_at -> delivered_at) em dias
   avgBenchTimeDays: number; // Tempo médio de bancada
   realizedCommission: number; // Comissão de OS entregues no período
+  settledCommission?: number; // Comissão de OS entregues no período que já foram liquidadas
+  pendingCommission?: number; // Comissão de OS entregues no período pendentes de quitação
   projectedCommission: number; // Comissão projetada (repairing, ready, waiting_approval com valor)
   totalLaborRevenue: number; // Margem bruta / mão de obra gerada para a loja
   ticketMedioLabor: number; // Média de mão de obra por OS entregue
@@ -113,7 +115,8 @@ export function calculateTechProductivity(
   userRoleData?: UserRoleData | null,
   techUserId?: string,
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  settledOsIds?: Set<string>
 ): TechProductivityResult {
   const myOrders = orders.filter((o) => !techUserId || o.technician_id === techUserId);
 
@@ -156,6 +159,8 @@ export function calculateTechProductivity(
 
   // Comissões e Receitas
   let realizedCommission = 0;
+  let settledCommission = 0;
+  let pendingCommission = 0;
   let totalLaborRevenue = 0;
 
   delivered.forEach((o) => {
@@ -163,6 +168,12 @@ export function calculateTechProductivity(
     const metrics = calculateOSItemMetrics(o, osParts, userRoleData);
     realizedCommission += metrics.comissaoTecnico;
     totalLaborRevenue += metrics.lucroBrutoOS;
+
+    if (o.id && settledOsIds?.has(o.id)) {
+      settledCommission += metrics.comissaoTecnico;
+    } else {
+      pendingCommission += metrics.comissaoTecnico;
+    }
   });
 
   const projectedCommission = calculateProjectedCommission(activeInBench, parts, userRoleData, techUserId);
@@ -176,6 +187,8 @@ export function calculateTechProductivity(
     avgTotalLeadTimeDays,
     avgBenchTimeDays,
     realizedCommission: Math.round(realizedCommission * 100) / 100,
+    settledCommission: Math.round(settledCommission * 100) / 100,
+    pendingCommission: Math.round(pendingCommission * 100) / 100,
     projectedCommission,
     totalLaborRevenue: Math.round(totalLaborRevenue * 100) / 100,
     ticketMedioLabor,
