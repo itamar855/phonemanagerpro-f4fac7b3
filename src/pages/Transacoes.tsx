@@ -108,7 +108,7 @@ const Transacoes = () => {
     const optimizedFile = await convertToWebP(file);
     const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
     const fileName = `${user?.id}-${Date.now()}-${safeName}`;
-    const storePrefix = (selectedStoreId && selectedStoreId !== "all") ? selectedStoreId : (txForm.store_id || "geral");
+    const storePrefix = (selectedStoreId && selectedStoreId !== "all") ? selectedStoreId : (form.store_id || activeStoreId || "geral");
     const { data, error } = await supabase.storage.from("comprovantes").upload(`${storePrefix}/transacoes/${fileName}`, optimizedFile, { upsert: true });
     if (error) { toast.error("Erro no upload: " + error.message); return null; }
     const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(data.path);

@@ -43,6 +43,7 @@ import {
   Download,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getStatusLabel, getStatusColor } from "@/utils/osStatus";
 import { openComprovante } from "@/lib/storageHelper";
 import {
   fetchSettlementsHistory,
