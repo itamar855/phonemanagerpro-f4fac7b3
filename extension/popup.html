@@ -6,45 +6,92 @@
 </head>
 <body>
   <div class="container">
+    <!-- Header Global -->
     <header>
       <div class="logo-area">
         <h1>CellManager</h1>
         <div class="status-badge" id="crm-status">
-          <span class="dot"></span> Online
+          <span class="dot"></span> <span id="crm-status-text">Conectando...</span>
         </div>
       </div>
     </header>
 
-    <div class="glass-card main-card">
-      <div class="label">LEAD ATIVO</div>
-      <div class="value" id="active-lead-name">Nenhum</div>
-      <div class="sub-label" id="active-lead-id">Nenhum lead sendo monitorado</div>
+    <!-- 1. TELA DE LOGIN (Unauthenticated) -->
+    <div id="login-section" class="section hidden">
+      <div class="glass-card auth-card">
+        <div class="card-title">Acesso do Operador</div>
+        <p class="card-subtitle">Entre com suas credenciais do CRM para sincronizar leads e mensagens.</p>
+        
+        <form id="login-form">
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" placeholder="seu@email.com" required autocomplete="username" />
+          </div>
+
+          <div class="form-group">
+            <label for="login-password">Senha</label>
+            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+
+          <div id="login-error" class="error-banner hidden"></div>
+
+          <button type="submit" id="login-btn" class="btn-primary">Entrar no CellManager</button>
+        </form>
+      </div>
     </div>
 
-    <div class="grid">
-      <div class="glass-card stat">
-        <div class="label">FILA</div>
-        <div class="value" id="queue-count">0</div>
-      </div>
-      <div class="glass-card stat">
-        <div class="label">SYNC</div>
-        <div class="value" id="sync-count">OK</div>
-      </div>
-    </div>
+    <!-- 2. TELA PRINCIPAL (Authenticated) -->
+    <div id="app-section" class="section hidden">
+      <!-- Info do Usuário e Seletor de Loja -->
+      <div class="glass-card user-card">
+        <div class="user-row">
+          <span class="user-email" id="user-display-email">-</span>
+          <button id="logout-btn" class="btn-text">Sair</button>
+        </div>
 
-    <div class="automation-area">
-      <div class="label">ESTADO DA AUTOMAÇÃO</div>
-      <div class="status-msg" id="automation-status">Aguardando comando do CRM...</div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progress-fill"></div>
+        <div class="store-row" id="store-selector-area">
+          <label for="store-select">Loja Ativa:</label>
+          <select id="store-select" class="store-dropdown"></select>
+        </div>
       </div>
+
+      <!-- Lead Ativo -->
+      <div class="glass-card main-card">
+        <div class="label">LEAD ATIVO</div>
+        <div class="value" id="active-lead-name">Nenhum</div>
+        <div class="sub-label" id="active-lead-id">Nenhum lead sendo monitorado</div>
+      </div>
+
+      <!-- Métricas -->
+      <div class="grid">
+        <div class="glass-card stat">
+          <div class="label">FILA</div>
+          <div class="value" id="queue-count">0</div>
+        </div>
+        <div class="glass-card stat">
+          <div class="label">SYNC</div>
+          <div class="value" id="sync-count">OK</div>
+        </div>
+      </div>
+
+      <!-- Automação -->
+      <div class="automation-area">
+        <div class="label">ESTADO DA AUTOMAÇÃO</div>
+        <div class="status-msg" id="automation-status">Aguardando comando...</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+      </div>
+
+      <!-- Ações -->
+      <button id="open-whatsapp" class="btn-primary">Abrir WhatsApp Web</button>
     </div>
 
     <footer>
-      <button id="open-whatsapp" class="btn-primary">Abrir WhatsApp Web</button>
-      <p class="version">CellManager CRM Extension v9.0 "Auto-Sync"</p>
+      <p class="version">CellManager CRM Extension v10.0 "Authenticated"</p>
     </footer>
   </div>
+
   <script src="popup.js"></script>
 </body>
 </html>

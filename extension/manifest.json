@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
   "name": "CellManager CRM Extension",
-  "version": "5.0",
-  "description": "Integração oficial CellManager CRM para WhatsApp e Instagram.",
+  "version": "10.0",
+  "description": "Integração oficial CellManager CRM para WhatsApp e Instagram com autenticação segura.",
   "permissions": ["storage", "tabs"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

@@ -1,52 +1,115 @@
-// CellManager CRM Extension (v8.0) - "The Direct Fire"
-console.log("%c CRM: Extension v8.0 Direct Loaded ", "background: #128C7E; color: white; font-weight: bold;");
+// CellManager CRM Extension (v10.0) — Content Script (WhatsApp & Instagram Web)
+// Opera exclusivamente através do background service worker via mensagens autenticadas.
+// Zero chaves hardcoded. Requer sessão válida e activeStoreId definido no popup.
 
-const CONFIG = {
-  supabaseUrl: "https://hzrqtolfbwnmmeliazmh.supabase.co",
-  supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6cnF0b2xmYndubW1lbGlhem1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMTI1MDEsImV4cCI6MjA4OTc4ODUwMX0.wQyORyhVI5FaUapc3uwsOV48VUQgvdj2_y0FXjYchAo"
-};
+console.log("%c CRM: Extension v10.0 Authenticated Loaded ", "background: #128C7E; color: white; font-weight: bold;");
 
 let activeLead = { id: null, name: "" };
 let lastSyncedText = "";
-let isWorking = false; // Improved state lock
+let isWorking = false;
 let lastAttemptedLeadId = null;
 let retryCount = 0;
 
+/**
+ * Atualiza o status local para o popup
+ */
 function setStatus(msg) {
   console.log(`CRM: ${msg}`);
   chrome.storage.local.set({ automationStatus: msg });
 }
 
+/**
+ * Consulta o estado atual da extensão com o background service worker
+ */
+function getAppState() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: "GET_STATE" }, (response) => {
+      resolve(response || { isAuthenticated: false, activeStoreId: null });
+    });
+  });
+}
+
+/**
+ * Executa uma chamada autenticada ao Supabase através do Background Service Worker
+ */
+function callApi(options) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: "API_REQUEST", payload: options }, (res) => {
+      resolve(res || { success: false, error: "EXTENSION_OFFLINE" });
+    });
+  });
+}
+
+/**
+ * Inicialização e verificação de sessão/loja
+ */
 async function initSession() {
   const stored = await chrome.storage.local.get(['activeLeadId', 'activeLeadName']);
   if (stored.activeLeadId) {
     activeLead.id = stored.activeLeadId;
     activeLead.name = stored.activeLeadName;
   }
-  setStatus("Sistema Pronto");
+
+  const state = await getAppState();
+  if (!state.isAuthenticated || !state.activeStoreId) {
+    setStatus("Aguardando login no popup do CellManager...");
+  } else {
+    setStatus(`Conectado: ${state.activeStoreName || 'Loja Ativa'}`);
+  }
+
   startResponsePolling();
   setInterval(findTarget, 2000);
 }
 
-function findTarget() {
+/**
+ * Injeta o botão de captura no cabeçalho do chat
+ */
+async function findTarget() {
+  const state = await getAppState();
+  if (!state.isAuthenticated || !state.activeStoreId) {
+    return; // Não opera sem autenticação e loja ativa
+  }
+
   const waHeader = document.querySelector("#main header");
   if (waHeader && !waHeader.querySelector(".crm-capture-btn")) {
-      const btn = document.createElement("button");
-      btn.className = "crm-capture-btn";
-      btn.style.cssText = "background: #128C7E; color: white; border: none; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 11px; font-weight: bold; margin: 5px 10px;";
-      btn.innerText = "Enviar p/ CRM";
-      btn.onclick = (e) => { e.preventDefault(); captureLeadWhatsApp(waHeader); };
-      (waHeader.querySelector('div[role="button"]') || waHeader).appendChild(btn);
+    const btn = document.createElement("button");
+    btn.className = "crm-capture-btn";
+    btn.style.cssText = "background: #128C7E; color: white; border: none; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 11px; font-weight: bold; margin: 5px 10px;";
+    btn.innerText = "Enviar p/ CRM";
+    btn.onclick = (e) => {
+      e.preventDefault();
+      captureLeadWhatsApp(waHeader);
+    };
+    (waHeader.querySelector('div[role="button"]') || waHeader).appendChild(btn);
   }
-  if (waHeader) setupAutoSyncWhatsApp();
+
+  if (waHeader) {
+    setupAutoSyncWhatsApp();
+  }
 }
 
+/**
+ * Captura dados do chat aberto e envia para o CRM
+ */
 async function captureLeadWhatsApp(header) {
+  const state = await getAppState();
+  if (!state.isAuthenticated || !state.activeStoreId) {
+    alert("Por favor, faça login e selecione uma loja no popup do CellManager antes de capturar leads.");
+    return;
+  }
+
   const rawName = (header.querySelector('span[title]') || header.querySelector('span[dir="auto"]') || header.querySelector('span'))?.innerText.trim() || "Lead WhatsApp";
   const name = sanitizeName(rawName);
   const phone = getWAContactId();
   const messages = extractMessagesWhatsApp();
-  await sendToERP({ name, phone, source: "whatsapp", notes: "Sincronizado via WhatsApp Web" }, messages);
+
+  await sendToERP({
+    name,
+    phone,
+    source: "whatsapp",
+    notes: "Sincronizado via WhatsApp Web",
+    store_id: state.activeStoreId
+  }, messages);
 }
 
 function getWAContactId() {
@@ -58,165 +121,213 @@ function getWAContactId() {
 
 function sanitizeName(name) {
   if (!name) return "";
-  return name.replace(/[^\x20-\x7E]/g, "").trim(); 
+  return name.replace(/[^\x20-\x7E]/g, "").trim();
 }
 
 function extractMessagesWhatsApp() {
   const msgEls = document.querySelectorAll('.message-in, .message-out');
   return Array.from(msgEls).slice(-25).map(el => {
     const content = (el.querySelector('.copyable-text span')?.innerText || el.innerText).trim();
-    return { content, sender: el.classList.contains('message-out') ? 'me' : 'lead', created_at: new Date().toISOString() };
+    return {
+      content,
+      sender_type: el.classList.contains('message-out') ? 'me' : 'lead',
+      created_at: new Date().toISOString()
+    };
   });
 }
 
+/**
+ * Envia Lead e mensagens ao CRM com store_id obrigatório
+ */
 async function sendToERP(leadData, messages = []) {
   try {
-    const headers = { "Content-Type": "application/json", "apikey": CONFIG.supabaseKey, "Authorization": `Bearer ${CONFIG.supabaseKey}` };
-    const queryUrl = leadData.phone 
-      ? `${CONFIG.supabaseUrl}/rest/v1/leads?or=(name.ilike.${encodeURIComponent('%'+leadData.name+'%')},phone.eq.${leadData.phone})&select=id`
-      : `${CONFIG.supabaseUrl}/rest/v1/leads?name=ilike.${encodeURIComponent('%'+leadData.name+'%')}&select=id`;
-    
-    const res = await fetch(queryUrl, { headers });
-    const existing = await res.json();
-    
+    const state = await getAppState();
+    if (!state.isAuthenticated || !state.activeStoreId) return;
+
+    // Filtra busca de lead existente pela loja ativa
+    const queryPath = leadData.phone
+      ? `/rest/v1/leads?store_id=eq.${state.activeStoreId}&or=(name.ilike.${encodeURIComponent('%' + leadData.name + '%')},phone.eq.${leadData.phone})&select=id`
+      : `/rest/v1/leads?store_id=eq.${state.activeStoreId}&name=ilike.${encodeURIComponent('%' + leadData.name + '%')}&select=id`;
+
+    const searchRes = await callApi({ path: queryPath, method: "GET" });
+    const existing = Array.isArray(searchRes.data) ? searchRes.data : [];
+
     let saved;
     if (existing.length > 0) {
-      const upd = await fetch(`${CONFIG.supabaseUrl}/rest/v1/leads?id=eq.${existing[0].id}`, {
-        method: "PATCH", headers: { ...headers, "Prefer": "return=representation" }, body: JSON.stringify(leadData)
+      const updRes = await callApi({
+        path: `/rest/v1/leads?id=eq.${existing[0].id}&store_id=eq.${state.activeStoreId}`,
+        method: "PATCH",
+        prefer: "return=representation",
+        body: leadData
       });
-      saved = (await upd.json())[0];
+      saved = Array.isArray(updRes.data) ? updRes.data[0] : null;
     } else {
-      const cre = await fetch(`${CONFIG.supabaseUrl}/rest/v1/leads`, {
-        method: "POST", headers: { ...headers, "Prefer": "return=representation" }, body: JSON.stringify(leadData)
+      const creRes = await callApi({
+        path: `/rest/v1/leads`,
+        method: "POST",
+        prefer: "return=representation",
+        body: leadData
       });
-      saved = (await cre.json())[0];
+      saved = Array.isArray(creRes.data) ? creRes.data[0] : null;
     }
 
-    activeLead = { id: saved.id, name: leadData.name };
-    chrome.storage.local.set({ activeLeadId: saved.id, activeLeadName: leadData.name });
-  } catch (err) { console.error(err); }
+    if (saved && saved.id) {
+      activeLead = { id: saved.id, name: leadData.name };
+      chrome.storage.local.set({ activeLeadId: saved.id, activeLeadName: leadData.name });
+      setStatus(`Lead "${leadData.name}" sincronizado!`);
+
+      // Envia histórico recente de mensagens se houver
+      for (const msg of messages) {
+        if (!msg.content) continue;
+        await callApi({
+          path: `/rest/v1/lead_messages`,
+          method: "POST",
+          body: {
+            lead_id: saved.id,
+            store_id: state.activeStoreId,
+            content: msg.content,
+            sender_type: msg.sender_type,
+            created_at: msg.created_at
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.error("CRM sendToERP Error:", err);
+  }
 }
 
+/**
+ * Observa novos balões de conversa no chat aberto
+ */
 function setupAutoSyncWhatsApp() {
   const main = document.querySelector('#main');
   if (!main || main.dataset.crmObserved) return;
   main.dataset.crmObserved = "true";
+
   new MutationObserver(mutations => {
     for (const m of mutations) {
       for (const node of m.addedNodes) {
         if (node.nodeType === 1) {
-          if (node.classList.contains('message-in') || node.classList.contains('message-out')) syncSingle(node);
-          else node.querySelectorAll('.message-in, .message-out').forEach(c => syncSingle(c));
+          if (node.classList.contains('message-in') || node.classList.contains('message-out')) {
+            syncSingle(node);
+          } else {
+            node.querySelectorAll('.message-in, .message-out').forEach(c => syncSingle(c));
+          }
         }
       }
     }
   }).observe(main, { childList: true, subtree: true });
 }
 
+/**
+ * Sincroniza uma única mensagem em tempo real
+ */
 async function syncSingle(el) {
   if (!activeLead.id) return;
+  const state = await getAppState();
+  if (!state.isAuthenticated || !state.activeStoreId) return;
+
   const content = (el.querySelector('.copyable-text span') || el.querySelector('span[dir="ltr"]') || el).innerText.trim();
-  const sender = el.classList.contains('message-out') ? 'me' : 'lead';
+  const senderType = el.classList.contains('message-out') ? 'me' : 'lead';
   if (!content || content === lastSyncedText) return;
   lastSyncedText = content;
-  
-  await fetch(`${CONFIG.supabaseUrl}/rest/v1/lead_messages`, {
-    method: "POST", headers: { "Content-Type": "application/json", "apikey": CONFIG.supabaseKey, "Authorization": `Bearer ${CONFIG.supabaseKey}` },
-    body: JSON.stringify({ lead_id: activeLead.id, content, sender, created_at: new Date().toISOString() })
+
+  await callApi({
+    path: `/rest/v1/lead_messages`,
+    method: "POST",
+    body: {
+      lead_id: activeLead.id,
+      store_id: state.activeStoreId,
+      content,
+      sender_type: senderType,
+      created_at: new Date().toISOString()
+    }
   });
-  if (sender === 'lead') await updateLeadStatus(activeLead.id, { has_unread: true });
+
+  if (senderType === 'lead') {
+    await updateLeadStatus(activeLead.id, { has_unread: true }, state.activeStoreId);
+  }
 }
 
-async function updateLeadStatus(id, data) {
-  await fetch(`${CONFIG.supabaseUrl}/rest/v1/leads?id=eq.${id}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json", "apikey": CONFIG.supabaseKey, "Authorization": `Bearer ${CONFIG.supabaseKey}` },
-    body: JSON.stringify(data)
+async function updateLeadStatus(id, data, storeId) {
+  await callApi({
+    path: `/rest/v1/leads?id=eq.${id}&store_id=eq.${storeId}`,
+    method: "PATCH",
+    body: data
   });
 }
 
+/**
+ * Polling periódico de respostas pendentes para disparo automático via WhatsApp Web
+ */
 function startResponsePolling() {
   setInterval(async () => {
     if (isWorking) return;
+
     try {
-      const res = await fetch(`${CONFIG.supabaseUrl}/rest/v1/lead_responses?status=eq.pending&order=created_at.asc`, {
-        headers: { "apikey": CONFIG.supabaseKey, "Authorization": `Bearer ${CONFIG.supabaseKey}` }
+      const state = await getAppState();
+      if (!state.isAuthenticated || !state.activeStoreId) {
+        return; // Pausado se desconectado ou sem loja ativa
+      }
+
+      const res = await callApi({
+        path: `/rest/v1/lead_responses?status=eq.pending&store_id=eq.${state.activeStoreId}&order=created_at.asc`,
+        method: "GET"
       });
-      const pending = await res.json();
+
+      const pending = Array.isArray(res.data) ? res.data : [];
       chrome.storage.local.set({ queueCount: pending.length });
 
-      if (pending && pending.length > 0) {
+      if (pending.length > 0) {
         const msg = pending[0];
-        
-        // Anti-infinity: If we've tried this lead too many times, skip it for now
+
+        // Anti-infinity: Se já tentou muitas vezes este lead, pausa temporariamente
         if (msg.lead_id === lastAttemptedLeadId && retryCount > 5) {
-            setStatus("Pausando busca por lead problemático...");
-            setTimeout(() => { retryCount = 0; lastAttemptedLeadId = null; }, 10000);
-            return;
+          setStatus("Pausando busca por lead problemático...");
+          setTimeout(() => { retryCount = 0; lastAttemptedLeadId = null; }, 10000);
+          return;
         }
 
-        const leadRes = await fetch(`${CONFIG.supabaseUrl}/rest/v1/leads?id=eq.${msg.lead_id}&select=name,phone`, {
-          headers: { "apikey": CONFIG.supabaseKey, "Authorization": `Bearer ${CONFIG.supabaseKey}` }
+        const leadRes = await callApi({
+          path: `/rest/v1/leads?id=eq.${msg.lead_id}&store_id=eq.${state.activeStoreId}&select=name,phone`,
+          method: "GET"
         });
-        const leadInfo = (await leadRes.json())[0];
+
+        const leadInfo = Array.isArray(leadRes.data) && leadRes.data.length > 0 ? leadRes.data[0] : null;
         if (!leadInfo) return;
 
         if (await checkIfLeadIsOpenStrict(msg.lead_id, leadInfo.name, leadInfo.phone)) {
-           isWorking = true;
-           setStatus("Enviando...");
-           if (await injectAndSendWhatsApp(msg.content)) {
-             await markAsSent(msg.id);
-             await updateLeadStatus(msg.lead_id, { has_unread: false });
-             setStatus("Mensagem Enviada!");
-             lastAttemptedLeadId = null;
-             retryCount = 0;
-           }
-           isWorking = false;
+          isWorking = true;
+          setStatus("Enviando...");
+          if (await injectAndSendWhatsApp(msg.content)) {
+            await markAsSent(msg.id, state.activeStoreId);
+            await updateLeadStatus(msg.lead_id, { has_unread: false }, state.activeStoreId);
+            setStatus("Mensagem Enviada!");
+            lastAttemptedLeadId = null;
+            retryCount = 0;
+          }
+          isWorking = false;
         } else {
-           if (await robustSwitch(leadInfo)) {
-              // Direct Fire: Sent immediately after clicking row!
-              isWorking = true;
-              setStatus("Enviando...");
-              if (await injectAndSendWhatsApp(msg.content)) {
-                  await markAsSent(msg.id);
-                  await updateLeadStatus(msg.lead_id, { has_unread: false });
-                  setStatus("Mensagem Enviada!");
-                  lastAttemptedLeadId = null;
-                  retryCount = 0;
-              }
-              isWorking = false;
-           }
+          if (await robustSwitch(leadInfo)) {
+            isWorking = true;
+            setStatus("Enviando...");
+            if (await injectAndSendWhatsApp(msg.content)) {
+              await markAsSent(msg.id, state.activeStoreId);
+              await updateLeadStatus(msg.lead_id, { has_unread: false }, state.activeStoreId);
+              setStatus("Mensagem Enviada!");
+              lastAttemptedLeadId = null;
+              retryCount = 0;
+            }
+            isWorking = false;
+          }
         }
       }
-      } catch (e) {
-        if (e.message.includes("context invalidated")) return;
-        console.error("CRM Error:", e);
-      }
-    }, 4500);
-
-    // REAL-TIME AUTO-SYNC: Scrape open chat every 15s
-    setInterval(async () => {
-        try {
-            if (isWorking) return;
-            const openChatHeader = document.querySelector('#main header');
-            if (!openChatHeader) return;
-
-            // Attempt to identify the current lead from the header
-            const headerName = openChatHeader.innerText.trim().split('\n')[0];
-            const headerPhone = openChatHeader.innerText.match(/\+\d[\d\s-]{8,}/)?.[0]?.replace(/\D/g, '');
-
-            // Find match in our leads table (using activeLead cache if possible)
-            const { data: leads } = await supabase.from('leads').select('id, name, phone');
-            const currentLead = leads.find(l => 
-                (headerPhone && l.phone?.replace(/\D/g, '').endsWith(headerPhone)) ||
-                (headerName && l.name?.toLowerCase() === headerName.toLowerCase())
-            );
-
-            if (currentLead) {
-                console.log("CRM: Auto-syncing chat for", currentLead.name);
-                await scrapeMessages(currentLead.id);
-            }
-        } catch (e) {}
-    }, 15000);
+    } catch (e) {
+      if (e.message && e.message.includes("context invalidated")) return;
+      console.error("CRM Polling Error:", e);
+    }
+  }, 4500);
 }
 
 async function checkIfLeadIsOpenStrict(id, name, phone) {
@@ -224,25 +335,25 @@ async function checkIfLeadIsOpenStrict(id, name, phone) {
   if (!header) return false;
   const current = (header.querySelector('span[title]') || header.querySelector('span[dir="auto"]'))?.innerText.trim();
   if (!current) return false;
-  
+
   const cleanCurrent = sanitizeName(current).toLowerCase();
   const cleanTarget = sanitizeName(name).toLowerCase();
-  
+
   const p1 = current.replace(/\D/g, '');
   const p2 = phone ? phone.replace(/\D/g, '') : '';
-  
+
   if (cleanCurrent === cleanTarget || cleanCurrent.includes(cleanTarget) || cleanTarget.includes(cleanCurrent)) return true;
   if (p1.length >= 8 && p2.length >= 8 && (p1.includes(p2) || p2.includes(p1))) return true;
-  
-  if (activeLead && activeLead.id === id) return true;
 
+  if (activeLead && activeLead.id === id) return true;
   return false;
 }
 
-async function markAsSent(id) {
-  await fetch(`${CONFIG.supabaseUrl}/rest/v1/lead_responses?id=eq.${id}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json", "apikey": CONFIG.supabaseKey, "Authorization": `Bearer ${CONFIG.supabaseKey}` },
-    body: JSON.stringify({ status: 'sent' })
+async function markAsSent(id, storeId) {
+  await callApi({
+    path: `/rest/v1/lead_responses?id=eq.${id}&store_id=eq.${storeId}`,
+    method: "PATCH",
+    body: { status: 'sent', sent_at: new Date().toISOString() }
   });
 }
 
@@ -256,95 +367,74 @@ async function robustSwitch(lead) {
     const query = lead.phone || lead.name;
     setStatus(`Buscando: ${query} (Tentativa ${retryCount})`);
 
-    // 1. WAKE-UP CALL: Force React to render the input
-    const searchIcon = document.querySelector('span[data-icon="search"]') || 
+    const searchIcon = document.querySelector('span[data-icon="search"]') ||
                        document.querySelector('span[data-icon="chat"]');
     if (searchIcon) {
-        let clickable = searchIcon.closest('button, [role="button"]') || searchIcon.parentElement;
-        if (clickable) {
-             clickable.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
-             clickable.click();
-        }
+      let clickable = searchIcon.closest('button, [role="button"]') || searchIcon.parentElement;
+      if (clickable) {
+        clickable.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        clickable.click();
+      }
     }
-    
-    // Fallback Wake-up: find the placeholder text div and click
-    try {
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-        let node;
-        while(node = walker.nextNode()) {
-            if(node.nodeValue.includes('Pesquisar') || node.nodeValue.includes('nova conversa') || node.nodeValue.includes('Search')) {
-                node.parentElement.click();
-                node.parentElement.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
-            }
-        }
-    } catch(e) {}
 
     await new Promise(r => setTimeout(r, 800));
 
-    // BRUTE FORCE SELECTOR: Probe all input candidates and try pasting text
-    const footer = document.querySelector('#main footer, footer.x1nqdnnd'); // WhatsApp main footer
+    const footer = document.querySelector('#main footer, footer.x1nqdnnd');
     const allCandidates = Array.from(document.querySelectorAll('[contenteditable="true"], [role="textbox"], input, [data-lexical-editor="true"]'));
     const validInputs = allCandidates.filter(el => !footer || !footer.contains(el));
-    
+
     let foundAndTyped = false;
-
     for (let el of validInputs) {
-        if (el.offsetWidth === 0 && el.offsetHeight === 0 && !el.getBoundingClientRect().width) continue; 
-        try {
-            el.focus();
-            document.execCommand('selectAll', false, null);
-            document.execCommand('delete', false, null);
-            document.execCommand('insertText', false, query);
-            el.dispatchEvent(new Event('input', { bubbles: true }));
+      if (el.offsetWidth === 0 && el.offsetHeight === 0 && !el.getBoundingClientRect().width) continue;
+      try {
+        el.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+        document.execCommand('insertText', false, query);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
 
-            // Test if the element aggressively accepted the string
-            if ((el.textContent && el.textContent.includes(query)) || (el.value && el.value.includes(query))) {
-                foundAndTyped = true;
-                break;
-            }
-        } catch(e) {}
+        if ((el.textContent && el.textContent.includes(query)) || (el.value && el.value.includes(query))) {
+          foundAndTyped = true;
+          break;
+        }
+      } catch (e) {}
     }
 
     if (foundAndTyped) {
-      await new Promise(r => setTimeout(r, 1000)); 
+      await new Promise(r => setTimeout(r, 1000));
 
-      // 1. ATTEMPT: Press Enter on the search bar
       for (let el of validInputs) {
-          if ((el.textContent && el.textContent.includes(query)) || (el.value && el.value.includes(query))) {
-              ['keydown', 'keypress', 'keyup'].forEach(type => {
-                  el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-              });
-              console.log("CRM: Sent Enter to search input.");
-              break;
-          }
+        if ((el.textContent && el.textContent.includes(query)) || (el.value && el.value.includes(query))) {
+          ['keydown', 'keypress', 'keyup'].forEach(type => {
+            el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          });
+          break;
+        }
       }
 
-      await new Promise(r => setTimeout(r, 2000)); 
+      await new Promise(r => setTimeout(r, 2000));
 
       if (document.querySelector('#main header')) {
-          setStatus("Chat aberto via Enter!");
-          return true;
+        setStatus("Chat aberto via Enter!");
+        return true;
       }
 
-      // 2. ATTEMPT: Result Sniffer (Scoped specifically to result pane with multi-event click)
       const sidebar = document.querySelector('#pane-side') || document.querySelector('[aria-label="Lista de chats"]');
       if (sidebar) {
         const resultSelectors = ['[role="row"]', '[role="listitem"]', '._ak8l', '._ak8o', 'div[data-testid="list-item-search"]'];
         let rows = [];
         for (const sel of resultSelectors) {
-            const found = Array.from(sidebar.querySelectorAll(sel)).filter(el => el.offsetHeight > 10);
-            if (found.length > 0) { rows = found; break; }
+          const found = Array.from(sidebar.querySelectorAll(sel)).filter(el => el.offsetHeight > 10);
+          if (found.length > 0) { rows = found; break; }
         }
-        
+
         if (rows.length > 0) {
           const target = rows[0].querySelector('[role="button"]') || rows[0];
-          
-          // HYPER-AGGRESSIVE CLICK SEQUENCE
           ['mousedown', 'mouseup', 'click'].forEach(type => {
-              target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, buttons: 1 }));
+            target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, buttons: 1 }));
           });
-          target.click(); // Standard click fallback
-          
+          target.click();
+
           setStatus("Chat localizado via Sniper Click!");
           activeLead = { id: lead.id, name: lead.name };
           chrome.storage.local.set({ activeLeadId: lead.id, activeLeadName: lead.name });
@@ -352,20 +442,13 @@ async function robustSwitch(lead) {
           if (document.querySelector('#main')) return true;
         }
       }
-      
-      // 3. FINAL FALLBACK: Emergency URL Navigation (The Nuclear Option)
-      if (lead.phone && lead.phone.length > 8) {
-          setStatus("Usando navegação direta por URL...");
-          const cleanPhone = lead.phone.replace(/\D/g, '');
-          // We use window.location.assign to trigger a "soft" navigation if possible, but WA usually needs a full redirect or specific handler
-          window.location.href = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
-          return false; // Return false because the page will reload/redirect
-      }
-      
     } else {
-        setStatus("Barra de busca não encontrada.");
+      setStatus("Barra de busca não encontrada.");
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+  }
+
   isWorking = false;
   return false;
 }
@@ -380,7 +463,7 @@ async function injectAndSendWhatsApp(text) {
     if (input) break;
     await new Promise(r => setTimeout(r, 500));
   }
-  
+
   if (!input) {
     setStatus("Erro: Campo de texto não encontrado");
     return false;
@@ -391,7 +474,7 @@ async function injectAndSendWhatsApp(text) {
   document.execCommand('delete', false, null);
   document.execCommand('insertText', false, text);
   input.dispatchEvent(new Event('input', { bubbles: true }));
-  
+
   await new Promise(r => setTimeout(r, 1000));
   const sendBtn = footer.querySelector('span[data-icon="send"]')?.closest('button') || footer.querySelector('[data-testid="send"]');
   if (sendBtn) {
@@ -404,4 +487,5 @@ async function injectAndSendWhatsApp(text) {
   }
 }
 
+// Inicializa a extensão
 initSession();
