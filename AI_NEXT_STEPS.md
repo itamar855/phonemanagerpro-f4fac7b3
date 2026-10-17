@@ -41,7 +41,16 @@
 
 ---
 
-### ⏳ ETAPA 5 — Consolidação e Rollout Remoto (Quando solicitado pelo usuário)
-- [ ] Revisão geral dos Pull Requests no GitHub.
-- [ ] Planejamento da ordem de merge ou aplicação de migrations no banco remoto Supabase (sob instrução expressa).
+### ✅ ETAPA 5 — Modularização de Telas Monolíticas (Caixa e Vendas) (CONCLUÍDA)
+- [x] Extração cirúrgica de 10 modais de `Caixa.tsx` para `src/components/features/caixa/` (-662 linhas).
+- [x] Extração cirúrgica de 4 modais de `Vendas.tsx` para `src/components/features/vendas/` (-1.003 linhas).
+- [x] Baseline de 366/366 testes PASS e 0 erros de compilação.
+- [x] Commits `b381980` e `772fd4e` mesclados na branch `main` e enviados ao remoto `origin/main`.
+
+---
+
+### ⏳ ETAPA 6 — Próximos Passos Sugeridos
+- [ ] Modularização das demais páginas extensas (`Relatorios.tsx`, `OrdensServico.tsx`, `Estoque.tsx`).
+- [ ] Aplicação de migrations pendentes no Supabase remoto (sob autorização expressa do usuário).
+- [ ] Implementação de novos recursos (ex: notificações Web Push, automações de CRM).
 
