@@ -17,7 +17,8 @@ Este documento resume a matriz de estado da segurança, credenciais e RLS, indic
 | **legacy service_role** | ATIVA | **NÃO** | Não desativar nem revogar até que a produção esteja 100% migrada. |
 | **legacy anon key** | ATIVA | **NÃO** | Não desativar até a Vercel compilar e validar com `sb_publishable_...`. |
 | **modern sb_secret** | ATIVA & VALIDADA | **SIM (Consumir)** | Chave moderna injetada no runtime Supabase (`SUPABASE_SECRET_KEYS['default']`). |
-| **modern sb_publishable** | ATIVA LOCALMENTE | **SIM (Aplicar Vercel)** | `.env` local usa `sb_publishable_`. Falta aplicar na variável do Vercel. |
+| **modern sb_publishable** | ATIVA NA VERCEL & LOCAL | **CONCLUÍDA** | `.env` e Vercel usam `sb_publishable_`. Produção 100% migrada. |
+| **migrations (Supabase)** | APLICADAS NO REMOTO | **CONCLUÍDA** | Validado via `npx supabase migration list`: todas as 7 migrations ativas no banco. |
 | **client.ts (frontend)** | MIGRADO & COMMITADO (`e280cd8`) | **PRESERVAR** | Suporta nativamente `sb_publishable_` sem decodificar JWT. |
 | **AIAssistant.tsx** | HARDENED & COMMITADO (`e280cd8`) | **PRESERVAR** | Envia `apikey` pública e `Authorization: Bearer session.access_token`. |
 | **create-admin** | CONGELADA / NÃO DEPLOYADA | **NÃO** | Não deployar, não fornecer `sb_secret_...`. Manter intacta localmente para histórico. |
