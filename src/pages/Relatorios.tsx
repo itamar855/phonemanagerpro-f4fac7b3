@@ -6,495 +6,51 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell,
+  ResponsiveContainer,
 } from "recharts";
 import {
-  FileText, TrendingUp, TrendingDown, ShoppingBag, Wrench,
-  Wallet, Trophy, Medal, Download, Star, Crown, Users, MessageCircle, Camera, Search,
-  DollarSign, CheckCircle2, History, Receipt, Eye,
+  FileText, ShoppingBag, Wrench, Wallet, Trophy, Star, Users, Camera,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { jsPDF } from "jspdf";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
-import { logAction } from "@/utils/auditLogger";
 import { RelatorioDiarioTab } from "@/components/features/relatorios/RelatorioDiarioTab";
-import { OS_STATUS_CONFIG, getStatusLabel, getStatusColor, ALL_OS_STATUSES } from "@/utils/osStatus";
 import { calculateOSItemMetrics } from "@/utils/osCalculations";
-import { CommissionPayoutModal } from "@/components/features/relatorios/CommissionPayoutModal";
 import {
   fetchSettledItemIds,
   fetchSettlementsHistory,
-  fetchSettlementItems,
-  generateSettlementReceiptPDF,
   type CommissionSettlement,
-  type CommissionSettlementItem,
 } from "@/utils/commissionSettlement";
-import { openComprovante } from "@/lib/storageHelper";
-
-const formatCurrency = (v: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
-const formatPct = (v: number) => `${v.toFixed(1)}%`;
-
-const MONTHS = ["Janeiro","Fevereiro","Marco","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-const COLORS = ["hsl(152,60%,45%)","hsl(38,92%,50%)","hsl(210,80%,55%)","hsl(280,60%,55%)","hsl(0,62%,50%)"];
-
-const PDF_PRIMARY: [number,number,number] = [17,24,39];
-const PDF_ACCENT: [number,number,number] = [16,185,129];
-const PDF_TEXT: [number,number,number] = [30,30,30];
-const PDF_LIGHT: [number,number,number] = [107,114,128];
-const PDF_BG: [number,number,number] = [249,250,251];
-const PDF_BORDER: [number,number,number] = [229,231,235];
-const PDF_WHITE: [number,number,number] = [255,255,255];
-const PDF_RED: [number,number,number] = [239,68,68];
-const PDF_GREEN: [number,number,number] = [16,185,129];
-
-function pdfHeader(doc: jsPDF, titulo: string, subtitulo: string, periodo: string): number {
-  const W = 210; const M = 12;
-  doc.setFillColor(...PDF_PRIMARY); doc.rect(0,0,W,32,"F");
-  doc.setFillColor(...PDF_ACCENT); doc.rect(0,32,W,2,"F");
-  doc.setFont("helvetica","bold"); doc.setFontSize(17); doc.setTextColor(...PDF_WHITE);
-  doc.text("CELL PRO 360", M, 13);
-  doc.setFont("helvetica","normal"); doc.setFontSize(9);
-  doc.text("Sistema de Gestao Comercial", M, 20);
-  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(...PDF_ACCENT);
-  doc.text(titulo.toUpperCase(), W-M, 12, { align:"right" });
-  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...PDF_WHITE);
-  doc.text(subtitulo, W-M, 19, { align:"right" });
-  doc.text("Periodo: " + periodo, W-M, 26, { align:"right" });
-  doc.setFont("helvetica","italic"); doc.setFontSize(7.5);
-  doc.text("Gerado em: " + new Date().toLocaleString("pt-BR"), M, 28);
-  return 42;
-}
-
-function pdfFooter(doc: jsPDF, pg: number) {
-  const y = 290;
-  doc.setDrawColor(...PDF_BORDER); doc.setLineWidth(0.2); doc.line(12,y-4,198,y-4);
-  doc.setFont("helvetica","italic"); doc.setFontSize(7); doc.setTextColor(...PDF_LIGHT);
-  doc.text("Cell Pro 360 - Relatorio gerado automaticamente - Uso interno", 12, y);
-  doc.text("Pagina " + pg, 198, y, { align:"right" });
-}
-
-function pdfKpiRow(doc: jsPDF, y: number, kpis: {label:string;value:string;color?:[number,number,number]}[]): number {
-  const M=12; const CW=186; const bw=CW/kpis.length;
-  kpis.forEach((k,i)=>{
-    const x=M+i*bw;
-    doc.setFillColor(...PDF_BG); doc.rect(x,y,bw-2,18,"F");
-    doc.setDrawColor(...PDF_BORDER); doc.rect(x,y,bw-2,18);
-    doc.setFont("helvetica","normal"); doc.setFontSize(6.5); doc.setTextColor(...PDF_LIGHT);
-    doc.text(k.label.toUpperCase(),x+4,y+6);
-    doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(...(k.color??PDF_TEXT));
-    doc.text(k.value,x+4,y+14);
-  });
-  return y+22;
-}
-
-function pdfTableHead(doc: jsPDF, y: number, cols:{label:string;w:number}[]): number {
-  const M=12; const H=8;
-  doc.setFillColor(...PDF_PRIMARY);
-  let x=M; cols.forEach(c=>{ doc.rect(x,y,c.w,H,"F"); x+=c.w; });
-  x=M; doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(...PDF_WHITE);
-  cols.forEach(c=>{ doc.text(c.label,x+2,y+5.5); x+=c.w; });
-  return y+H;
-}
-
-function pdfTableRow(doc: jsPDF, y: number, cols:{w:number}[], vals: string[], even: boolean): number {
-  const M=12; const RH=7;
-  if(even){ doc.setFillColor(...PDF_BG); let x2=M; cols.forEach(c=>{ doc.rect(x2,y,c.w,RH,"F"); x2+=c.w; }); }
-  doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(...PDF_TEXT);
-  let x=M;
-  cols.forEach((c,i)=>{
-    const lines=doc.splitTextToSize(vals[i]??"",c.w-4);
-    doc.text(lines[0]??"",x+2,y+4.5); x+=c.w;
-  });
-  return y+RH;
-}
-
-function pdfCheckPage(doc: jsPDF, y: number, pg: {n:number}): number {
-  if(y>272){ pdfFooter(doc,pg.n); doc.addPage(); pg.n++; return 18; }
-  return y;
-}
-
-function exportDREPDF(dreLines: any[], dre: any, periodo: string, loja: string) {
-  const doc=new jsPDF({unit:"mm",format:"a4"});
-  const M=12; const W=210; const CW=W-M*2; const pg={n:1};
-  let y=pdfHeader(doc,"DRE - Demonstrativo de Resultado",loja,periodo);
-  y=pdfKpiRow(doc,y,[
-    {label:"Receita Total",value:formatCurrency(dre.totalReceita??0),color:PDF_GREEN},
-    {label:"Lucro Bruto",value:formatCurrency(dre.lucroBruto??0),color:PDF_GREEN},
-    {label:"Lucro Liquido",value:formatCurrency(dre.lucroLiquido??0),color:(dre.lucroLiquido??0)>=0?PDF_GREEN:PDF_RED},
-    {label:"Margem Liquida",value:(dre.totalReceita??0)>0?formatPct(((dre.lucroLiquido??0)/dre.totalReceita)*100):"0%"},
-  ]);
-  y+=4;
-  doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...PDF_PRIMARY);
-  doc.text("DEMONSTRATIVO DE RESULTADO DO EXERCICIO",M,y+5); y+=10;
-  dreLines.forEach((line,i)=>{
-    y=pdfCheckPage(doc,y,pg);
-    const isResult=line.type==="result"; const isTotal=line.bold&&!isResult;
-    const rh=isResult?10:8;
-    if(isResult){ doc.setFillColor(...PDF_ACCENT); doc.rect(M,y,CW,rh,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...PDF_WHITE); }
-    else if(isTotal){ doc.setFillColor(...PDF_BG); doc.rect(M,y,CW,rh,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.setTextColor(...PDF_PRIMARY); }
-    else{ if(i%2===0){doc.setFillColor(252,252,252);doc.rect(M,y,CW,rh,"F");} doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...PDF_TEXT); }
-    doc.text(line.label,M+4,y+(isResult?6.5:5.5));
-    const vs=line.type==="expense"?"- "+formatCurrency(Math.abs(line.value)):formatCurrency(Math.abs(line.value));
-    if(!isResult&&line.type==="expense") doc.setTextColor(...PDF_RED);
-    doc.text(vs,W-M-4,y+(isResult?6.5:5.5),{align:"right"});
-    y+=rh;
-  });
-  pdfFooter(doc,pg.n);
-  doc.save("DRE-"+periodo.replace(/\//g,"-")+".pdf");
-  toast.success("PDF do DRE gerado!");
-}
-
-function exportVendasPDF(rows: any[], periodo: string, loja: string) {
-  const doc=new jsPDF({unit:"mm",format:"a4",orientation:"landscape"});
-  const pg={n:1};
-  let y=pdfHeader(doc,"Relatorio de Vendas",loja,periodo);
-  const total=rows.reduce((s:number,r:any)=>s+r.valor,0);
-  const lucro=rows.reduce((s:number,r:any)=>s+r.lucro,0);
-  y=pdfKpiRow(doc,y,[
-    {label:"Total Vendido",value:formatCurrency(total),color:PDF_GREEN},
-    {label:"Lucro Total",value:formatCurrency(lucro),color:lucro>=0?PDF_GREEN:PDF_RED},
-    {label:"Qtd. Vendas",value:String(rows.length)},
-    {label:"Ticket Medio",value:rows.length>0?formatCurrency(total/rows.length):formatCurrency(0)},
-    {label:"Margem Media",value:total>0?formatPct((lucro/total)*100):"0%"},
-  ]);
-  y+=4;
-  const cols=[
-    {label:"DATA",w:22},{label:"PRODUTO / MARCA",w:54},{label:"CLIENTE",w:38},{label:"LOJA",w:30},
-    {label:"DINHEIRO",w:26},{label:"CARTAO",w:26},{label:"PIX",w:22},
-    {label:"VALOR",w:28},{label:"LUCRO",w:25},{label:"MARGEM",w:22},
-  ];
-  y=pdfTableHead(doc,y,cols);
-  rows.forEach((r:any,i:number)=>{
-    y=pdfCheckPage(doc,y,pg);
-    y=pdfTableRow(doc,y,cols,[
-      r.data,r.produto+" / "+r.marca,r.cliente,r.loja,
-      r.dinheiro>0?formatCurrency(r.dinheiro):"-",
-      r.cartao>0?formatCurrency(r.cartao):"-",
-      r.pix>0?formatCurrency(r.pix):"-",
-      formatCurrency(r.valor),formatCurrency(r.lucro),formatPct(r.margem),
-    ],i%2===0);
-  });
-  pdfFooter(doc,pg.n);
-  doc.save("Vendas-"+periodo.replace(/\//g,"-")+".pdf");
-  toast.success("PDF de Vendas gerado!");
-}
-
-function exportOSPDF(osData: any[], osStats: any, profileMap: Map<string, string>, periodo: string, loja: string) {
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
-  const pg = { n: 1 };
-  let y = pdfHeader(doc, "Relatorio de OS - Servicos", loja, periodo);
-  y = pdfKpiRow(doc, y, [
-    { label: "Receita OS", value: formatCurrency(osStats.totalReceita ?? 0), color: PDF_GREEN },
-    { label: "Custo Peças", value: formatCurrency(osStats.custoPecas ?? 0), color: PDF_RED },
-    { label: "Margem da OS", value: formatCurrency(osStats.lucroBruto ?? 0), color: PDF_GREEN },
-    { label: "Entregues", value: String(osStats.delivered ?? 0), color: PDF_GREEN },
-    { label: "Recebidas", value: String(osStats.recebidas ?? 0) },
-    { label: "Ticket Medio", value: formatCurrency(osStats.ticketMedio ?? 0) },
-  ]);
-  y += 4;
-  const cols = [
-    { label: "Nr OS", w: 20 },
-    { label: "CLIENTE", w: 38 },
-    { label: "APARELHO", w: 38 },
-    { label: "SERVICO", w: 42 },
-    { label: "TECNICO", w: 32 },
-    { label: "STATUS", w: 26 },
-    { label: "ENTRADA", w: 22 },
-    { label: "ENTREGA", w: 22 },
-    { label: "VALOR FINAL", w: 26 },
-  ];
-  y = pdfTableHead(doc, y, cols);
-  osData.forEach((o: any, i: number) => {
-    y = pdfCheckPage(doc, y, pg);
-    y = pdfTableRow(doc, y, cols, [
-      String(o.order_number ?? "-"),
-      o.customer_name ?? "-",
-      ((o.device_brand ?? "") + " " + (o.device_model ?? "")).trim() || "-",
-      o.requested_service ?? "-",
-      profileMap.get(o.technician_id) ?? "Sem técnico",
-      getStatusLabel(o.status),
-      new Date(o.created_at).toLocaleDateString("pt-BR"),
-      o.delivered_at ? new Date(o.delivered_at).toLocaleDateString("pt-BR") : "—",
-      formatCurrency(Number(o.final_price || o.estimated_price || 0)),
-    ], i % 2 === 0);
-  });
-  pdfFooter(doc, pg.n);
-  doc.save("OS-" + periodo.replace(/\//g, "-") + ".pdf");
-  toast.success("PDF de OS gerado!");
-}
-
-function exportCaixaPDF(caixaData: any[], caixaStats: any, periodo: string, loja: string) {
-  const doc=new jsPDF({unit:"mm",format:"a4"});
-  const pg={n:1};
-  let y=pdfHeader(doc,"Relatorio de Caixa",loja,periodo);
-  y=pdfKpiRow(doc,y,[
-    {label:"Total Caixas",value:String(caixaStats.total??0)},
-    {label:"Fechados",value:String(caixaStats.fechados??0),color:PDF_GREEN},
-    {label:"Abertos",value:String(caixaStats.abertos??0)},
-    {label:"Total Diferenca",value:formatCurrency(Math.abs(caixaStats.totalDiferenca??0)),color:(caixaStats.totalDiferenca??0)===0?PDF_GREEN:PDF_RED},
-  ]);
-  y+=4;
-  const cols=[
-    {label:"DATA",w:28},{label:"LOJA",w:42},{label:"STATUS",w:24},
-    {label:"ABERTURA",w:30},{label:"FECHAMENTO",w:30},{label:"ESPERADO",w:30},{label:"DIFERENCA",w:28},
-  ];
-  y=pdfTableHead(doc,y,cols);
-  caixaData.forEach((r:any,i:number)=>{
-    y=pdfCheckPage(doc,y,pg);
-    y=pdfTableRow(doc,y,cols,[
-      r.data,r.loja,r.status,formatCurrency(r.abertura),
-      r.status==="Fechado"?formatCurrency(r.fechamento):"-",
-      r.status==="Fechado"?formatCurrency(r.esperado):"-",
-      r.status==="Fechado"?formatCurrency(r.diferenca):"-",
-    ],i%2===0);
-  });
-  pdfFooter(doc,pg.n);
-  doc.save("Caixa-"+periodo.replace(/\//g,"-")+".pdf");
-  toast.success("PDF de Caixa gerado!");
-}
-
-function exportRankingPDF(ranking: any[], periodo: string, loja: string) {
-  const doc=new jsPDF({unit:"mm",format:"a4"});
-  const pg={n:1};
-  let y=pdfHeader(doc,"Ranking de Vendedores",loja,periodo);
-  y=pdfKpiRow(doc,y,[
-    {label:"Vendedores",value:String(ranking.length)},
-    {label:"Total Vendido",value:formatCurrency(ranking.reduce((s,v)=>s+v.totalVendas,0)),color:PDF_GREEN},
-    {label:"Total Comissoes",value:formatCurrency(ranking.reduce((s,v)=>s+v.comissoes,0))},
-    {label:"OS Entregues",value:String(ranking.reduce((s,v)=>s+v.osEntregues,0))},
-  ]);
-  y+=4;
-  const cols=[
-    {label:"POS.",w:14},{label:"VENDEDOR",w:52},{label:"QTD. VENDAS",w:30},
-    {label:"TOTAL VENDIDO",w:38},{label:"LUCRO GERADO",w:36},{label:"COMISSAO",w:30},{label:"OS ENTREGUES",w:28},
-  ];
-  y=pdfTableHead(doc,y,cols);
-  ranking.forEach((v:any,i:number)=>{
-    y=pdfCheckPage(doc,y,pg);
-    y=pdfTableRow(doc,y,cols,[
-      (i+1)+"o",v.nome,String(v.qtdVendas),
-      formatCurrency(v.totalVendas),formatCurrency(v.lucro),
-      v.comissoes>0?formatCurrency(v.comissoes):"-",String(v.osEntregues),
-    ],i%2===0);
-  });
-  pdfFooter(doc,pg.n);
-  doc.save("Ranking-"+periodo.replace(/\//g,"-")+".pdf");
-  toast.success("PDF de Ranking gerado!");
-}
-
-function exportComissoesPDF(comissoes: any[], periodo: string, loja: string) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const pg = { n: 1 };
-  let y = pdfHeader(doc, "Relatorio de Comissoes", loja, periodo);
-  const tot = comissoes.reduce((s, c) => s + c.comissoes, 0);
-  y = pdfKpiRow(doc, y, [
-    { label: "Total a Pagar", value: formatCurrency(tot), color: PDF_RED },
-    { label: "Colaboradores", value: String(comissoes.length) },
-    { label: "Total Faturado", value: formatCurrency(comissoes.reduce((s, c) => s + c.totalVendas, 0)), color: PDF_GREEN },
-    { label: "Margem / Lucro", value: formatCurrency(comissoes.reduce((s, c) => s + c.lucro, 0)), color: PDF_GREEN },
-  ]);
-  y += 4;
-  const cols = [
-    { label: "POS.", w: 12 },
-    { label: "COLABORADOR", w: 45 },
-    { label: "CARGO", w: 22 },
-    { label: "QTD.", w: 25 },
-    { label: "FATURADO", w: 30 },
-    { label: "COM. VENDAS", w: 28 },
-    { label: "COM. OS", w: 28 },
-    { label: "TOTAL COM.", w: 28 },
-  ];
-  y = pdfTableHead(doc, y, cols);
-  comissoes.forEach((v: any, i: number) => {
-    y = pdfCheckPage(doc, y, pg);
-    const cargo = v.role === "tecnico" ? "Técnico" : "Vendedor";
-    const qtdStr = `${v.qtdVendas}v / ${v.osEntregues} OS`;
-    y = pdfTableRow(doc, y, cols, [
-      (i + 1) + "o",
-      v.nome,
-      cargo,
-      qtdStr,
-      formatCurrency(v.totalVendas),
-      v.comissoesVendas > 0 ? formatCurrency(v.comissoesVendas) : "-",
-      v.comissoesOS > 0 ? formatCurrency(v.comissoesOS) : "-",
-      formatCurrency(v.comissoes),
-    ], i % 2 === 0);
-  });
-  pdfFooter(doc, pg.n);
-  doc.save("Comissoes-" + periodo.replace(/\//g, "-") + ".pdf");
-  toast.success("PDF de Comissoes gerado!");
-}
-
-function exportFinanceiroPDF(rows: any[], stats: any, period: string, loja: string) {
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
-  const pg = { n: 1 };
-  let y = pdfHeader(doc, "Relatorio Financeiro Detalhado", loja, period);
-  
-  y = pdfKpiRow(doc, y, [
-    { label: "Total Entradas", value: formatCurrency(stats.totalEntradas), color: PDF_GREEN },
-    { label: "Total Saidas", value: formatCurrency(stats.totalSaidas), color: PDF_RED },
-    { label: "Saldo Liquido", value: formatCurrency(stats.saldoLiquido), color: stats.saldoLiquido >= 0 ? PDF_GREEN : PDF_RED },
-    { label: "Movimentacoes", value: String(rows.length) },
-  ]);
-  
-  y += 4;
-  
-  const cols = [
-    { label: "DATA", w: 25 },
-    { label: "DESCRICAO", w: 85 },
-    { label: "CATEGORIA", w: 45 },
-    { label: "CONTA", w: 55 },
-    { label: "TIPO", w: 25 },
-    { label: "VALOR", w: 35 },
-  ];
-  
-  y = pdfTableHead(doc, y, cols);
-  
-  rows.forEach((r: any, i: number) => {
-    y = pdfCheckPage(doc, y, pg);
-    y = pdfTableRow(doc, y, cols, [
-      r.data,
-      String(r.descricao || "").replace(/→/g, "-").replace(/—/g, "-"),
-      r.categoria,
-      r.conta,
-      r.tipo,
-      formatCurrency(r.valor),
-    ], i % 2 === 0);
-  });
-  
-  pdfFooter(doc, pg.n);
-  doc.save("Financeiro-Detalhado-" + period.replace(/\//g, "-") + ".pdf");
-  toast.success("PDF Financeiro gerado!");
-}
-
-// ─── PERIOD UTILS ────────────────────────────────────────────────────────────
-
-const getPeriodDates = (period: string, customStart: string, customEnd: string, specificDay?: string) => {
-  const now = new Date();
-  if (period === "today") {
-    const s = new Date(now.getFullYear(),now.getMonth(),now.getDate(),0,0,0).toISOString();
-    const e = new Date(now.getFullYear(),now.getMonth(),now.getDate(),23,59,59).toISOString();
-    return { start: s, end: e };
-  }
-  if (period === "day" && specificDay) {
-    const d = new Date(specificDay + "T00:00:00");
-    const s = new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,0).toISOString();
-    const e = new Date(d.getFullYear(),d.getMonth(),d.getDate(),23,59,59).toISOString();
-    return { start: s, end: e };
-  }
-  if (period === "custom") {
-    return {
-      start: customStart ? new Date(customStart).toISOString() : new Date(now.getFullYear(),now.getMonth(),1).toISOString(),
-      end: customEnd ? new Date(customEnd+"T23:59:59").toISOString() : now.toISOString(),
-    };
-  }
-  if (period === "week") { const d=new Date(now); d.setDate(d.getDate()-7); return {start:d.toISOString(),end:now.toISOString()}; }
-  if (period === "month") return { start: new Date(now.getFullYear(),now.getMonth(),1).toISOString(), end: now.toISOString() };
-  if (period === "quarter") { const q=Math.floor(now.getMonth()/3)*3; return {start:new Date(now.getFullYear(),q,1).toISOString(),end:now.toISOString()}; }
-  return { start: new Date(now.getFullYear(),0,1).toISOString(), end: now.toISOString() };
-};
-
-const getPeriodLabel = (period: string, customStart: string, customEnd: string, specificDay?: string) => {
-  const fmt=(d:Date)=>d.toLocaleDateString("pt-BR");
-  if (period==="today") return "Hoje - "+fmt(new Date());
-  if (period==="day"&&specificDay) return "Dia "+fmt(new Date(specificDay+"T12:00:00"));
-  if (period==="week") { const d=new Date(); d.setDate(d.getDate()-7); return fmt(d)+" a "+fmt(new Date()); }
-  if (period==="month") { const n=new Date(); return MONTHS[n.getMonth()]+"/"+n.getFullYear(); }
-  if (period==="quarter") { const n=new Date(); const q=Math.floor(n.getMonth()/3)+1; return q+"o Trimestre "+n.getFullYear(); }
-  if (period==="year") return "Ano "+new Date().getFullYear();
-  if (period==="custom") return (customStart||"?")+" a "+(customEnd||"?");
-  return "";
-};
-
-const exportCSV = (rows: Record<string, any>[], filename: string) => {
-  if (!rows.length) { toast.error("Sem dados para exportar"); return; }
-  const keys = Object.keys(rows[0]);
-  const csv = [keys.join(";"), ...rows.map(r => keys.map(k => String(r[k] ?? "").replace(/;/g, ",")).join(";"))].join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-  toast.success("CSV exportado!");
-  logAction("DOWNLOAD_REPORT" as any, "reports", filename);
-};
-
-const RankBadge = ({ pos }: { pos: number }) => {
-  if (pos === 1) return <Crown className="h-5 w-5 text-yellow-400" />;
-  if (pos === 2) return <Medal className="h-5 w-5 text-slate-400" />;
-  if (pos === 3) return <Medal className="h-5 w-5 text-amber-600" />;
-  return <span className="text-muted-foreground text-sm font-bold w-5 text-center">{pos}o</span>;
-};
-
-const PeriodSelect = ({ value, onChange, includeCustom = true }: { value: string; onChange: (v: string) => void; includeCustom?: boolean }) => (
-  <Select value={value} onValueChange={onChange}>
-    <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
-    <SelectContent>
-      <SelectItem value="today">Diário (Hoje)</SelectItem>
-      <SelectItem value="day">Diário (Outro Dia)</SelectItem>
-      <SelectItem value="week">Esta Semana</SelectItem>
-      <SelectItem value="month">Este Mês</SelectItem>
-      <SelectItem value="quarter">Trimestre</SelectItem>
-      <SelectItem value="year">Este Ano</SelectItem>
-      {includeCustom && <SelectItem value="custom">Personalizado</SelectItem>}
-    </SelectContent>
-  </Select>
-);
-
-const Filters = ({ period, setPeriod, storeId, setStoreId, stores, customStart, setCustomStart, customEnd, setCustomEnd, specificDay, setSpecificDay, userRole }: any) => (
-  <div className="flex flex-wrap gap-2 items-end">
-    <div className="space-y-1">
-      <Label className="text-xs">Periodo</Label>
-      <PeriodSelect value={period} onChange={setPeriod} />
-    </div>
-    {period === "day" && (
-      <div className="space-y-1">
-        <Label className="text-xs">Dia</Label>
-        <Input type="date" value={specificDay} onChange={e => setSpecificDay(e.target.value)} className="h-9 w-36" />
-      </div>
-    )}
-    {period === "custom" && (
-      <>
-        <div className="space-y-1">
-          <Label className="text-xs">De</Label>
-          <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="h-9 w-36" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Ate</Label>
-          <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="h-9 w-36" />
-        </div>
-      </>
-    )}
-    {userRole === "admin" && (
-      <div className="space-y-1">
-        <Label className="text-xs">Loja (Filtro Local)</Label>
-        <Select value={storeId} onValueChange={setStoreId}>
-          <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as lojas</SelectItem>
-            {stores.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-    )}
-  </div>
-);
-
-const ExportBtns = ({ onCSV, onPDF }: { onCSV: ()=>void; onPDF: ()=>void }) => (
-  <div className="flex gap-2">
-    <Button className="gap-1.5 h-9 bg-transparent border border-border text-foreground hover:bg-muted text-xs" onClick={onCSV}>
-      <Download className="h-3.5 w-3.5" /> CSV
-    </Button>
-    <Button className="gap-1.5 h-9 text-xs bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20" onClick={onPDF}>
-      <FileText className="h-3.5 w-3.5" /> PDF
-    </Button>
-  </div>
-);
+import {
+  formatCurrency,
+  formatPct,
+  MONTHS,
+  COLORS,
+  PDF_PRIMARY,
+  PDF_GREEN,
+  PDF_RED,
+  pdfHeader,
+  pdfFooter,
+  pdfKpiRow,
+  pdfTableHead,
+  pdfTableRow,
+  pdfCheckPage,
+  exportCSV,
+} from "@/components/features/relatorios/relatorioPdf";
+import {
+  getPeriodDates,
+  getPeriodLabel,
+  Filters,
+  ExportBtns,
+} from "@/components/features/relatorios/types";
+import { ComissoesTab } from "@/components/features/relatorios/ComissoesTab";
+import { DreTab } from "@/components/features/relatorios/DreTab";
+import { VendasTab } from "@/components/features/relatorios/VendasTab";
+import { OsTab } from "@/components/features/relatorios/OsTab";
+import { CaixaTab } from "@/components/features/relatorios/CaixaTab";
+import { RankingTab } from "@/components/features/relatorios/RankingTab";
+import { FinanceiroTab } from "@/components/features/relatorios/FinanceiroTab";
 
 const Relatorios = () => {
   const { user, userRole, userPermissions, activeStoreId } = useAuth();
@@ -535,14 +91,9 @@ const Relatorios = () => {
   const [financeiroStats, setFinanceiroStats] = useState<any>({ totalEntradas: 0, totalSaidas: 0, saldoLiquido: 0 });
 
   // ─ Liquidação de Comissões ──────────────────────────
-  const [payoutModalOpen, setPayoutModalOpen] = useState(false);
-  const [payoutUserId, setPayoutUserId] = useState<string>("");
   const [settledSaleIds, setSettledSaleIds] = useState<Set<string>>(new Set());
   const [settledOsIds, setSettledOsIds] = useState<Set<string>>(new Set());
   const [settlementsHistory, setSettlementsHistory] = useState<CommissionSettlement[]>([]);
-  const [viewingSettlement, setViewingSettlement] = useState<CommissionSettlement | null>(null);
-  const [viewingItems, setViewingItems] = useState<CommissionSettlementItem[]>([]);
-  const [loadingItems, setLoadingItems] = useState(false);
   const [rawSalesForPayout, setRawSalesForPayout] = useState<any[]>([]);
   const [rawOsForPayout, setRawOsForPayout] = useState<any[]>([]);
   const [osItemsForPayout, setOsItemsForPayout] = useState<any[]>([]);
@@ -1181,783 +732,129 @@ const Relatorios = () => {
         </TabsContent>
 
         <TabsContent value="financeiro" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <Filters {...filterProps} />
-            <ExportBtns onCSV={() => exportCSV(financeiroData.map((t: any) => ({ data: t.data, descricao: t.descricao, categoria: t.categoria, tipo: t.tipo, conta: t.conta, valor: t.valor })), "financeiro.csv")} onPDF={() => exportFinanceiroPDF(financeiroData, financeiroStats, currentPeriodLabel, currentStoreName)} />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total Entradas</p><p className="font-display text-xl font-bold mt-1 text-primary">{formatCurrency(financeiroStats.totalEntradas)}</p></CardContent></Card>
-            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Total Saidas</p><p className="font-display text-xl font-bold mt-1 text-destructive">{formatCurrency(financeiroStats.totalSaidas)}</p></CardContent></Card>
-            <Card className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo Liquido</p><p className="font-display text-xl font-bold mt-1">{formatCurrency(financeiroStats.saldoLiquido)}</p></CardContent></Card>
-          </div>
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Transacoes ({financeiroData.length})</CardTitle></CardHeader>
-            <CardContent><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b border-border text-muted-foreground">{["Data", "Descricao", "Categoria", "Conta", "Tipo", "Valor"].map(h => (<th key={h} className="text-left py-2 px-2 font-medium">{h}</th>))}</tr></thead><tbody>{financeiroData.map((t: any, i: number) => (<tr key={i} className="border-b border-border/30 hover:bg-muted/30"><td className="py-2 px-2">{t.data}</td><td className="py-2 px-2 font-medium">{t.descricao}</td><td className="py-2 px-2">{t.categoria}</td><td className="py-2 px-2">{t.conta}</td><td className="py-2 px-2"><Badge variant="outline" className={t.isEntrada ? "text-primary border-primary/30" : "text-destructive border-destructive/30"}>{t.tipo}</Badge></td><td className={"py-2 px-2 font-bold " + (t.isEntrada ? "text-primary" : "text-destructive")}>{formatCurrency(t.valor)}</td></tr>))}</tbody></table></div></CardContent></Card>
+          <FinanceiroTab
+            filterProps={filterProps}
+            financeiroData={financeiroData}
+            financeiroStats={financeiroStats}
+            currentPeriodLabel={currentPeriodLabel}
+            currentStoreName={currentStoreName}
+          />
         </TabsContent>
 
         <TabsContent value="leads" className="space-y-4 mt-4">
-            <div className="flex flex-wrap items-end justify-between gap-3"><Filters {...filterProps} /></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="text-sm font-display">Conversao de Leads</CardTitle></CardHeader>
-                <CardContent className="flex flex-col items-center justify-center py-6">
-                  <div className="text-4xl font-bold text-primary">{leadsData.conversion.toFixed(1)}%</div>
-                  <p className="text-xs text-muted-foreground mt-1">Taxa de fechamento</p>
-                </CardContent></Card>
-              <Card className="border-border/50 md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm font-display text-pink-500 flex items-center gap-2"><Camera className="h-4 w-4" /> Origem dos Leads</CardTitle></CardHeader>
-                <CardContent><div className="h-[200px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={leadsData.bySource} layout="vertical"><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="value" fill="hsl(330, 80%, 60%)" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
-            </div>
-            <div className="rounded-lg bg-pink-500/5 border border-pink-500/10 p-4">
-              <h4 className="text-sm font-bold text-pink-700 mb-2">Dica de Performance</h4>
-              <p className="text-xs text-pink-800/80">Leads vindos do Instagram costumam ter uma taxa de conversao 20% maior quando respondidos em menos de 5 minutos.</p>
-            </div>
-          </TabsContent>
+          <div className="flex flex-wrap items-end justify-between gap-3"><Filters {...filterProps} /></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="text-sm font-display">Conversao de Leads</CardTitle></CardHeader>
+              <CardContent className="flex flex-col items-center justify-center py-6">
+                <div className="text-4xl font-bold text-primary">{leadsData.conversion.toFixed(1)}%</div>
+                <p className="text-xs text-muted-foreground mt-1">Taxa de fechamento</p>
+              </CardContent></Card>
+            <Card className="border-border/50 md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm font-display text-pink-500 flex items-center gap-2"><Camera className="h-4 w-4" /> Origem dos Leads</CardTitle></CardHeader>
+              <CardContent><div className="h-[200px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={leadsData.bySource} layout="vertical"><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 10 }} /><Tooltip /><Bar dataKey="value" fill="hsl(330, 80%, 60%)" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div></CardContent></Card>
+          </div>
+          <div className="rounded-lg bg-pink-500/5 border border-pink-500/10 p-4">
+            <h4 className="text-sm font-bold text-pink-700 mb-2">Dica de Performance</h4>
+            <p className="text-xs text-pink-800/80">Leads vindos do Instagram costumam ter uma taxa de conversao 20% maior quando respondidos em menos de 5 minutos.</p>
+          </div>
+        </TabsContent>
 
         <TabsContent value="dre" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <Filters {...filterProps} />
-            <ExportBtns onCSV={()=>exportCSV(dreLines.map(l=>({item:l.label,valor:formatCurrency(Math.abs(l.value))})),"dre.csv")} onPDF={()=>exportDREPDF(dreLines,dre,currentPeriodLabel,currentStoreName)} />
-          </div>
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> DRE Simplificado</CardTitle></CardHeader>
-            <CardContent><div className="space-y-1">
-              {dreLines.map((line, i) => (
-                <div key={i} className={"flex items-center justify-between py-2 px-3 rounded-lg text-sm " + (line.bold ? "bg-muted/50 font-semibold " : "") + (line.type === "result" ? "bg-primary/10 text-primary font-bold text-base" : "")}>
-                  <div><span className={line.bold ? "" : "text-muted-foreground"}>{line.label}</span>{(line as any).sub && <span className="text-[10px] text-muted-foreground ml-2">({(line as any).sub})</span>}</div>
-                  <span className={line.type === "result" ? (line.value >= 0 ? "text-primary" : "text-destructive") : line.type === "expense" ? "text-destructive" : ""}>{line.type === "expense" ? "- " : ""}{formatCurrency(Math.abs(line.value))}</span>
-                </div>
-              ))}
-            </div></CardContent></Card>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: "Margem Bruta", value: (dre.totalReceita??0)>0?formatPct(((dre.lucroBruto??0)/dre.totalReceita)*100):"0%", color:"text-primary" },
-              { label: "Margem Liquida", value: (dre.totalReceita??0)>0?formatPct(((dre.lucroLiquido??0)/dre.totalReceita)*100):"0%", color:(dre.lucroLiquido??0)>=0?"text-primary":"text-destructive" },
-              { label: "Ticket Medio", value: (dre.qtdVendasAparelhos??0)>0?formatCurrency((dre.receitaAparelhos??0)/dre.qtdVendasAparelhos):formatCurrency(0), color:"" },
-              { label: "Receita Total", value: formatCurrency(dre.totalReceita??0), color:"text-primary" },
-            ].map(k => (<Card key={k.label} className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">{k.label}</p><p className={"font-display text-xl font-bold mt-1 " + k.color}>{k.value}</p></CardContent></Card>))}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Receita vs Despesas (6 meses)</CardTitle></CardHeader>
-              <CardContent>{monthlyData.some(d=>d.receita>0||d.despesa>0)?(<ResponsiveContainer width="100%" height={220}><BarChart data={monthlyData}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="name" tick={{fontSize:11}} /><YAxis tick={{fontSize:11}} /><Tooltip formatter={(v:number)=>formatCurrency(v)} /><Bar dataKey="receita" fill={COLORS[0]} radius={[4,4,0,0]} name="Receita" /><Bar dataKey="despesa" fill={COLORS[4]} radius={[4,4,0,0]} name="Despesas" /><Bar dataKey="lucro" fill={COLORS[1]} radius={[4,4,0,0]} name="Lucro" /></BarChart></ResponsiveContainer>):<div className="flex items-center justify-center h-[220px] text-muted-foreground text-xs">Sem dados para o periodo</div>}</CardContent></Card>
-            <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Resultado por Loja</CardTitle></CardHeader>
-              <CardContent>{storeBreakdown.length>0?(<div className="space-y-3">{storeBreakdown.map(s=>(<div key={s.name} className="flex items-center justify-between rounded-lg bg-muted/50 p-3"><div><p className="font-medium text-sm">{s.name}</p><p className="text-xs text-muted-foreground">Vendas: {formatCurrency(s.vendas)}</p></div><div className="text-right"><p className={"font-bold text-sm "+(s.lucro>=0?"text-primary":"text-destructive")}>{formatCurrency(s.lucro)}</p><div className="flex items-center gap-1 justify-end">{s.lucro>=0?<TrendingUp className="h-3 w-3 text-primary"/>:<TrendingDown className="h-3 w-3 text-destructive"/>}<span className="text-[10px] text-muted-foreground">lucro</span></div></div></div>))}</div>):<div className="flex items-center justify-center h-[220px] text-muted-foreground text-xs">Sem dados</div>}</CardContent></Card>
-          </div>
+          <DreTab
+            filterProps={filterProps}
+            dreLines={dreLines}
+            dre={dre}
+            currentPeriodLabel={currentPeriodLabel}
+            currentStoreName={currentStoreName}
+            monthlyData={monthlyData}
+            storeBreakdown={storeBreakdown}
+          />
         </TabsContent>
 
         <TabsContent value="vendas" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <Filters {...filterProps} />
-            <ExportBtns onCSV={()=>exportCSV(salesDetail.map(r=>({data:r.data,produto:r.produto,marca:r.marca,loja:r.loja,cliente:r.cliente,valor:formatCurrency(r.valor),custo:formatCurrency(r.custo),lucro:formatCurrency(r.lucro),margem:formatPct(r.margem),troca:r.troca})),"vendas.csv")} onPDF={()=>exportVendasPDF(salesDetail,currentPeriodLabel,currentStoreName)} />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[{label:"Total Vendido",value:formatCurrency(salesDetail.reduce((s,r)=>s+r.valor,0)),color:"text-primary"},{label:"Lucro Total",value:formatCurrency(salesDetail.reduce((s,r)=>s+r.lucro,0)),color:"text-primary"},{label:"Qtd. Vendas",value:String(salesDetail.length),color:""},{label:"Ticket Medio",value:salesDetail.length>0?formatCurrency(salesDetail.reduce((s,r)=>s+r.valor,0)/salesDetail.length):formatCurrency(0),color:""}].map(k=>(<Card key={k.label} className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">{k.label}</p><p className={"font-display text-xl font-bold mt-1 "+k.color}>{k.value}</p></CardContent></Card>))}
-          </div>
-          {rankingProducts.length > 0 && (<Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm flex items-center gap-2"><Trophy className="h-4 w-4 text-yellow-500" /> Top 10 Produtos Mais Vendidos</CardTitle></CardHeader><CardContent><div className="space-y-2">{rankingProducts.map((p,i)=>(<div key={p.produto} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"><div className="flex items-center gap-3 min-w-0"><span className="text-xs font-bold text-muted-foreground w-5 shrink-0">{i+1}o</span><div className="min-w-0"><p className="text-sm font-medium truncate">{p.produto}</p><p className="text-[10px] text-muted-foreground">{p.marca} - {p.qtd} venda{p.qtd!==1?"s":""}</p></div></div><div className="text-right shrink-0"><p className="text-sm font-bold text-primary">{formatCurrency(p.total)}</p><p className="text-[10px] text-muted-foreground">lucro: {formatCurrency(p.lucro)}</p></div></div>))}</div></CardContent></Card>)}
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Detalhamento de Vendas ({salesDetail.length})</CardTitle></CardHeader>
-            <CardContent>{salesDetail.length>0?(<div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b border-border text-muted-foreground">{["Data","Produto","Marca","Cliente","Valor","Lucro","Margem","Nota"].map(h=>(<th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">{h}</th>))}</tr></thead><tbody>{salesDetail.map((r,i)=>(<tr key={i} className="border-b border-border/30 hover:bg-muted/30"><td className="py-2 px-2 whitespace-nowrap">{r.data}</td><td className="py-2 px-2 font-medium">{r.produto}</td><td className="py-2 px-2">{r.marca}</td><td className="py-2 px-2">{r.cliente}</td><td className="py-2 px-2 text-primary font-bold whitespace-nowrap">{formatCurrency(r.valor)}</td><td className={"py-2 px-2 font-bold whitespace-nowrap "+(r.lucro>=0?"text-primary":"text-destructive")}>{formatCurrency(r.lucro)}</td><td className="py-2 px-2 whitespace-nowrap">{formatPct(r.margem)}</td><td className="py-2 px-2"><div className="flex gap-1"><Button className="h-7 text-[9px] px-2 bg-transparent border border-border text-foreground hover:bg-muted" onClick={()=>handleGerarNota(r,false)} disabled={notaLoading===r._raw?.id}><FileText className="h-2.5 w-2.5" /> PDF</Button>{r._raw?.customer_phone&&(<Button className="h-7 text-[9px] px-2 bg-transparent border border-green-500/30 text-green-500 hover:bg-green-500/10" onClick={()=>handleGerarNota(r,true)} disabled={notaLoading===r._raw?.id}><MessageCircle className="h-2.5 w-2.5" /> WA</Button>)}</div></td></tr>))}</tbody></table></div>):<p className="text-xs text-muted-foreground text-center py-8">Nenhuma venda no periodo</p>}</CardContent></Card>
+          <VendasTab
+            filterProps={filterProps}
+            salesDetail={salesDetail}
+            rankingProducts={rankingProducts}
+            currentPeriodLabel={currentPeriodLabel}
+            currentStoreName={currentStoreName}
+            notaLoading={notaLoading}
+            handleGerarNota={handleGerarNota}
+          />
         </TabsContent>
 
         <TabsContent value="os" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <Filters {...filterProps} />
-            <ExportBtns
-              onCSV={() =>
-                exportCSV(
-                  filteredOSData.map((o: any) => ({
-                    numero: o.order_number,
-                    cliente: o.customer_name,
-                    aparelho: (o.device_brand || "") + " " + (o.device_model || ""),
-                    servico: o.requested_service,
-                    status: getStatusLabel(o.status),
-                    tecnico: profileMap.get(o.technician_id) ?? "Sem técnico",
-                    estimado: formatCurrency(Number(o.estimated_price || 0)),
-                    final: formatCurrency(Number(o.final_price || 0)),
-                    data_entrada: new Date(o.created_at).toLocaleDateString("pt-BR"),
-                    data_entrega: o.delivered_at ? new Date(o.delivered_at).toLocaleDateString("pt-BR") : "—",
-                  })),
-                  "os.csv"
-                )
-              }
-              onPDF={() => exportOSPDF(filteredOSData, osStats, profileMap, currentPeriodLabel, currentStoreName)}
-            />
-          </div>
-
-          {/* Filtros específicos de OS (Técnico, Status, Semântica de Data e Busca) */}
-          <div className="flex flex-wrap items-center gap-2.5 p-3 rounded-xl border border-border/60 bg-muted/20">
-            <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Técnico</Label>
-              <Select value={osFilterTechId} onValueChange={setOsFilterTechId}>
-                <SelectTrigger className="h-8 w-[160px] text-xs bg-card">
-                  <SelectValue placeholder="Todos os técnicos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os técnicos</SelectItem>
-                  <SelectItem value="unassigned">Sem técnico</SelectItem>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.user_id} value={p.user_id}>
-                      {p.display_name || "Técnico"}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Status</Label>
-              <Select value={osFilterStatus} onValueChange={setOsFilterStatus}>
-                <SelectTrigger className="h-8 w-[150px] text-xs bg-card">
-                  <SelectValue placeholder="Todos os status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os status</SelectItem>
-                  {ALL_OS_STATUSES.map((st) => (
-                    <SelectItem key={st} value={st}>
-                      {getStatusLabel(st)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Critério da Data</Label>
-              <Select value={osDateMode} onValueChange={(v: any) => setOsDateMode(v)}>
-                <SelectTrigger className="h-8 w-[180px] text-xs bg-card">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="delivery">Data de Entrega (Conclusão)</SelectItem>
-                  <SelectItem value="entry">Data de Entrada (Recepção)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1 flex-1 min-w-[200px]">
-              <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Buscar OS</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={osSearch}
-                  onChange={(e) => setOsSearch(e.target.value)}
-                  placeholder="Cliente, aparelho, IMEI ou Nº OS..."
-                  className="h-8 pl-8 text-xs bg-card"
-                />
-              </div>
-            </div>
-
-            {(osFilterTechId !== "all" || osFilterStatus !== "all" || osDateMode !== "delivery" || osSearch) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 text-xs self-end text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setOsFilterTechId("all");
-                  setOsFilterStatus("all");
-                  setOsDateMode("delivery");
-                  setOsSearch("");
-                }}
-              >
-                Limpar Filtros
-              </Button>
-            )}
-          </div>
-
-          {/* Grid de KPIs de OS com Rentabilidade e Margem */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: "Receita de OS", value: formatCurrency(osStats.totalReceita ?? 0), color: "text-primary", sub: "OS Entregues no período" },
-              { label: "Custo Peças (OS)", value: formatCurrency(osStats.custoPecas ?? 0), color: "text-orange-400", sub: "Peças consumidas" },
-              { label: "Margem da OS", value: formatCurrency(osStats.lucroBruto ?? 0), color: "text-emerald-500", sub: "Lucro Bruto da OS" },
-              { label: "Ticket Médio", value: formatCurrency(osStats.ticketMedio ?? 0), color: "", sub: "Média por OS entregue" },
-              { label: "Entregues no Período", value: String(osStats.delivered ?? 0), color: "text-primary", sub: "Produtividade de saída" },
-              { label: "Recebidas no Período", value: String(osStats.recebidas ?? 0), color: "text-blue-400", sub: "Novas entradas" },
-              { label: "Em Aberto (Bancada)", value: String(osStats.open ?? 0), color: "text-yellow-500", sub: "Aguardando conclusão" },
-              { label: "Canceladas", value: String(osStats.cancelled ?? 0), color: "text-destructive", sub: "Sem reparo" },
-            ].map((k) => (
-              <Card key={k.label} className="border-border/50">
-                <CardContent className="p-3.5">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{k.label}</p>
-                  <p className={"font-display text-lg sm:text-xl font-bold mt-0.5 " + k.color}>{k.value}</p>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">{k.sub}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="border-border/50">
-              <CardHeader className="pb-2">
-                <CardTitle className="font-display text-sm">Produção por Técnico</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {(osStats.byTech ?? []).length > 0 ? (
-                  <div className="space-y-2">
-                    {(osStats.byTech ?? []).map((t: any) => (
-                      <div key={t.tecnico} className="rounded-lg bg-muted/40 p-3 border border-border/40 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">{t.tecnico}</p>
-                          <Badge variant="outline" className="text-[10px]">
-                            {t.entregues} / {t.total} concluídas
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs pt-1 border-t border-border/30">
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Receita</p>
-                            <p className="font-bold text-primary">{formatCurrency(t.receita)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Margem da OS</p>
-                            <p className="font-bold text-emerald-500">{formatCurrency(t.lucroBruto)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">Comissão Est.</p>
-                            <p className="font-bold text-yellow-500">{formatCurrency(t.comissao)}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground text-center py-6">Sem dados de técnicos no período</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50">
-              <CardHeader className="pb-2">
-                <CardTitle className="font-display text-sm">Serviços Mais Solicitados</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {(osStats.byService ?? []).length > 0 ? (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie
-                        data={osStats.byService}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={70}
-                        label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
-                      >
-                        {(osStats.byService ?? []).map((_: any, i: number) => (
-                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <p className="text-xs text-muted-foreground text-center py-6">Sem dados</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="font-display text-sm">
-                  Ordens de Serviço ({filteredOSData.length})
-                </CardTitle>
-                <span className="text-[11px] text-muted-foreground">
-                  Modo: {osDateMode === "delivery" ? "Entregas no período" : "Entradas no período"}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {filteredOSData.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-muted-foreground">
-                        {["Nr OS", "Cliente", "Aparelho", "Serviço", "Técnico", "Status", "Entrada", "Entrega", "Valor Final"].map(
-                          (h) => (
-                            <th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">
-                              {h}
-                            </th>
-                          )
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredOSData.map((o: any, i: number) => (
-                        <tr key={i} className="border-b border-border/30 hover:bg-muted/30">
-                          <td className="py-2 px-2 whitespace-nowrap font-mono font-bold text-foreground">
-                            #{o.order_number ?? "-"}
-                          </td>
-                          <td className="py-2 px-2">{o.customer_name}</td>
-                          <td className="py-2 px-2 whitespace-nowrap">
-                            {o.device_brand} {o.device_model}
-                          </td>
-                          <td className="py-2 px-2">{o.requested_service}</td>
-                          <td className="py-2 px-2">{profileMap.get(o.technician_id) ?? "—"}</td>
-                          <td className="py-2 px-2">
-                            <Badge variant="outline" className={`text-[10px] ${getStatusColor(o.status)}`}>
-                              {getStatusLabel(o.status)}
-                            </Badge>
-                          </td>
-                          <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">
-                            {new Date(o.created_at).toLocaleDateString("pt-BR")}
-                          </td>
-                          <td className="py-2 px-2 whitespace-nowrap font-medium">
-                            {o.delivered_at ? new Date(o.delivered_at).toLocaleDateString("pt-BR") : "—"}
-                          </td>
-                          <td className="py-2 px-2 whitespace-nowrap font-bold text-primary">
-                            {formatCurrency(Number(o.final_price || o.estimated_price || 0))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground text-center py-8">
-                  Nenhuma OS encontrada com os filtros selecionados
-                </p>
-              )}
-            </CardContent>
-          </Card>
+          <OsTab
+            filterProps={filterProps}
+            filteredOSData={filteredOSData}
+            osStats={osStats}
+            profileMap={profileMap}
+            currentPeriodLabel={currentPeriodLabel}
+            currentStoreName={currentStoreName}
+            osFilterTechId={osFilterTechId}
+            setOsFilterTechId={setOsFilterTechId}
+            profiles={profiles}
+            osFilterStatus={osFilterStatus}
+            setOsFilterStatus={setOsFilterStatus}
+            osDateMode={osDateMode}
+            setOsDateMode={setOsDateMode}
+            osSearch={osSearch}
+            setOsSearch={setOsSearch}
+          />
         </TabsContent>
 
         <TabsContent value="caixa" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <Filters {...filterProps} />
-            <ExportBtns onCSV={()=>exportCSV(caixaData,"caixa.csv")} onPDF={()=>exportCaixaPDF(caixaData,caixaStats,currentPeriodLabel,currentStoreName)} />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[{label:"Total Caixas",value:String(caixaStats.total??0),color:""},{label:"Fechados",value:String(caixaStats.fechados??0),color:"text-primary"},{label:"Abertos",value:String(caixaStats.abertos??0),color:"text-yellow-500"},{label:"Total Diferenca",value:formatCurrency(Math.abs(caixaStats.totalDiferenca??0)),color:(caixaStats.totalDiferenca??0)===0?"text-primary":"text-destructive"}].map(k=>(<Card key={k.label} className="border-border/50"><CardContent className="p-4"><p className="text-[11px] text-muted-foreground uppercase tracking-wide">{k.label}</p><p className={"font-display text-xl font-bold mt-1 "+k.color}>{k.value}</p></CardContent></Card>))}
-          </div>
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Historico de Caixas</CardTitle></CardHeader>
-            <CardContent>{caixaData.length>0?(<div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="border-b border-border text-muted-foreground">{["Data","Loja","Status","Abertura","Fechamento","Esperado","Diferenca","Motivo"].map(h=>(<th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">{h}</th>))}</tr></thead><tbody>{caixaData.map((r:any,i:number)=>(<tr key={i} className="border-b border-border/30 hover:bg-muted/30"><td className="py-2 px-2 whitespace-nowrap">{r.data}</td><td className="py-2 px-2">{r.loja}</td><td className="py-2 px-2"><Badge variant="outline" className={"text-[10px] "+(r.status==="Aberto"?"text-yellow-500 border-yellow-500/30":"text-primary border-primary/30")}>{r.status}</Badge></td><td className="py-2 px-2 whitespace-nowrap">{formatCurrency(r.abertura)}</td><td className="py-2 px-2 whitespace-nowrap">{r.status==="Fechado"?formatCurrency(r.fechamento):"—"}</td><td className="py-2 px-2 whitespace-nowrap">{r.status==="Fechado"?formatCurrency(r.esperado):"—"}</td><td className={"py-2 px-2 whitespace-nowrap font-bold "+(Math.abs(r.diferenca)>5?"text-destructive":"text-primary")}>{r.status==="Fechado"?formatCurrency(r.diferenca):"—"}</td><td className="py-2 px-2 text-muted-foreground">{r.motivo||"—"}</td></tr>))}</tbody></table></div>):<p className="text-xs text-muted-foreground text-center py-8">Nenhum caixa no periodo</p>}</CardContent></Card>
+          <CaixaTab
+            filterProps={filterProps}
+            caixaData={caixaData}
+            caixaStats={caixaStats}
+            currentPeriodLabel={currentPeriodLabel}
+            currentStoreName={currentStoreName}
+          />
         </TabsContent>
 
         <TabsContent value="ranking" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-wrap gap-2 items-end">
-              <div className="space-y-1"><Label className="text-xs">Periodo</Label><PeriodSelect value={rankPeriod} onChange={setRankPeriod} includeCustom={false} /></div>
-              {rankPeriod==="day"&&(<div className="space-y-1"><Label className="text-xs">Dia</Label><Input type="date" value={rankSpecificDay} onChange={e=>setRankSpecificDay(e.target.value)} className="h-9 w-36" /></div>)}
-              {isAdmin&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas as lojas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
-            </div>
-            <ExportBtns onCSV={()=>exportCSV(ranking.map((v,i)=>({posicao:(i+1)+"o",vendedor:v.nome,vendas:v.qtdVendas,total_vendido:formatCurrency(v.totalVendas),lucro:formatCurrency(v.lucro),comissao:formatCurrency(v.comissoes),os_entregues:v.osEntregues})),"ranking.csv")} onPDF={()=>exportRankingPDF(ranking,currentRankPeriodLabel,currentStoreName)} />
-          </div>
-          <Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm flex items-center gap-2"><Trophy className="h-4 w-4 text-yellow-500" /> Ranking {rankPeriod==="today"?"de Hoje":rankPeriod==="day"?"do dia "+rankSpecificDay:rankPeriod==="week"?"Semanal":rankPeriod==="month"?"Mensal":"do Periodo"}</CardTitle></CardHeader>
-            <CardContent>{ranking.length>0?(<div className="space-y-2">{ranking.map((v,i)=>(<div key={v.uid} className={"flex items-center gap-3 rounded-lg p-3 border "+(i===0?"border-yellow-500/30 bg-yellow-500/5":i===1?"border-slate-400/30 bg-slate-400/5":i===2?"border-amber-600/30 bg-amber-600/5":"border-border/50 bg-muted/30")}><div className="shrink-0 w-7 flex justify-center"><RankBadge pos={i+1}/></div><div className="flex-1 min-w-0"><p className="font-semibold text-sm truncate">{v.nome}</p><div className="flex flex-wrap gap-3 mt-0.5"><span className="text-[10px] text-muted-foreground">{v.qtdVendas} venda{v.qtdVendas!==1?"s":""}</span><span className="text-[10px] text-muted-foreground">{v.osEntregues} OS</span><span className="text-[10px] text-muted-foreground">lucro: {formatCurrency(v.lucro)}</span></div></div><div className="text-right shrink-0"><p className="font-display font-bold text-base text-primary">{formatCurrency(v.totalVendas)}</p>{v.comissoes>0&&<p className="text-[10px] text-yellow-500">comissao: {formatCurrency(v.comissoes)}</p>}</div></div>))}</div>):<p className="text-xs text-muted-foreground text-center py-8">Sem vendas no periodo</p>}</CardContent></Card>
-          {ranking.length>0&&(<Card className="border-border/50"><CardHeader className="pb-2"><CardTitle className="font-display text-sm">Comparativo de Vendas</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={220}><BarChart data={ranking.map(v=>({nome:v.nome.split(" ")[0],vendas:v.totalVendas,lucro:v.lucro}))}><CartesianGrid strokeDasharray="3 3" className="stroke-border" /><XAxis dataKey="nome" tick={{fontSize:11}} /><YAxis tick={{fontSize:11}} /><Tooltip formatter={(v:number)=>formatCurrency(v)} /><Bar dataKey="vendas" fill={COLORS[0]} radius={[4,4,0,0]} name="Vendas" /><Bar dataKey="lucro" fill={COLORS[1]} radius={[4,4,0,0]} name="Lucro" /></BarChart></ResponsiveContainer></CardContent></Card>)}
+          <RankingTab
+            rankPeriod={rankPeriod}
+            setRankPeriod={setRankPeriod}
+            rankSpecificDay={rankSpecificDay}
+            setRankSpecificDay={setRankSpecificDay}
+            isAdmin={isAdmin}
+            storeId={storeId}
+            setStoreId={setStoreId}
+            stores={stores}
+            ranking={ranking}
+            currentRankPeriodLabel={currentRankPeriodLabel}
+            currentStoreName={currentStoreName}
+          />
         </TabsContent>
 
         <TabsContent value="comissoes" className="space-y-4 mt-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-wrap gap-2 items-end">
-              <div className="space-y-1"><Label className="text-xs">Periodo</Label><PeriodSelect value={rankPeriod} onChange={setRankPeriod} includeCustom={false} /></div>
-              {rankPeriod==="day"&&(<div className="space-y-1"><Label className="text-xs">Dia</Label><Input type="date" value={rankSpecificDay} onChange={e=>setRankSpecificDay(e.target.value)} className="h-9 w-36" /></div>)}
-              {isAdmin&&(<div className="space-y-1"><Label className="text-xs">Loja</Label><Select value={storeId} onValueChange={setStoreId}><SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{stores.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>)}
-            </div>
-            <div className="flex items-center gap-2">
-              {canSettleCommissions && (
-                <Button
-                  size="sm"
-                  className="gap-1.5 h-9 text-xs bg-primary text-primary-foreground font-semibold shadow-sm hover:bg-primary/90"
-                  onClick={() => setPayoutModalOpen(true)}
-                >
-                  <DollarSign className="h-3.5 w-3.5" /> Liquidar Comissões
-                </Button>
-              )}
-              <ExportBtns onCSV={()=>exportCSV(comissoes.map((c,i)=>({posicao:i+1,vendedor:c.nome,vendas:c.qtdVendas,total_vendido:formatCurrency(c.totalVendas),lucro:formatCurrency(c.lucro),comissao:formatCurrency(c.comissoes)})),"comissoes.csv")} onPDF={()=>exportComissoesPDF(comissoes,currentRankPeriodLabel,currentStoreName)} />
-            </div>
-          </div>
-
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Card className="border-border/50">
-              <CardContent className="p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Pendente a Pagar</p>
-                <p className="font-display text-xl font-bold mt-1 text-yellow-500">
-                  {formatCurrency(comissoes.reduce((s, c) => s + (c.comissoesPendentes ?? c.comissoes), 0))}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/50">
-              <CardContent className="p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Já Liquidado no Período</p>
-                <p className="font-display text-xl font-bold mt-1 text-emerald-500">
-                  {formatCurrency(comissoes.reduce((s, c) => s + (c.comissoesLiquidadas ?? 0), 0))}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="border-border/50">
-              <CardContent className="p-4">
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Colaboradores c/ Comissão</p>
-                <p className="font-display text-xl font-bold mt-1 text-foreground">
-                  {comissoes.length}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Listagem de Colaboradores */}
-          <Card className="border-border/50">
-            <CardHeader className="pb-2">
-              <CardTitle className="font-display text-sm flex items-center gap-2">
-                <Star className="h-4 w-4 text-yellow-500" /> Comissões por Colaborador
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {comissoes.length > 0 ? (
-                <div className="space-y-3">
-                  {comissoes.map((v, i) => {
-                    const pctVal = v.totalVendas > 0 ? (v.comissoes / v.totalVendas) * 100 : 0;
-                    return (
-                      <div key={v.uid} className="rounded-lg border border-border/50 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <RankBadge pos={i + 1} />
-                            <p className="font-semibold">{v.nome}</p>
-                            {v.role === "tecnico" ? (
-                              <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/30">
-                                Técnico
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/30">
-                                Vendedor
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {v.comissoesLiquidadas > 0 && (
-                              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 font-semibold text-[11px]">
-                                Liquidado: {formatCurrency(v.comissoesLiquidadas)}
-                              </Badge>
-                            )}
-                            <Badge className="bg-yellow-500/15 text-yellow-500 border-yellow-500/30 font-bold">
-                              Pendente: {formatCurrency(v.comissoesPendentes ?? v.comissoes)}
-                            </Badge>
-                            {canSettleCommissions && (v.comissoesPendentes ?? v.comissoes) > 0 && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-[11px] font-semibold gap-1 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 cursor-pointer shadow-xs"
-                                onClick={() => {
-                                  setPayoutUserId(v.uid);
-                                  setPayoutModalOpen(true);
-                                }}
-                                title={`Liquidar comissões de ${v.nome}`}
-                              >
-                                <DollarSign className="h-3 w-3" /> Liquidar
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-3 text-xs">
-                          <div className="rounded bg-muted/50 p-2 text-center">
-                            <p className="text-muted-foreground">Volume</p>
-                            <p className="font-bold">{v.qtdVendas} v / {v.osEntregues} OS</p>
-                          </div>
-                          <div className="rounded bg-muted/50 p-2 text-center">
-                            <p className="text-muted-foreground">Faturado Total</p>
-                            <p className="font-bold text-primary">{formatCurrency(v.totalVendas)}</p>
-                          </div>
-                          <div className="rounded bg-muted/50 p-2 text-center">
-                            <p className="text-muted-foreground">Margem / Lucro</p>
-                            <p className="font-bold text-emerald-500">{formatCurrency(v.lucro)}</p>
-                          </div>
-                        </div>
-
-                        {(v.comissoesVendas > 0 || v.comissoesOS > 0) && (
-                          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border/40 text-[11px]">
-                            <span className="text-muted-foreground">Detalhamento:</span>
-                            {v.comissoesVendas > 0 && (
-                              <span className="text-foreground">
-                                Vendas: <strong className="text-primary">{formatCurrency(v.comissoesVendas)}</strong>
-                              </span>
-                            )}
-                            {v.comissoesOS > 0 && (
-                              <span className="text-foreground">
-                                OS: <strong className="text-yellow-500">{formatCurrency(v.comissoesOS)}</strong>
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        <div>
-                          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                            <span>Comissão / Faturado</span>
-                            <span>{formatPct(pctVal)}</span>
-                          </div>
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-yellow-500 transition-all"
-                              style={{ width: `${Math.min(100, pctVal * 5)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground text-center py-8">
-                  Nenhuma comissão no período
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Histórico de Liquidações Realizadas */}
-          {settlementsHistory.length > 0 && (
-            <Card className="border-border/50">
-              <CardHeader className="pb-2">
-                <CardTitle className="font-display text-sm flex items-center gap-2">
-                  <History className="h-4 w-4 text-primary" /> Histórico de Liquidações Realizadas ({settlementsHistory.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-muted-foreground">
-                        {["Data da Baixa", "Colaborador", "Loja", "Método", "Valor Total", "Ações"].map((h) => (
-                          <th key={h} className="text-left py-2 px-2 font-medium whitespace-nowrap">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {settlementsHistory.map((s, idx) => (
-                        <tr key={s.id || idx} className="border-b border-border/30 hover:bg-muted/30">
-                          <td className="py-2 px-2 whitespace-nowrap font-mono">
-                            {new Date(s.paid_at || s.created_at).toLocaleDateString("pt-BR")}{" "}
-                            <span className="text-[10px] text-muted-foreground">
-                              {new Date(s.paid_at || s.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </td>
-                          <td className="py-2 px-2 font-semibold text-foreground">
-                            {profileMap.get(s.user_id) || "Colaborador"}
-                          </td>
-                          <td className="py-2 px-2 text-muted-foreground">
-                            {storeMap.get(s.store_id)?.name || "Loja"}
-                          </td>
-                          <td className="py-2 px-2">
-                            <Badge variant="outline" className="text-[10px] capitalize">
-                              {s.payment_method === "dinheiro" ? "💵 Dinheiro" : s.payment_method.toUpperCase()}
-                            </Badge>
-                          </td>
-                          <td className="py-2 px-2 font-mono font-bold text-emerald-500 whitespace-nowrap">
-                            {formatCurrency(Number(s.total_amount))}
-                          </td>
-                          <td className="py-2 px-2 whitespace-nowrap">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
-                                onClick={async () => {
-                                  setViewingSettlement(s);
-                                  setLoadingItems(true);
-                                  try {
-                                    const items = await fetchSettlementItems(s.id);
-                                    setViewingItems(items);
-                                  } catch {
-                                    toast.error("Erro ao carregar itens da liquidação");
-                                  } finally {
-                                    setLoadingItems(false);
-                                  }
-                                }}
-                                title="Ver itens deste pagamento"
-                              >
-                                <Eye className="h-3 w-3" /> Detalhes
-                              </Button>
-                              {s.receipt_url && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-[11px] gap-1 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"
-                                  onClick={(e) => openComprovante(s.receipt_url, e)}
-                                  title="Ver comprovante anexado"
-                                >
-                                  <Receipt className="h-3 w-3" /> Comprovante
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-[11px] gap-1 text-primary hover:text-primary hover:bg-primary/10"
-                              onClick={async () => {
-                                try {
-                                  const items = await fetchSettlementItems(s.id);
-                                  const sName = storeMap.get(s.store_id)?.name || "Cell Pro 360";
-                                  const colName = profileMap.get(s.user_id) || "Colaborador";
-                                  const manName = profileMap.get(s.created_by) || "Gestão Financeira";
-                                  generateSettlementReceiptPDF({
-                                    settlement: s,
-                                    items,
-                                    storeName: sName,
-                                    collaboratorName: colName,
-                                    managerName: manName,
-                                  });
-                                  toast.success("Segunda via do recibo baixada!");
-                                } catch (e) {
-                                  toast.error("Erro ao gerar 2ª via do recibo");
-                                }
-                              }}
-                            >
-                                <Download className="h-3 w-3" /> 2ª Via PDF
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Modal de Liquidação */}
-          <CommissionPayoutModal
-            open={payoutModalOpen}
-            onOpenChange={(open) => {
-              setPayoutModalOpen(open);
-              if (!open) setPayoutUserId("");
-            }}
+          <ComissoesTab
+            rankPeriod={rankPeriod}
+            setRankPeriod={setRankPeriod}
+            rankSpecificDay={rankSpecificDay}
+            setRankSpecificDay={setRankSpecificDay}
+            isAdmin={isAdmin}
+            canSettleCommissions={canSettleCommissions}
             storeId={storeId}
+            setStoreId={setStoreId}
             stores={stores}
             profiles={profiles}
-            collaborators={comissoes}
-            allSales={rawSalesForPayout}
-            allServiceOrders={rawOsForPayout}
-            osItems={osItemsForPayout}
-            userRolesMap={roleMapForPayout}
+            comissoes={comissoes}
+            settlementsHistory={settlementsHistory}
+            profileMap={profileMap}
+            storeMap={storeMap}
+            currentRankPeriodLabel={currentRankPeriodLabel}
+            currentStoreName={currentStoreName}
+            rawSalesForPayout={rawSalesForPayout}
+            rawOsForPayout={rawOsForPayout}
+            osItemsForPayout={osItemsForPayout}
+            roleMapForPayout={roleMapForPayout}
             settledSaleIds={settledSaleIds}
             settledOsIds={settledOsIds}
-            initialUserId={payoutUserId}
-            currentUserName={profileMap.get(user?.id ?? "") || "Gestor"}
-            onSuccess={() => fetchRanking()}
+            user={user}
+            fetchRanking={fetchRanking}
           />
-
-          {/* Modal de Detalhes da Liquidação */}
-          <Dialog open={!!viewingSettlement} onOpenChange={(open) => { if (!open) setViewingSettlement(null); }}>
-            <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-6">
-              <DialogHeader>
-                <DialogTitle className="text-base flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <History className="h-4 w-4 text-primary" />
-                    Detalhes da Liquidação — {viewingSettlement ? profileMap.get(viewingSettlement.user_id) : ""}
-                  </span>
-                  {viewingSettlement && (
-                    <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-500 border-emerald-500/30">
-                      Total: {formatCurrency(Number(viewingSettlement.total_amount))}
-                    </Badge>
-                  )}
-                </DialogTitle>
-              </DialogHeader>
-
-              {viewingSettlement && (
-                <div className="space-y-4 overflow-y-auto flex-1 pr-1">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-muted/40 p-3 rounded-lg border border-border/50">
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase">Data do Pagamento</span>
-                      <strong className="text-foreground">
-                        {new Date(viewingSettlement.paid_at || viewingSettlement.created_at).toLocaleString("pt-BR")}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase">Período Apurado</span>
-                      <strong className="text-foreground">
-                        {new Date(viewingSettlement.period_start + "T12:00:00").toLocaleDateString("pt-BR")} a{" "}
-                        {new Date(viewingSettlement.period_end + "T12:00:00").toLocaleDateString("pt-BR")}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase">Forma de Pagamento</span>
-                      <strong className="text-foreground capitalize">
-                        {viewingSettlement.payment_method === "dinheiro" ? "💵 Dinheiro (Caixa)" : viewingSettlement.payment_method.toUpperCase()}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[10px] uppercase">Autorizado Por</span>
-                      <strong className="text-foreground">
-                        {profileMap.get(viewingSettlement.created_by) || "Gestão Financeira"}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {viewingSettlement.notes && (
-                    <div className="text-xs bg-muted/20 p-2.5 rounded border border-border/40 text-muted-foreground">
-                      <strong>Observações:</strong> {viewingSettlement.notes}
-                    </div>
-                  )}
-
-                  <div>
-                    <p className="text-xs font-semibold mb-2 flex items-center justify-between text-muted-foreground uppercase tracking-wide">
-                      <span>Operações Quitadas ({viewingItems.length})</span>
-                      {loadingItems && <span className="text-[10px] animate-pulse">Carregando itens...</span>}
-                    </p>
-                    <div className="rounded-lg border border-border/50 overflow-hidden">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/50 text-muted-foreground border-b border-border/50">
-                          <tr>
-                            <th className="py-2 px-3 text-left">Tipo</th>
-                            <th className="py-2 px-3 text-left">Referência</th>
-                            <th className="py-2 px-3 text-right">Faturado</th>
-                            <th className="py-2 px-3 text-right">Custo / Peças</th>
-                            <th className="py-2 px-3 text-right">Lucro Bruto</th>
-                            <th className="py-2 px-3 text-right">% Com.</th>
-                            <th className="py-2 px-3 text-right">Comissão</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {viewingItems.length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="py-6 text-center text-muted-foreground">
-                                {loadingItems ? "Carregando demonstrativo..." : "Nenhum item encontrado."}
-                              </td>
-                            </tr>
-                          ) : (
-                            viewingItems.map((it) => (
-                              <tr key={it.id} className="border-b border-border/30 hover:bg-muted/20">
-                                <td className="py-2 px-3 font-medium">
-                                  <Badge variant="outline" className="text-[10px]">
-                                    {it.item_type === "sale" ? "Venda" : "OS"}
-                                  </Badge>
-                                </td>
-                                <td className="py-2 px-3 font-mono text-[11px]">
-                                  {it.sale_id ? `Venda #${it.sale_id.slice(0, 8)}` : `OS #${it.service_order_id?.slice(0, 8)}`}
-                                </td>
-                                <td className="py-2 px-3 text-right font-mono">{formatCurrency(Number(it.gross_amount))}</td>
-                                <td className="py-2 px-3 text-right font-mono text-muted-foreground">
-                                  {it.cost_amount !== null ? formatCurrency(Number(it.cost_amount)) : "—"}
-                                </td>
-                                <td className="py-2 px-3 text-right font-mono text-emerald-500">
-                                  {it.profit_amount !== null ? formatCurrency(Number(it.profit_amount)) : "—"}
-                                </td>
-                                <td className="py-2 px-3 text-right font-mono">{it.commission_percent}%</td>
-                                <td className="py-2 px-3 text-right font-mono font-bold text-foreground">
-                                  {formatCurrency(Number(it.commission_amount))}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                        {viewingItems.length > 0 && (
-                          <tfoot className="bg-muted/40 font-semibold border-t border-border">
-                            <tr>
-                              <td colSpan={6} className="py-2 px-3 text-right uppercase text-[10px] text-muted-foreground">
-                                Total da Liquidação:
-                              </td>
-                              <td className="py-2 px-3 text-right font-mono font-bold text-emerald-500">
-                                {formatCurrency(Number(viewingSettlement.total_amount))}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        )}
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </DialogContent>
-          </Dialog>
         </TabsContent>
       </Tabs>
     </div>
