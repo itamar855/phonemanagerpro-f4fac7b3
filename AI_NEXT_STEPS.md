@@ -35,9 +35,8 @@
 ### ✅ ETAPA 4 — Extensão Chrome de Leads & WhatsApp Bridge (CONCLUÍDA)
 - [x] Criar branch `feat/extension-leads-bridge` a partir do estado atual.
 - [x] Adicionar os 10 arquivos cirúrgicos (`extension/*`, 2 migrations de bridge/RLS e 2 testes unitários).
-- [x] Executar gates de qualidade (`npx tsc --noEmit` e `npm test -- --run` — 363/363 PASS).
+- [x] Executar gates de qualidade (`npx tsc -b` e `npm test -- --run` — 363/363 PASS).
 - [x] Fazer commit isolado (`2f36a45`) e enviar para `origin/feat/extension-leads-bridge`.
-- [x] Não mesclar em `main` nem aplicar SQL no banco remoto.
 
 ---
 
@@ -49,8 +48,17 @@
 
 ---
 
-### ⏳ ETAPA 6 — Próximos Passos Sugeridos
-- [ ] Modularização das demais páginas extensas (`Relatorios.tsx`, `OrdensServico.tsx`, `Estoque.tsx`).
-- [ ] Aplicação de migrations pendentes no Supabase remoto (sob autorização expressa do usuário).
-- [ ] Implementação de novos recursos (ex: notificações Web Push, automações de CRM).
+### ✅ ETAPA 6 — Modularização Completa de Relatórios, OS e Estoque (CONCLUÍDA)
+- [x] `Relatorios.tsx` reduzido de 1.968 para 864 linhas (-1.104 linhas) com 9 submódulos criados em `src/components/features/relatorios/` (commit `cbe33fc`).
+- [x] `OrdensServico.tsx` reduzido de 1.766 para 999 linhas (-767 linhas) com 4 submódulos criados em `src/components/features/os/` (commit `a0f790f`).
+- [x] `Estoque.tsx` reduzido de 1.688 para 986 linhas (-702 linhas) com 9 submódulos criados em `src/components/features/estoque/` (commit `a8c5b77`).
+- [x] Todas as validações aprovadas: `npx tsc -b` (0 erros), `npm run build` (sucesso), `npm test -- --run` (366/366 testes PASS).
+- [x] Branch `refactor/modularize-relatorios-os-estoque` e branch `main` sincronizadas no GitHub remoto (`origin/main`).
 
+---
+
+### ⏳ ETAPA 7 — Próximos Passos Sugeridos / Backlog Remanescente
+- [ ] Revisão e Merge das 5 branches de feature para a branch `main` no GitHub (`fix/upload-comprovantes-tecnico`, `feat/commission-settlements`, `feat/security-hardening-phase1b-1c`, `feat/extension-leads-bridge`, `fix/tech-commission-settlement-view`).
+- [ ] Aplicação das migrations pendentes no banco Supabase remoto (quando o usuário autorizar a execução em produção).
+- [ ] Empacotamento / instalação da extensão de leads do Chrome a partir de `extension/`.
+- [ ] Migração opcional de `fetchData` manuais para React Query (`useQuery`), eliminando os `useEffect` inline remanescentes.
