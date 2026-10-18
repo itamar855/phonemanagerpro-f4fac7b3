@@ -21,6 +21,15 @@ import { convertToWebP } from "@/utils/imageOptimizer";
 import DeviceRepairModal from "@/components/DeviceRepairModal";
 import { AparelhosTable } from "@/components/features/estoque/AparelhosTable";
 import { AcessoriosTable } from "@/components/features/estoque/AcessoriosTable";
+import { PecasTab } from "@/components/features/estoque/PecasTab";
+import { VendidosTab } from "@/components/features/estoque/VendidosTab";
+import { EmReparoTab } from "@/components/features/estoque/EmReparoTab";
+import { ProductHistoryDialog } from "@/components/features/estoque/ProductHistoryDialog";
+import { ProductDefectsDialog } from "@/components/features/estoque/ProductDefectsDialog";
+import { ProductTransferDialog } from "@/components/features/estoque/ProductTransferDialog";
+import { ProductEditDialog } from "@/components/features/estoque/ProductEditDialog";
+import { ProductDeleteDialog } from "@/components/features/estoque/ProductDeleteDialog";
+import { AccessoryModal } from "@/components/features/estoque/AccessoryModal";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela",
@@ -938,241 +947,31 @@ const Estoque = () => {
 
         {/* ABA PEÇAS */}
         <TabsContent value="pecas" className="mt-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <input
-                value={partsSearch}
-                onChange={e => setPartsSearch(e.target.value)}
-                placeholder="Buscar peça por nome, marca..."
-                className="w-full pl-9 pr-3 h-9 rounded-md border border-input bg-background text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
-            <Dialog open={addPartOpen} onOpenChange={setAddPartOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2 h-9" disabled={activeStoreId === "all"}>
-                  <Plus className="h-4 w-4" /> Nova Peça
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="font-display flex items-center gap-2">
-                    <Cpu className="h-5 w-5" /> Cadastrar Peça no Estoque
-                  </DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleAddPart} className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2 space-y-1.5">
-                      <Label className="text-xs">Nome da Peça *</Label>
-                      <Input value={partForm.name} onChange={e => setPartForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Tela iPhone 13" required className="h-10" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Marca / Fabricante</Label>
-                      <Input value={partForm.brand} onChange={e => setPartForm(f => ({ ...f, brand: e.target.value }))} placeholder="Apple, Samsung..." className="h-10" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Modelo</Label>
-                      <Input value={partForm.model} onChange={e => setPartForm(f => ({ ...f, model: e.target.value }))} placeholder="iPhone 13 Pro" className="h-10" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Custo (R$) *</Label>
-                      <Input type="number" step="0.01" value={partForm.cost_price} onChange={e => setPartForm(f => ({ ...f, cost_price: e.target.value }))} placeholder="0.00" required className="h-10" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Preço de Venda (R$)</Label>
-                      <Input type="number" step="0.01" value={partForm.sale_price} onChange={e => setPartForm(f => ({ ...f, sale_price: e.target.value }))} placeholder="0.00 (auto)" className="h-10" />
-                    </div>
-
-                    <div className="col-span-2 space-y-1.5">
-                      <Label className="text-xs">Fornecedor</Label>
-                      <Select value={partForm.supplier_id} onValueChange={v => setPartForm(f => ({ ...f, supplier_id: v === "none" ? "" : v }))}>
-                        <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o fornecedor (opcional)" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Nenhum fornecedor</SelectItem>
-                          {suppliers.map(s => (
-                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {partForm.supplier_id && (suppliers.find(s => s.id === partForm.supplier_id)?.credit_balance ?? 0) > 0 && (
-                      <div className="col-span-2 flex items-center justify-between border border-primary/20 bg-primary/5 rounded-lg p-2.5 animate-in fade-in-50 duration-200">
-                        <div className="space-y-0.5">
-                          <Label className="text-xs font-bold cursor-pointer text-primary" htmlFor="part-credit-toggle">
-                            Abater do saldo de crédito existente?
-                          </Label>
-                          <p className="text-[10px] text-muted-foreground">
-                            Saldo disponível: {formatCurrency(Number(suppliers.find(s => s.id === partForm.supplier_id)?.credit_balance))}
-                          </p>
-                        </div>
-                        <input
-                          id="part-credit-toggle"
-                          type="checkbox"
-                          checked={partForm.use_credit}
-                          onChange={e => setPartForm(f => ({ ...f, use_credit: e.target.checked }))}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary cursor-pointer"
-                        />
-                      </div>
-                    )}
-
-                    <div className="col-span-2 space-y-1.5">
-                      <Label className="text-xs">Comprovante de Pagamento</Label>
-                      <Input type="file" onChange={e => setPartVoucherFile(e.target.files?.[0] || null)} className="h-10 text-xs py-2" accept="image/*,application/pdf" />
-                    </div>
-
-                    <div className="col-span-2 flex items-center justify-between border border-border/60 rounded-lg p-2.5 bg-muted/20">
-                      <div className="space-y-0.5">
-                        <Label className="text-xs font-bold cursor-pointer" htmlFor="part-cash-out-toggle">Lançar saída no Caixa?</Label>
-                        <p className="text-[10px] text-muted-foreground">Cria uma despesa correspondente no caixa aberto da loja</p>
-                      </div>
-                      <input
-                        id="part-cash-out-toggle"
-                        type="checkbox"
-                        checked={partForm.launch_cash_out}
-                        onChange={e => setPartForm(f => ({ ...f, launch_cash_out: e.target.checked }))}
-                        className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary cursor-pointer"
-                      />
-                    </div>
-
-                    {partForm.launch_cash_out && (
-                      <div className="col-span-2 space-y-1.5 animate-in fade-in-50 duration-200">
-                        <Label className="text-xs">Forma de Pagamento</Label>
-                        <Select value={partForm.payment_method} onValueChange={v => setPartForm(f => ({ ...f, payment_method: v }))}>
-                          <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="dinheiro">Dinheiro</SelectItem>
-                            <SelectItem value="pix">PIX</SelectItem>
-                            <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
-                            <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">A peça ficará disponível em estoque para ser vinculada a OS e Reparos.</p>
-                  <Button type="submit" className="w-full h-10 font-semibold" disabled={loading}>
-                    {loading ? "Salvando..." : "Adicionar ao Estoque"}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          {filteredParts.length > 0 ? (
-            <div className="space-y-2">
-              {filteredParts.map(p => {
-                const supplierName = (p as any).supplier_name || (p as any).supplier_id ? supplierMap.get((p as any).supplier_id) : null;
-                const margin = p.sale_price ? Number(p.sale_price) - Number(p.cost_price) : null;
-                return (
-                  <Card key={p.id} className="border-border/50 shadow-sm">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium text-sm">{p.name}</p>
-                            <Badge className="text-[10px] bg-blue-500/10 text-blue-500 border-blue-500/20">
-                              <Cpu className="h-2.5 w-2.5 mr-0.5" /> Peça
-                            </Badge>
-                            {activeStoreId === "all" && (
-                              <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                                {storeMap.get(p.store_id) || "—"}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {p.brand && `${p.brand} · `}{p.model && p.model !== p.name && `${p.model}`}
-                          </p>
-                          {supplierName && (
-                            <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 {supplierName}</p>
-                          )}
-                          <div className="flex gap-2 mt-3 items-center flex-wrap">
-                            {p.parts_payment_voucher ? (
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 text-[10px] gap-1 border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 shadow-none"
-                                  onClick={() => window.open(p.parts_payment_voucher, "_blank")}
-                                >
-                                  <FileText className="h-3 w-3" /> Ver Comprovante
-                                </Button>
-                                <Label
-                                  className="h-7 px-2 text-[10px] flex items-center justify-center border border-border bg-transparent text-foreground hover:bg-muted shadow-none rounded-md cursor-pointer font-medium"
-                                >
-                                  Alterar
-                                  <input
-                                    type="file"
-                                    className="hidden"
-                                    accept="image/*,application/pdf"
-                                    onChange={(e) => handleQuickUploadVoucher(e, p.id)}
-                                  />
-                                </Label>
-                              </div>
-                            ) : (
-                              <Label
-                                className="h-7 px-2 text-[10px] flex items-center justify-center gap-1 border border-border bg-transparent text-muted-foreground hover:bg-muted shadow-none rounded-md cursor-pointer font-medium"
-                              >
-                                <Upload className="h-3 w-3" /> Anexar Comprovante
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  accept="image/*,application/pdf"
-                                  onChange={(e) => handleQuickUploadVoucher(e, p.id)}
-                                />
-                              </Label>
-                            )}
-                            {p.supplier_id && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-[10px] gap-1 border-yellow-500/30 text-yellow-600 hover:bg-yellow-500/10"
-                                onClick={() => handleReturnPart(p)}
-                              >
-                                <ArrowRightLeft className="h-3 w-3" /> Devolver
-                              </Button>
-                            )}
-                            <Button
-                              className="h-7 w-7 p-0 bg-transparent text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                setDeleteId(p.id);
-                                setDeleteType("product");
-                                setJustification("");
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs text-muted-foreground">Custo</p>
-                          <p className="font-display font-bold text-base">{formatCurrency(Number(p.cost_price))}</p>
-                          {p.sale_price && (
-                            <p className="text-xs text-muted-foreground">Venda: {formatCurrency(Number(p.sale_price))}</p>
-                          )}
-                          {margin !== null && margin > 0 && (
-                            <p className="text-[10px] text-primary font-medium">+{formatCurrency(margin)}</p>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-              <div className="text-xs text-center text-muted-foreground pt-1">
-                Total investido em peças: <span className="font-semibold text-foreground">{formatCurrency(filteredParts.reduce((s, p) => s + Number(p.cost_price), 0))}</span>
-              </div>
-            </div>
-          ) : (
-            <Card className="border-border/50">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <Cpu className="h-10 w-10 mb-3 opacity-30" />
-                <p className="font-medium text-sm">Nenhuma peça em estoque</p>
-                <p className="text-xs mt-1">Cadastre peças compradas de fornecedores aqui</p>
-              </CardContent>
-            </Card>
-          )}
+          <PecasTab
+            partsSearch={partsSearch}
+            setPartsSearch={setPartsSearch}
+            addPartOpen={addPartOpen}
+            setAddPartOpen={setAddPartOpen}
+            activeStoreId={activeStoreId}
+            partForm={partForm}
+            setPartForm={setPartForm}
+            setPartVoucherFile={setPartVoucherFile}
+            suppliers={suppliers}
+            supplierMap={supplierMap}
+            storeMap={storeMap}
+            filteredParts={filteredParts}
+            formatCurrency={formatCurrency}
+            handleAddPart={handleAddPart}
+            handleQuickUploadVoucher={handleQuickUploadVoucher}
+            handleReturnPart={handleReturnPart}
+            onRequestDeletePart={(id) => {
+              setDeleteId(id);
+              setDeleteType("product");
+              setJustification("");
+              setDeleteDialogOpen(true);
+            }}
+            loading={loading}
+          />
         </TabsContent>
 
         {/* ABA ACESSÓRIOS */}
@@ -1192,488 +991,120 @@ const Estoque = () => {
         
         {/* ABA VENDIDOS */}
         <TabsContent value="vendidos" className="mt-4 space-y-3">
-          {filteredProducts.filter(p => p.status === 'sold').length > 0 ? (
-            <div className="space-y-2">
-              {filteredProducts.filter(p => p.status === 'sold').map((p) => (
-                <Card key={p.id} className="border-border/50 bg-muted/5- opacity-80">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-sm truncate">{p.name}</p>
-                          <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground">Vendido</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {p.brand} · {p.model} · IMEI: {p.imei}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-muted-foreground">Vendido por</p>
-                        <p className="font-display font-bold text-sm">{formatCurrency(Number(p.sale_price || 0))}</p>
-                        <Button className="h-7 text-[10px] mt-1 bg-transparent text-muted-foreground hover:bg-muted" onClick={() => loadHistory(p)}>
-                          Ver Histórico
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-border/50">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <Package className="h-10 w-10 mb-3 opacity-30" />
-                <p className="font-medium text-sm">Nenhum aparelho vendido encontrado</p>
-              </CardContent>
-            </Card>
-          )}
+          <VendidosTab
+            soldProducts={filteredProducts.filter(p => p.status === 'sold')}
+            formatCurrency={formatCurrency}
+            loadHistory={loadHistory}
+          />
         </TabsContent>
 
         {/* ABA EM REPARO */}
         <TabsContent value="reparo" className="mt-4 space-y-3">
-          {inRepair.length > 0 ? (
-            <div className="space-y-2">
-              {inRepair.map((p) => {
-                const conditionLabel = p.condition === "new" ? "Novo" : p.condition === "refurbished" ? "Recondicionado" : p.condition === "seminovo_americano" ? "Seminovo (Americano)" : "Usado";
-                return (
-                  <Card key={p.id} className="border-destructive/30 shadow-lg shadow-black/10 bg-destructive/5">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium text-sm truncate">{p.name}</p>
-                            <Badge className="text-[10px] bg-destructive/15 text-destructive border-destructive/20">
-                              🔧 Em Reparo
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {p.brand} · {p.model} {p.capacity && `· ${p.capacity}`} {p.color && `· ${p.color}`} · {conditionLabel}
-                            {p.imei && ` · IMEI: ${p.imei}`}
-                          </p>
-                          {p.defects && p.defects.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {p.defects.map((def: string, idx: number) => (
-                                <Badge key={idx} variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20 font-medium">
-                                  ⚠️ {def}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                          {activeStoreId === "all" && (
-                            <Badge variant="outline" className="text-[9px] mt-1 bg-muted/50 border-primary/20 text-primary">
-                              {storeMap.get(p.store_id) || "—"}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Custo atual</p>
-                            <p className="font-display font-bold text-sm">{formatCurrency(Number(p.cost_price))}</p>
-                          </div>
-                          <Button
-                            className="h-8 text-[11px] gap-1.5 bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive hover:text-destructive-foreground"
-                            onClick={() => { setRepairProduct(p as any); setRepairModalOpen(true); }}
-                          >
-                            <Wrench className="h-3.5 w-3.5" /> Gerenciar Reparo
-                          </Button>
-                          <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted"
-                            onClick={() => {
-                              setDefectsProduct(p);
-                              setDefectsList(p.defects || []);
-                              setCustomDefect("");
-                              setDefectsDialogOpen(true);
-                            }}>
-                            <AlertTriangle className="h-3.5 w-3.5" /> Defeitos
-                            {p.defects && p.defects.length > 0 && (
-                              <span className="ml-0.5 px-1 py-0.5 text-[8px] bg-destructive text-destructive-foreground rounded-full leading-none font-bold">
-                                {p.defects.length}
-                              </span>
-                            )}
-                          </Button>
-                          <Button className="h-7 text-[10px] gap-1 bg-transparent text-muted-foreground hover:bg-muted" onClick={() => loadHistory(p)}>
-                            Ver Histórico
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card className="border-border/50">
-              <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <Wrench className="h-10 w-10 mb-3 opacity-30" />
-                <p className="font-medium text-sm">Nenhum aparelho em reparo</p>
-                <p className="text-xs mt-1">Aparelhos enviados para reparo aparecem aqui</p>
-              </CardContent>
-            </Card>
-          )}
+          <EmReparoTab
+            inRepair={inRepair}
+            activeStoreId={activeStoreId}
+            storeMap={storeMap}
+            formatCurrency={formatCurrency}
+            setRepairProduct={setRepairProduct}
+            setRepairModalOpen={setRepairModalOpen}
+            setDefectsProduct={setDefectsProduct}
+            setDefectsList={setDefectsList}
+            setCustomDefect={setCustomDefect}
+            setDefectsDialogOpen={setDefectsDialogOpen}
+            loadHistory={loadHistory}
+          />
         </TabsContent>
       </Tabs>
 
       {/* Dialog Acessório */}
-      <Dialog open={accDialogOpen} onOpenChange={(o) => { setAccDialogOpen(o); if (!o) setEditAcc(null); }}>
-        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display">{editAcc ? "Editar Acessório" : "Cadastrar Acessório"}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleAccSubmit} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Nome</Label>
-                <Input value={accForm.name} onChange={(e) => setAccForm({ ...accForm, name: e.target.value })} placeholder="Carregador 20W" required className="h-10" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Categoria</Label>
-                <Select value={accForm.category} onValueChange={(v) => setAccForm({ ...accForm, category: v })}>
-                  <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="carregador">Carregador</SelectItem>
-                    <SelectItem value="cabo">Cabo</SelectItem>
-                    <SelectItem value="capa">Capa</SelectItem>
-                    <SelectItem value="pelicula">Película</SelectItem>
-                    <SelectItem value="fone">Fone</SelectItem>
-                    <SelectItem value="peca">Peça de Reposição</SelectItem>
-                    <SelectItem value="ferramenta">Ferramenta</SelectItem>
-                    <SelectItem value="outro">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Marca</Label>
-                <Input value={accForm.brand} onChange={(e) => setAccForm({ ...accForm, brand: e.target.value })} placeholder="Apple, Samsung..." className="h-10" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Descrição</Label>
-                <Input value={accForm.description} onChange={(e) => setAccForm({ ...accForm, description: e.target.value })} placeholder="USB-C 1m..." className="h-10" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Quantidade</Label>
-                <Input type="number" min="0" value={accForm.quantity} onChange={(e) => setAccForm({ ...accForm, quantity: e.target.value })} required className="h-10" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Qtd Mínima (alerta)</Label>
-                <Input type="number" min="0" value={accForm.min_quantity} onChange={(e) => setAccForm({ ...accForm, min_quantity: e.target.value })} required className="h-10" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Custo (R$)</Label>
-                <Input type="number" step="0.01" value={accForm.cost_price} onChange={(e) => setAccForm({ ...accForm, cost_price: e.target.value })} placeholder="25.00" required className="h-10" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Venda (R$)</Label>
-                <Input type="number" step="0.01" value={accForm.sale_price} onChange={(e) => setAccForm({ ...accForm, sale_price: e.target.value })} placeholder="50.00" className="h-10" />
-              </div>
-            </div>
-            {editAcc && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-primary">Motivo da Alteração</Label>
-                <Input value={accForm.justification} onChange={(e) => setAccForm({ ...accForm, justification: e.target.value })} placeholder="Ex: Correção de preço, ajuste de estoque..." required className="h-10 border-primary/30" />
-              </div>
-            )}
-            <div className="space-y-1.5 grayscale opacity-60 pointer-events-none">
-              <Label className="text-xs">Loja (Vinculada à Loja Ativa)</Label>
-              <Input value={storeMap.get(activeStoreId || "") || ""} readOnly className="h-10" />
-            </div>
-            <Button type="submit" className="w-full h-11 font-semibold" disabled={loading || !activeStoreId}>
-              {loading ? "Salvando..." : editAcc ? "Salvar Alterações" : "Cadastrar Acessório"}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <AccessoryModal
+        open={accDialogOpen}
+        onOpenChange={(o) => {
+          setAccDialogOpen(o);
+          if (!o) setEditAcc(null);
+        }}
+        editAcc={editAcc}
+        accForm={accForm}
+        setAccForm={setAccForm}
+        activeStoreId={activeStoreId}
+        storeMap={storeMap}
+        onSubmit={handleAccSubmit}
+        loading={loading}
+      />
 
       {/* Transfer dialog */}
-      <Dialog open={transferDialogOpen} onOpenChange={(open) => { setTransferDialogOpen(open); if (!open) { setTransferProduct(null); setTransferStoreId(""); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <ArrowRightLeft className="h-4 w-4" /> Transferir Aparelho
-            </DialogTitle>
-          </DialogHeader>
-          {transferProduct && (
-            <div className="space-y-4">
-              <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-                <p className="font-semibold">{transferProduct.name}</p>
-                <p className="text-muted-foreground">{transferProduct.brand} · {transferProduct.model}</p>
-                <p className="text-muted-foreground">Loja atual: <span className="font-medium text-foreground">{storeMap.get(transferProduct.store_id)}</span></p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Transferir para</Label>
-                <Select value={transferStoreId} onValueChange={setTransferStoreId}>
-                  <SelectTrigger className="h-10"><SelectValue placeholder="Selecione a loja destino" /></SelectTrigger>
-                  <SelectContent>
-                    {stores.filter(s => s.id !== transferProduct.store_id).map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-primary">Motivo da Transferência</Label>
-                <Input value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Ex: Necessidade de estoque na outra loja" required className="h-10 border-primary/30" />
-              </div>
-              <Button onClick={handleTransfer} className="w-full h-11 font-semibold" disabled={loading || !transferStoreId}>
-                {loading ? "Transferindo..." : "Confirmar Transferência"}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-      
-      <Dialog open={editProductOpen} onOpenChange={setEditProductOpen}>
-        <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display">Editar Aparelho</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleUpdateProduct} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Nome</Label><Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} required className="h-10" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Marca</Label><Select value={editForm.brand} onValueChange={v => setEditForm(f => ({ ...f, brand: v }))}><SelectTrigger className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="iPhone">iPhone</SelectItem><SelectItem value="Xiaomi">Xiaomi</SelectItem><SelectItem value="Samsung">Samsung</SelectItem><SelectItem value="Motorola">Motorola</SelectItem><SelectItem value="Outro">Outro</SelectItem></SelectContent></Select></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Modelo</Label><Input value={editForm.model} onChange={e => setEditForm(f => ({ ...f, model: e.target.value }))} required className="h-10" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Condição</Label><Select value={editForm.condition} onValueChange={v => setEditForm(f => ({ ...f, condition: v }))}><SelectTrigger className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="new">Novo</SelectItem><SelectItem value="used">Usado</SelectItem><SelectItem value="refurbished">Recondicionado</SelectItem><SelectItem value="seminovo_americano">Seminovo (Americano)</SelectItem></SelectContent></Select></div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Capacidade (GB)</Label><Input value={editForm.capacity} onChange={e => setEditForm(f => ({ ...f, capacity: e.target.value }))} placeholder="128" className="h-10" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Cor</Label><Input value={editForm.color} onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))} placeholder="Preto" className="h-10" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Bateria (%)</Label><Input type="number" value={editForm.battery_percentage} onChange={e => setEditForm(f => ({ ...f, battery_percentage: e.target.value }))} placeholder="100" className="h-10" /></div>
-            </div>
-            <div className="space-y-1.5"><Label className="text-xs">IMEI</Label><Input value={editForm.imei} onChange={e => setEditForm(f => ({ ...f, imei: e.target.value }))} className="h-10" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label className="text-xs">Custo (R$)</Label><Input type="number" step="0.01" value={editForm.cost_price} onChange={e => setEditForm(f => ({ ...f, cost_price: e.target.value }))} required className="h-10" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Venda (R$)</Label><Input type="number" step="0.01" value={editForm.sale_price} onChange={e => setEditForm(f => ({ ...f, sale_price: e.target.value }))} className="h-10" /></div>
-            </div>
-            <div className="space-y-1.5"><Label className="text-xs">Loja</Label><Select value={editForm.store_id} onValueChange={v => setEditForm(f => ({ ...f, store_id: v }))}><SelectTrigger className="h-10"><SelectValue /></SelectTrigger><SelectContent>{stores.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Status do Aparelho</Label>
-              <Select value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}>
-                <SelectTrigger className="h-10">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="in_stock">Em estoque</SelectItem>
-                  <SelectItem value="sold">Vendido</SelectItem>
-                  <SelectItem value="reserved">Reservado</SelectItem>
-                  <SelectItem value="repair">Em reparo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-primary">Motivo da Alteração</Label>
-              <Input value={editForm.justification} onChange={e => setEditForm(f => ({ ...f, justification: e.target.value }))} placeholder="Ex: Erro no cadastro, atualização de preço..." required className="h-10 border-primary/30" />
-            </div>
-            <Button type="submit" className="w-full h-11 font-semibold" disabled={loading}>{loading ? "Salvando..." : "Salvar Alterações"}</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ProductTransferDialog
+        open={transferDialogOpen}
+        onOpenChange={(open) => {
+          setTransferDialogOpen(open);
+          if (!open) {
+            setTransferProduct(null);
+            setTransferStoreId("");
+          }
+        }}
+        transferProduct={transferProduct}
+        storeMap={storeMap}
+        stores={stores}
+        transferStoreId={transferStoreId}
+        setTransferStoreId={setTransferStoreId}
+        justification={justification}
+        setJustification={setJustification}
+        onTransfer={handleTransfer}
+        loading={loading}
+      />
+
+      {/* Edit Product Dialog */}
+      <ProductEditDialog
+        open={editProductOpen}
+        onOpenChange={setEditProductOpen}
+        editForm={editForm}
+        setEditForm={setEditForm}
+        stores={stores}
+        onSubmit={handleUpdateProduct}
+        loading={loading}
+      />
 
       {/* Product History Dialog */}
-      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display">Histórico do Aparelho</DialogTitle>
-          </DialogHeader>
-          {historyProduct && (
-            <div className="space-y-4">
-              <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-                <p className="font-semibold">{historyProduct.name}</p>
-                <p className="text-muted-foreground">{historyProduct.imei && `IMEI: ${historyProduct.imei}`} · Custo: {formatCurrency(Number(historyProduct.cost_price))}</p>
-              </div>
-              <div className="space-y-3 relative before:absolute before:inset-0 before:ml-2 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
-                {productHistory.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center">Nenhum registro encontrado.</p>
-                ) : productHistory.map((h, i) => (
-                  <div key={h.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                    <div className="flex items-center justify-center w-5 h-5 rounded-full border border-primary bg-background shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow"></div>
-                    <div className="w-[calc(100%-2rem)] md:w-[calc(50%-1.25rem)] bg-card p-3 rounded border shadow-sm text-xs">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-semibold text-primary">{h.action}</span>
-                        <span className="text-muted-foreground text-[10px]">{new Date(h.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <div className="text-muted-foreground">
-                        {h.notes && <p className="mb-0.5">{h.notes}</p>}
-                        {h.old_cost !== null && h.new_cost !== null && (
-                          <p>Custo: <span className="line-through">{formatCurrency(h.old_cost)}</span> → <span className="font-medium text-foreground">{formatCurrency(h.new_cost)}</span></p>
-                        )}
-                        {(h.old_cost === null && h.new_cost !== null) && (
-                          <p>Custo: <span className="font-medium text-foreground">{formatCurrency(h.new_cost)}</span></p>
-                        )}
-                      </div>
-                      <div className="text-[10px] font-medium text-muted-foreground mt-2 border-t pt-1 border-border/50">
-                        {h.created_by_profile?.display_name || "Sistema"}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ProductHistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        historyProduct={historyProduct}
+        productHistory={productHistory}
+        formatCurrency={formatCurrency}
+      />
 
       {/* Delete Confirmation Dialog with Justification */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" /> Confirmar Exclusão
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">
-              Esta ação é permanente. Por favor, informe o motivo da exclusão para continuar.
-            </p>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Motivo da Exclusão</Label>
-              <Input 
-                value={justification} 
-                onChange={(e) => setJustification(e.target.value)} 
-                placeholder="Ex: Item danificado, erro de entrada..." 
-                required 
-                className="h-10"
-              />
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
-              <Button 
-                variant="destructive" 
-                className="flex-1" 
-                disabled={!justification || loading}
-                onClick={async () => {
-                  setLoading(true);
-                  if (deleteType === "product" && deleteId) {
-                    await handleDeleteProduct(deleteId, justification);
-                  } else if (deleteType === "accessory" && deleteId) {
-                    await handleDeleteAcc(deleteId, justification);
-                  }
-                  setLoading(false);
-                  setDeleteDialogOpen(false);
-                }}
-              >
-                {loading ? "Excluindo..." : "Confirmar Exclusão"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ProductDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        justification={justification}
+        setJustification={setJustification}
+        onConfirmDelete={async () => {
+          setLoading(true);
+          if (deleteType === "product" && deleteId) {
+            await handleDeleteProduct(deleteId, justification);
+          } else if (deleteType === "accessory" && deleteId) {
+            await handleDeleteAcc(deleteId, justification);
+          }
+          setLoading(false);
+          setDeleteDialogOpen(false);
+        }}
+        loading={loading}
+      />
+
       {/* Defects Dialog */}
-      <Dialog open={defectsDialogOpen} onOpenChange={setDefectsDialogOpen}>
-        <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" /> Gerenciar Defeitos do Aparelho
-            </DialogTitle>
-          </DialogHeader>
-          {defectsProduct && (
-            <div className="space-y-4">
-              <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-                <p className="font-semibold">{defectsProduct.name}</p>
-                <p className="text-muted-foreground">{defectsProduct.brand} · {defectsProduct.model} {defectsProduct.capacity && `· ${defectsProduct.capacity}`}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Defeitos Ativos</Label>
-                {defectsList.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">Nenhum defeito registrado.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {defectsList.map((def, idx) => (
-                      <Badge key={idx} variant="destructive" className="text-xs gap-1 py-1 px-2.5 bg-destructive hover:bg-destructive">
-                        {def}
-                        <button type="button" className="ml-1 hover:text-white/80 font-bold" onClick={() => {
-                          setDefectsList(defectsList.filter((_, i) => i !== idx));
-                        }}>
-                          ×
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <hr className="border-border/50" />
-
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Defeitos Comuns (Clique para adicionar)</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {PREDEFINED_DEFECTS.map((def) => {
-                    const active = defectsList.includes(def);
-                    return (
-                      <button
-                        key={def}
-                        type="button"
-                        disabled={active}
-                        onClick={() => setDefectsList([...defectsList, def])}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                          active
-                            ? "bg-muted text-muted-foreground border-border cursor-not-allowed"
-                            : "bg-background text-foreground border-border hover:bg-muted"
-                        }`}
-                      >
-                        {def}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <hr className="border-border/50" />
-
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold">Outro Defeito (Personalizado)</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={customDefect}
-                    onChange={(e) => setCustomDefect(e.target.value)}
-                    placeholder="Ex: Câmera com foco ruim, traseira trincada..."
-                    className="h-9 text-xs"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        if (customDefect.trim()) {
-                          if (!defectsList.includes(customDefect.trim())) {
-                            setDefectsList([...defectsList, customDefect.trim()]);
-                          }
-                          setCustomDefect("");
-                        }
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (customDefect.trim()) {
-                        if (!defectsList.includes(customDefect.trim())) {
-                          setDefectsList([...defectsList, customDefect.trim()]);
-                        }
-                        setCustomDefect("");
-                      }
-                    }}
-                    className="h-9 px-3 text-xs"
-                  >
-                    Adicionar
-                  </Button>
-                </div>
-              </div>
-
-              <Button
-                onClick={handleSaveDefects}
-                className="w-full h-10 mt-2 font-semibold"
-                disabled={loading}
-              >
-                {loading ? "Salvando..." : "Salvar Alterações"}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ProductDefectsDialog
+        open={defectsDialogOpen}
+        onOpenChange={setDefectsDialogOpen}
+        defectsProduct={defectsProduct}
+        defectsList={defectsList}
+        setDefectsList={setDefectsList}
+        customDefect={customDefect}
+        setCustomDefect={setCustomDefect}
+        onSaveDefects={handleSaveDefects}
+        loading={loading}
+      />
+      
       <DeviceRepairModal
         product={repairProduct}
         isOpen={repairModalOpen}
