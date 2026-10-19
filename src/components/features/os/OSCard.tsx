@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, Phone, Calendar, Smartphone, Wrench } from "lucide-react";
+import { MessageCircle, Phone, Calendar, Smartphone, Wrench, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface OSCardProps {
   order: any;
@@ -11,6 +11,7 @@ interface OSCardProps {
   profileMap: Map<string, string>;
   formatCurrency: (v: number) => string;
   totalPaid: (order: any) => number;
+  isFinancialPending?: boolean;
   onClick: () => void;
   onWhatsApp?: (order: any) => void;
 }
@@ -22,6 +23,7 @@ export const OSCard: React.FC<OSCardProps> = ({
   profileMap,
   formatCurrency,
   totalPaid,
+  isFinancialPending = false,
   onClick,
   onWhatsApp
 }) => {
@@ -118,6 +120,23 @@ export const OSCard: React.FC<OSCardProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Aviso explícito de confirmação financeira pendente */}
+        {order.status === "delivered" && (
+          isFinancialPending ? (
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-red-500/15 border border-red-500/60 text-red-500 animate-pulse text-[11px] font-bold shadow-sm">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-red-500 animate-bounce" />
+              <span className="leading-tight">
+                Falta confirmar no financeiro (Caixa) as Transações referentes a esse serviço
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[10px] font-medium">
+              <CheckCircle2 className="h-3 w-3 shrink-0" />
+              <span>Transação confirmada no Caixa</span>
+            </div>
+          )
+        )}
 
         {/* Barra de Ações Rápidas Mobile */}
         {rawPhone && (

@@ -99,6 +99,9 @@ const OrdensServico = () => {
     device_is_off: false,
   });
 
+  const [pendingFinancialOSIds, setPendingFinancialOSIds] = useState<Set<string>>(new Set());
+  const [pendingFinancialOSNumbers, setPendingFinancialOSNumbers] = useState<Set<number>>(new Set());
+
   const fetchData = async () => {
     if (!activeStoreId) return;
     
@@ -107,15 +110,84 @@ const OrdensServico = () => {
       query = query.eq("store_id", activeStoreId);
     }
     
-    const [ordersRes, storesRes, profilesRes] = await Promise.all([
+    let cashQuery = supabase
+      .from("cash_entries" as any)
+      .select("reference_id, description, confirmed")
+      .eq("confirmed", false);
+
+    if (activeStoreId !== "all") {
+      cashQuery = cashQuery.or(`store_id.eq.${activeStoreId},store_id.is.null`);
+    }
+
+    const [ordersRes, storesRes, profilesRes, cashRes] = await Promise.all([
       query.order("created_at", { ascending: false }),
       supabase.from("stores").select("*"),
       supabase.from("profiles").select("*"),
+      cashQuery,
     ]);
 
     setOrders((ordersRes.data as any[]) ?? []);
     setStores(storesRes.data ?? []);
     setProfiles(profilesRes.data ?? []);
+
+    const idSet = new Set<string>();
+    const numSet = new Set<number>();
+    if (cashRes.data) {
+      cashRes.data.forEach((entry: any) => {
+        if (entry.reference_id) {
+          idSet.add(entry.reference_id);
+        }
+        if (entry.description) {
+          const match = entry.description.match(/OS\s*#?\s*(\d+)/i);
+          if (match && match[1]) {
+            numSet.add(parseInt(match[1], 10));
+          }
+        }
+      });
+    }
+    setPendingFinancialOSIds(idSet);
+    setPendingFinancialOSNumbers(numSet);
+  };
+
+  const isFinancialPending = (order: any) => {
+    if (!order || order.status !== "delivered") return false;
+    return (
+      pendingFinancialOSIds.has(order.id) ||
+      pendingFinancialOSNumbers.has(Number(order.order_number))
+    );
+  };
+
+  const handleConfirmFinancial = async (order: any) => {
+    if (!user || !order) return;
+    try {
+      const { error: cashErr } = await supabase
+        .from("cash_entries" as any)
+        .update({ confirmed: true, receipt_url: order.receipt_url || null })
+        .or(`reference_id.eq.${order.id},description.like.OS #${order.order_number} —%`);
+
+      if (cashErr) throw cashErr;
+
+      await supabase
+        .from("transactions")
+        .update({ reconciled: true })
+        .like("description", `OS #${order.order_number} —%`);
+
+      setPendingFinancialOSIds(prev => {
+        const next = new Set(prev);
+        next.delete(order.id);
+        return next;
+      });
+      setPendingFinancialOSNumbers(prev => {
+        const next = new Set(prev);
+        next.delete(Number(order.order_number));
+        return next;
+      });
+
+      toast.success(`Transações da OS #${order.order_number} confirmadas no Caixa!`);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao confirmar no financeiro: " + err.message);
+    }
   };
 
   useEffect(() => { fetchData(); }, [activeStoreId]);
@@ -133,6 +205,7 @@ const OrdensServico = () => {
   useEffect(() => {
     const channel = supabase.channel("service_orders_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "service_orders" }, () => fetchData())
+      .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries" }, () => fetchData())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
@@ -345,6 +418,18 @@ const OrdensServico = () => {
         const o = order as any;
         const desc = `OS #${o.order_number} — ${o.requested_service} (${o.customer_name})`;
 
+        // Busca peças vinculadas para checar se possuem comprovante de pagamento
+        const { data: orderParts } = await supabase
+          .from("service_order_items" as any)
+          .select("id, receipt_url")
+          .eq("service_order_id", orderId);
+
+        const hasServiceReceipt = Boolean(o.receipt_url);
+        const partsList = (orderParts as any[]) || [];
+        const hasMissingPartsReceipt = partsList.some((p: any) => !p.receipt_url);
+        // Pode auto-confirmar se tiver comprovante de serviço e não tiver peças sem comprovante
+        const canAutoConfirm = hasServiceReceipt && !hasMissingPartsReceipt;
+
         // Idempotência: verificar se já existem transações para esta OS para não duplicar receita
         const { data: existingTx } = await supabase
           .from("transactions")
@@ -372,7 +457,7 @@ const OrdensServico = () => {
             const amount = Number(o.final_price || o.estimated_price || 0);
             if (amount > 0) {
               const defaultMethod = o.payment_method || "dinheiro";
-              await createPendingCashEntry(o.store_id, user.id, amount, desc, defaultMethod);
+              await createPendingCashEntry(o.store_id, user.id, amount, desc, defaultMethod, o.receipt_url || null, o.id, canAutoConfirm);
               await supabase.from("transactions").insert({
                 type: "income",
                 category: "Manutenção",
@@ -382,82 +467,89 @@ const OrdensServico = () => {
                 store_id: o.store_id,
                 created_by: user.id,
                 expected_settlement_date: new Date().toISOString(),
-                reconciled: false,
+                reconciled: canAutoConfirm,
               });
             }
           } else {
             if (cash > 0) {
-              await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro");
+              await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro", o.receipt_url || null, o.id, canAutoConfirm);
               await supabase.from("transactions").insert({
-              type: "income",
-              category: "Manutenção",
-              amount: cash,
-              net_amount: cash,
-              description: `${desc} [Dinheiro]`,
-              store_id: o.store_id,
-              created_by: user.id,
-              expected_settlement_date: new Date().toISOString(),
-              reconciled: false,
-            });
-          }
-          if (card > 0) {
-            await createPendingCashEntry(o.store_id, user.id, card, desc, "cartao_credito");
-            const fee = Number(account?.credit_fee_percent) || 0;
-            const days = Number(account?.credit_settlement_days) || 30;
-            const expectedDate = new Date();
-            expectedDate.setDate(expectedDate.getDate() + days);
-            await supabase.from("transactions").insert({
-              type: "income",
-              category: "Manutenção",
-              amount: card,
-              net_amount: card - (card * (fee / 100)),
-              description: `${desc} [Cartão]`,
-              store_id: o.store_id,
-              created_by: user.id,
-              destination_account_id: defaultAccountId,
-              expected_settlement_date: expectedDate.toISOString(),
-              reconciled: false,
-            });
-          }
-          if (pix > 0) {
-            await createPendingCashEntry(o.store_id, user.id, pix, desc, "pix");
-            const fee = Number(account?.pix_fee_percent) || 0;
-            const days = Number(account?.pix_settlement_days) || 0;
-            const expectedDate = new Date();
-            expectedDate.setDate(expectedDate.getDate() + days);
-            await supabase.from("transactions").insert({
-              type: "income",
-              category: "Manutenção",
-              amount: pix,
-              net_amount: pix - (pix * (fee / 100)),
-              description: `${desc} [PIX]`,
-              store_id: o.store_id,
-              created_by: user.id,
-              destination_account_id: defaultAccountId,
-              expected_settlement_date: expectedDate.toISOString(),
-              reconciled: false,
-            });
-          }
-          if (other > 0) {
-            await createPendingCashEntry(o.store_id, user.id, other, desc, "outro");
-            await supabase.from("transactions").insert({
-              type: "income",
-              category: "Manutenção",
-              amount: other,
-              net_amount: other,
-              description: `${desc} [Outro]`,
-              store_id: o.store_id,
-              created_by: user.id,
-              destination_account_id: defaultAccountId,
-              expected_settlement_date: new Date().toISOString(),
-              reconciled: false,
-            });
+                type: "income",
+                category: "Manutenção",
+                amount: cash,
+                net_amount: cash,
+                description: `${desc} [Dinheiro]`,
+                store_id: o.store_id,
+                created_by: user.id,
+                expected_settlement_date: new Date().toISOString(),
+                reconciled: canAutoConfirm,
+              });
+            }
+            if (card > 0) {
+              await createPendingCashEntry(o.store_id, user.id, card, desc, "cartao_credito", o.receipt_url || null, o.id, canAutoConfirm);
+              const fee = Number(account?.credit_fee_percent) || 0;
+              const days = Number(account?.credit_settlement_days) || 30;
+              const expectedDate = new Date();
+              expectedDate.setDate(expectedDate.getDate() + days);
+              await supabase.from("transactions").insert({
+                type: "income",
+                category: "Manutenção",
+                amount: card,
+                net_amount: card - (card * (fee / 100)),
+                description: `${desc} [Cartão]`,
+                store_id: o.store_id,
+                created_by: user.id,
+                destination_account_id: defaultAccountId,
+                expected_settlement_date: expectedDate.toISOString(),
+                reconciled: canAutoConfirm,
+              });
+            }
+            if (pix > 0) {
+              await createPendingCashEntry(o.store_id, user.id, pix, desc, "pix", o.receipt_url || null, o.id, canAutoConfirm);
+              const fee = Number(account?.pix_fee_percent) || 0;
+              const days = Number(account?.pix_settlement_days) || 0;
+              const expectedDate = new Date();
+              expectedDate.setDate(expectedDate.getDate() + days);
+              await supabase.from("transactions").insert({
+                type: "income",
+                category: "Manutenção",
+                amount: pix,
+                net_amount: pix - (pix * (fee / 100)),
+                description: `${desc} [PIX]`,
+                store_id: o.store_id,
+                created_by: user.id,
+                destination_account_id: defaultAccountId,
+                expected_settlement_date: expectedDate.toISOString(),
+                reconciled: canAutoConfirm,
+              });
+            }
+            if (other > 0) {
+              await createPendingCashEntry(o.store_id, user.id, other, desc, "outro", o.receipt_url || null, o.id, canAutoConfirm);
+              await supabase.from("transactions").insert({
+                type: "income",
+                category: "Manutenção",
+                amount: other,
+                net_amount: other,
+                description: `${desc} [Outro]`,
+                store_id: o.store_id,
+                created_by: user.id,
+                destination_account_id: defaultAccountId,
+                expected_settlement_date: new Date().toISOString(),
+                reconciled: canAutoConfirm,
+              });
+            }
           }
         }
-        toast.info("Lançamentos financeiros registrados.");
+
+        if (canAutoConfirm) {
+          toast.success("OS entregue e confirmada no financeiro com comprovantes anexados!");
+        } else {
+          toast.error("⚠️ OS Finalizada! Falta confirmar no financeiro (Caixa) as Transações referentes a esse serviço.");
+          setPendingFinancialOSIds(prev => new Set(prev).add(orderId));
+          setPendingFinancialOSNumbers(prev => new Set(prev).add(Number(o.order_number)));
+        }
       }
     }
-  }
 
     toast.success(`Status: ${statusConfig[newStatus]?.label}`);
     fetchData();
@@ -499,6 +591,32 @@ const OrdensServico = () => {
     if (error) { toast.error(error.message); }
     else {
       toast.success("Serviço atualizado!");
+      if (updates.receipt_url) {
+        await supabase
+          .from("cash_entries" as any)
+          .update({ receipt_url: updates.receipt_url })
+          .or(`reference_id.eq.${detailOrder.id},description.like.OS #${detailOrder.order_number} —%`);
+
+        if (detailOrder.status === "delivered") {
+          const { data: parts } = await supabase
+            .from("service_order_items" as any)
+            .select("id, receipt_url")
+            .eq("service_order_id", detailOrder.id);
+          const partsList = (parts as any[]) || [];
+          const missingParts = partsList.some((p: any) => !p.receipt_url);
+          if (!missingParts) {
+            await supabase
+              .from("cash_entries" as any)
+              .update({ confirmed: true })
+              .or(`reference_id.eq.${detailOrder.id},description.like.OS #${detailOrder.order_number} —%`);
+            await supabase
+              .from("transactions")
+              .update({ reconciled: true })
+              .like("description", `OS #${detailOrder.order_number} —%`);
+            toast.success("Comprovantes completos! Confirmado no Caixa e Financeiro.");
+          }
+        }
+      }
       const updated = { ...detailOrder, ...updates };
       setDetailOrder(updated);
       fetchData();
@@ -914,6 +1032,7 @@ const OrdensServico = () => {
             profileMap={profileMap}
             formatCurrency={formatCurrency}
             totalPaid={totalPaid}
+            isFinancialPending={isFinancialPending(order)}
             onClick={() => openDetail(order)}
             onWhatsApp={handleSendWhatsApp}
           />
@@ -934,6 +1053,7 @@ const OrdensServico = () => {
           storeMap={storeMap} 
           profileMap={profileMap} 
           formatCurrency={formatCurrency} 
+          isFinancialPending={isFinancialPending}
           onOrderClick={openDetail} 
           onStatusChange={updateStatus} 
         />
@@ -973,6 +1093,8 @@ const OrdensServico = () => {
         updateStatus={updateStatus}
         getPublicUrl={getPublicUrl}
         totalPaid={totalPaid}
+        isFinancialPending={detailOrder ? isFinancialPending(detailOrder) : false}
+        onConfirmFinancial={() => detailOrder && handleConfirmFinancial(detailOrder)}
       />
 
       {/* OS Action Justification Dialog (Status / Delete) */}

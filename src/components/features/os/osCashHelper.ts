@@ -7,6 +7,9 @@ export const createPendingCashEntry = async (
   amount: number,
   description: string,
   paymentMethod = "dinheiro",
+  receiptUrl: string | null = null,
+  referenceId: string | null = null,
+  confirmed = false
 ) => {
   if (!storeId || amount <= 0) return;
   
@@ -55,9 +58,10 @@ export const createPendingCashEntry = async (
       amount,
       description,
       payment_method: paymentMethod,
-      receipt_url: null,
-      confirmed: false,
+      receipt_url: receiptUrl || null,
+      confirmed: Boolean(confirmed),
       created_by: userId,
+      reference_id: referenceId || null,
     } as any);
     
     if (insertError) {

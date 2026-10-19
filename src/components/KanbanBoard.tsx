@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export interface KanbanBoardProps {
   orders: any[];
@@ -9,6 +10,7 @@ export interface KanbanBoardProps {
   storeMap: Map<string, string>;
   profileMap: Map<string, string>;
   formatCurrency: (v: number) => string;
+  isFinancialPending?: (order: any) => boolean;
   onOrderClick: (order: any) => void;
   onStatusChange: (orderId: string, newStatus: string, oldStatus: string) => void;
 }
@@ -19,6 +21,7 @@ export function KanbanBoard({
   allStatuses,
   profileMap,
   formatCurrency,
+  isFinancialPending,
   onOrderClick,
   onStatusChange,
 }: KanbanBoardProps) {
@@ -108,6 +111,21 @@ export function KanbanBoard({
                         {order.device_brand} {order.device_model}
                       </p>
                     </div>
+
+                    {order.status === "delivered" && (
+                      isFinancialPending?.(order) ? (
+                        <div className="flex items-center gap-1.5 p-1.5 rounded bg-red-500/15 border border-red-500/60 text-red-500 animate-pulse text-[10px] font-bold shadow-sm leading-tight">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                          <span>Falta confirmar no financeiro (Caixa) as Transações referentes a esse serviço</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-[9px] font-medium">
+                          <CheckCircle2 className="h-3 w-3 shrink-0" />
+                          <span>Confirmado no Caixa</span>
+                        </div>
+                      )
+                    )}
+
                     <div className="flex justify-between items-center pt-1.5 mt-1.5 border-t border-border/40 text-[9px] text-muted-foreground">
                       <span>{new Date(order.created_at).toLocaleDateString("pt-BR")}</span>
                       {order.technician_id && (

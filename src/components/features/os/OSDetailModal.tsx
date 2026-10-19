@@ -31,6 +31,7 @@ import {
   Upload,
   Shield,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { openComprovante } from "@/lib/storageHelper";
@@ -81,6 +82,8 @@ interface OSDetailModalProps {
   updateStatus: (orderId: string, newStatus: string, oldStatus: string) => void | Promise<void>;
   getPublicUrl: (orderId: string) => string;
   totalPaid: (order: any) => number;
+  isFinancialPending?: boolean;
+  onConfirmFinancial?: () => void | Promise<void>;
 }
 
 export const OSDetailModal: React.FC<OSDetailModalProps> = ({
@@ -112,6 +115,8 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   updateStatus,
   getPublicUrl,
   totalPaid,
+  isFinancialPending = false,
+  onConfirmFinancial,
 }) => {
   return (
     <Dialog open={!!detailOrder} onOpenChange={(open) => !open && onClose()}>
@@ -127,6 +132,45 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Alerta explícito de pendência financeira ou confirmação */}
+              {detailOrder.status === "delivered" && (
+                isFinancialPending ? (
+                  <div className="p-3.5 rounded-lg bg-red-500/15 border-2 border-red-500/80 text-red-500 animate-pulse space-y-2.5 shadow-md">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-red-500 animate-bounce mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-xs sm:text-sm leading-snug text-red-600 dark:text-red-400">
+                          Atenção: Falta confirmar no financeiro (Caixa) as Transações referentes a esse serviço!
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Para liberar o fechamento completo, anexe o comprovante de pagamento do serviço e das peças utilizadas.
+                        </p>
+                      </div>
+                    </div>
+                    {onConfirmFinancial && (
+                      <div className="pt-2 border-t border-red-500/30 flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          Comprovantes verificados?
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={onConfirmFinancial}
+                          className="h-8 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white gap-1.5 shadow"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Confirmar no Financeiro Agora
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                    <span>Transações financeiras deste serviço já confirmadas no Caixa.</span>
+                  </div>
+                )
+              )}
+
               {/* Status + ações em grid tátil */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
