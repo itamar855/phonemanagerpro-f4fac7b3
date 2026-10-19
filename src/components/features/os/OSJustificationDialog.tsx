@@ -34,23 +34,24 @@ export const OSJustificationDialog: React.FC<OSJustificationDialogProps> = ({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" /> Confirmar Ação
+            <AlertCircle className="h-5 w-5 text-amber-500" />
+            {actionType === "delete" ? "Excluir Ordem de Serviço" : "Justificar Mudança de Status"}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
             {actionType === "delete"
               ? "Esta ação excluirá a OS permanentemente."
-              : "Você está alterando o status para uma fase crítica."}
+              : "Você está alterando o status da OS para uma fase crítica."}
             <br />
-            Por favor, informe uma justificativa:
+            Por favor, informe o motivo desta alteração:
           </p>
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-primary">Justificativa / Motivo</Label>
             <Input
               value={justification}
               onChange={(e) => setJustification(e.target.value)}
-              placeholder="Descreva o motivo..."
+              placeholder="Descreva o motivo da alteração..."
               required
               className="h-10"
             />
@@ -69,7 +70,11 @@ export const OSJustificationDialog: React.FC<OSJustificationDialogProps> = ({
               disabled={!justification || loading}
               onClick={onConfirm}
             >
-              {loading ? "Processando..." : "Confirmar"}
+              {loading
+                ? "Processando..."
+                : actionType === "delete"
+                ? "Excluir OS"
+                : "Confirmar Mudança de Status"}
             </Button>
           </div>
         </div>

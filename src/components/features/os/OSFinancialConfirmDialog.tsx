@@ -108,17 +108,17 @@ export const OSFinancialConfirmDialog: React.FC<OSFinancialConfirmDialogProps> =
             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 space-y-1.5">
               <p className="font-semibold text-xs flex items-center gap-1.5">
                 <FileWarning className="h-4 w-4 shrink-0 text-red-500" />
-                Não é permitido confirmar sem os comprovantes!
+                Bloqueado: Não é permitido entregar a OS nem confirmar sem os comprovantes!
               </p>
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                Para manter a integridade e evitar furos no Caixa, técnicos, vendedores e gerentes devem anexar os comprovantes correspondentes.
+                Para manter a integridade e evitar furos no Caixa, técnicos, vendedores e gerentes devem anexar todos os comprovantes necessários antes de concluir o atendimento.
               </p>
             </div>
 
             {/* Lista de comprovantes faltantes */}
             <div className="space-y-1.5 bg-muted/40 p-2.5 rounded-lg border border-border/40">
               <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide">
-                O que falta anexar nesta OS:
+                Pendências Obrigatórias desta OS:
               </span>
               <ul className="space-y-1.5 text-[11px]">
                 {missingItems.map((item, idx) => (
@@ -131,7 +131,7 @@ export const OSFinancialConfirmDialog: React.FC<OSFinancialConfirmDialogProps> =
             </div>
 
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              💡 <strong>Como resolver:</strong> Feche este aviso, anexe o comprovante de pagamento no formulário do serviço e os comprovantes das peças utilizadas. Assim que anexados, o financeiro poderá ser confirmado!
+              💡 <strong>Como resolver:</strong> Feche este aviso, abra os detalhes desta OS e anexe o comprovante de pagamento do serviço e os comprovantes das peças. Assim que anexados, a OS poderá ser entregue e confirmada!
             </p>
 
             <DialogFooter className="pt-2 border-t border-border/40">

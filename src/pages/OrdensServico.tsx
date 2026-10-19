@@ -212,38 +212,43 @@ const OrdensServico = () => {
     }
   };
 
+  const checkMissingReceipts = async (orderId: string, fallbackOrder?: any) => {
+    const { data: freshOrder } = await supabase
+      .from("service_orders")
+      .select("id, order_number, receipt_url, store_id")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    const targetOrder = freshOrder || fallbackOrder || orders.find(o => o.id === orderId);
+
+    const missing: string[] = [];
+    if (!targetOrder?.receipt_url) {
+      missing.push("Comprovante de pagamento do serviço");
+    }
+
+    const { data: parts } = await supabase
+      .from("service_order_items" as any)
+      .select("id, unit_cost, receipt_url, supplier_name, products(name, brand, model, parts_payment_voucher)")
+      .eq("service_order_id", orderId);
+
+    if (parts && parts.length > 0) {
+      parts.forEach((p: any) => {
+        const hasPartReceipt = p.receipt_url || p.products?.parts_payment_voucher;
+        if (!hasPartReceipt) {
+          const partName = p.products?.name || "Peça";
+          const supplier = p.supplier_name ? ` (Fornecedor: ${p.supplier_name})` : "";
+          missing.push(`Comprovante de pagamento da peça: ${partName}${supplier}`);
+        }
+      });
+    }
+
+    return { targetOrder, missing };
+  };
+
   const handleConfirmFinancial = async (order: any) => {
     if (!user || !order) return;
     try {
-      // 1. Busca dados mais atualizados da OS e de suas peças
-      const { data: freshOrder } = await supabase
-        .from("service_orders")
-        .select("id, order_number, receipt_url, store_id")
-        .eq("id", order.id)
-        .maybeSingle();
-
-      const targetOrder = freshOrder || order;
-
-      const missing: string[] = [];
-      if (!targetOrder.receipt_url) {
-        missing.push("Comprovante de pagamento do serviço");
-      }
-
-      const { data: parts } = await supabase
-        .from("service_order_items" as any)
-        .select("id, unit_cost, receipt_url, supplier_name, products(name, brand, model, parts_payment_voucher)")
-        .eq("service_order_id", targetOrder.id);
-
-      if (parts && parts.length > 0) {
-        parts.forEach((p: any) => {
-          const hasPartReceipt = p.receipt_url || p.products?.parts_payment_voucher;
-          if (!hasPartReceipt) {
-            const partName = p.products?.name || "Peça";
-            const supplier = p.supplier_name ? ` (Fornecedor: ${p.supplier_name})` : "";
-            missing.push(`Comprovante de pagamento da peça: ${partName}${supplier}`);
-          }
-        });
-      }
+      const { targetOrder, missing } = await checkMissingReceipts(order.id, order);
 
       if (missing.length === 0) {
         // Todos os comprovantes necessários estão presentes: qualquer usuário confirma diretamente!
@@ -425,6 +430,18 @@ const OrdensServico = () => {
     if (!user) return;
     if (isSubmitting.current) return;
 
+    if (newStatus === "delivered") {
+      const { targetOrder, missing } = await checkMissingReceipts(orderId);
+      if (missing.length > 0 && !isAdmin) {
+        // Bloqueio rigoroso: técnico/vendedor/gerente não pode entregar OS sem comprovantes
+        setFinancialConfirmOrder(targetOrder);
+        setFinancialMissingItems(missing);
+        setFinancialConfirmOpen(true);
+        isSubmitting.current = false;
+        return;
+      }
+    }
+
     if ((newStatus === "delivered" || newStatus === "cancelled") && !reason) {
       setPendingUpdate({ orderId, newStatus, oldStatus });
       setActionType("status");
@@ -482,24 +499,15 @@ const OrdensServico = () => {
     }
 
     if (newStatus === "delivered") {
-      // Busca dados mais recentes diretamente do banco
-      const { data: freshOrder } = await supabase.from("service_orders").select("*").eq("id", orderId).maybeSingle();
-      const order = freshOrder || orders.find(o => o.id === orderId);
+      // Busca dados mais recentes diretamente do banco e avalia comprovantes
+      const { targetOrder: freshTarget, missing: deliveryMissing } = await checkMissingReceipts(orderId);
+      const order = freshTarget || orders.find(o => o.id === orderId);
       if (order && (order as any).store_id) {
         const o = order as any;
         const desc = `OS #${o.order_number} — ${o.requested_service} (${o.customer_name})`;
 
-        // Busca peças vinculadas para checar se possuem comprovante de pagamento
-        const { data: orderParts } = await supabase
-          .from("service_order_items" as any)
-          .select("id, receipt_url")
-          .eq("service_order_id", orderId);
-
-        const hasServiceReceipt = Boolean(o.receipt_url);
-        const partsList = (orderParts as any[]) || [];
-        const hasMissingPartsReceipt = partsList.some((p: any) => !p.receipt_url);
-        // Pode auto-confirmar se tiver comprovante de serviço e não tiver peças sem comprovante
-        const canAutoConfirm = hasServiceReceipt && !hasMissingPartsReceipt;
+        // Pode auto-confirmar se não houver nenhuma pendência de comprovante
+        const canAutoConfirm = deliveryMissing.length === 0;
 
         // Idempotência: verificar se já existem transações para esta OS para não duplicar receita
         const { data: existingTx } = await supabase
