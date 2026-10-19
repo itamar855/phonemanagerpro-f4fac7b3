@@ -78,7 +78,7 @@ export async function getSignedComprovanteUrl(
 }
 
 /**
- * Abre o comprovante em nova aba de forma segura utilizando URL assinada.
+ * Abre o comprovante em nova aba de forma segura utilizando URL assinada sem bloqueio de popup.
  */
 export async function openComprovante(urlOrPath: string | null | undefined, e?: React.MouseEvent) {
   if (e) {
@@ -87,9 +87,40 @@ export async function openComprovante(urlOrPath: string | null | undefined, e?: 
   }
   if (!urlOrPath) return;
 
-  const signedUrl = await getSignedComprovanteUrl(urlOrPath);
-  if (signedUrl) {
-    window.open(signedUrl, "_blank", "noopener,noreferrer");
+  const isFullUrl =
+    urlOrPath.startsWith("http://") ||
+    urlOrPath.startsWith("https://") ||
+    urlOrPath.startsWith("blob:") ||
+    urlOrPath.startsWith("data:");
+
+  // Abre imediatamente no gesto síncrono do clique para evitar bloqueio de popups pelos navegadores
+  let newTab: Window | null = null;
+  try {
+    newTab = window.open(isFullUrl ? urlOrPath : "about:blank", "_blank", "noopener,noreferrer");
+  } catch (err) {
+    console.warn("Popup bloqueado pelo navegador:", err);
+  }
+
+  try {
+    const signedUrl = await getSignedComprovanteUrl(urlOrPath);
+    const targetUrl = signedUrl || urlOrPath;
+
+    if (newTab && !newTab.closed) {
+      if (targetUrl !== urlOrPath || !isFullUrl) {
+        newTab.location.href = targetUrl;
+      }
+    } else if (!newTab) {
+      // Fallback síncrono com elemento de âncora caso window.open tenha sido bloqueado
+      const link = document.createElement("a");
+      link.href = targetUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  } catch (err) {
+    console.error("Erro ao resolver URL do comprovante:", err);
   }
 }
 

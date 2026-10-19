@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Receipt, CreditCard, Clock, Wrench, Phone, Eye, ArrowUpRight,
-  Truck, Store, User, Smartphone, Package, ExternalLink, RefreshCw
+  Truck, Store, User, Smartphone, Package, ExternalLink, RefreshCw, DollarSign
 } from "lucide-react";
 import {
   CashEntry, CashRegister, formatCurrency, getMistoLabel,
@@ -20,6 +20,7 @@ interface CashEntryDetailModalProps {
   selectedEntry: CashEntry | null;
   setSelectedEntry: (entry: CashEntry | null) => void;
   linkedServiceOrder: any | null;
+  linkedOrderItems?: any[];
   loadingLinkedOrder: boolean;
 
   confirmFile: File | null;
@@ -48,6 +49,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
   selectedEntry,
   setSelectedEntry,
   linkedServiceOrder,
+  linkedOrderItems = [],
   loadingLinkedOrder,
 
   confirmFile,
@@ -184,6 +186,130 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                     )}
                   </div>
 
+                  {/* Detalhamento do Pagamento do Serviço */}
+                  <div className="pt-2 border-t border-primary/10 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
+                        <DollarSign className="h-3 w-3 text-primary" /> Como o Serviço Foi Pago
+                      </span>
+                      {((Number(linkedServiceOrder.payment_cash) > 0 ? 1 : 0) +
+                        (Number(linkedServiceOrder.payment_card) > 0 ? 1 : 0) +
+                        (Number(linkedServiceOrder.payment_pix) > 0 ? 1 : 0) +
+                        (Number(linkedServiceOrder.payment_other) > 0 ? 1 : 0)) > 1 && (
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/30 font-semibold">
+                          Pagamento Misto / Dividido
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="bg-background/90 rounded-md p-2 space-y-1 border border-border/40 text-[11px]">
+                      <div className="flex justify-between items-center font-bold text-foreground pb-1 border-b border-border/40">
+                        <span>Valor Total do Serviço:</span>
+                        <span className="text-primary font-mono text-xs">
+                          {formatCurrency(Number(linkedServiceOrder.final_price || linkedServiceOrder.estimated_price || 0))}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 text-muted-foreground">
+                        {Number(linkedServiceOrder.payment_cash) > 0 && (
+                          <div className="flex justify-between">
+                            <span>💵 Dinheiro:</span>
+                            <span className="font-semibold text-foreground">{formatCurrency(Number(linkedServiceOrder.payment_cash))}</span>
+                          </div>
+                        )}
+                        {Number(linkedServiceOrder.payment_card) > 0 && (
+                          <div className="flex justify-between">
+                            <span>💳 Cartão:</span>
+                            <span className="font-semibold text-foreground">{formatCurrency(Number(linkedServiceOrder.payment_card))}</span>
+                          </div>
+                        )}
+                        {Number(linkedServiceOrder.payment_pix) > 0 && (
+                          <div className="flex justify-between">
+                            <span>⚡ PIX:</span>
+                            <span className="font-semibold text-foreground">{formatCurrency(Number(linkedServiceOrder.payment_pix))}</span>
+                          </div>
+                        )}
+                        {Number(linkedServiceOrder.payment_other) > 0 && (
+                          <div className="flex justify-between">
+                            <span>🔄 Outro:</span>
+                            <span className="font-semibold text-foreground">{formatCurrency(Number(linkedServiceOrder.payment_other))}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {linkedServiceOrder.payment_notes && (
+                        <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border/30">
+                          Obs: {linkedServiceOrder.payment_notes}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Peças Utilizadas e Comprovantes de Peça / Pedido */}
+                  {linkedOrderItems && linkedOrderItems.length > 0 && (
+                    <div className="pt-2 border-t border-primary/10 space-y-2 text-xs">
+                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
+                        <Package className="h-3 w-3 text-primary" /> Peças Utilizadas ({linkedOrderItems.length})
+                      </span>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        {linkedOrderItems.map((item: any) => {
+                          const partReceipt = item.receipt_url || item.products?.parts_payment_voucher;
+                          const orderReceipt = item.supplier_order_receipt_url;
+                          return (
+                            <div key={item.id} className="p-2 rounded-md bg-background/90 border border-border/40 space-y-1.5">
+                              <div className="flex justify-between items-start gap-1">
+                                <div>
+                                  <p className="font-semibold text-foreground text-[11px] leading-tight">
+                                    {item.products?.name || "Peça"} {item.products?.brand || ""} {item.products?.model || ""}
+                                  </p>
+                                  {item.supplier_name && (
+                                    <p className="text-[10px] text-blue-500 font-medium">
+                                      🏭 Fornecedor: {item.supplier_name}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right shrink-0 text-[10px]">
+                                  <span className="text-muted-foreground">Custo: </span>
+                                  <span className="font-semibold text-foreground">{formatCurrency(Number(item.unit_cost || 0))}</span>
+                                </div>
+                              </div>
+
+                              {/* Comprovantes da peça */}
+                              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border/30">
+                                {partReceipt ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px] gap-1 bg-primary/10 text-primary border-primary/30 hover:bg-primary/20 font-medium"
+                                    onClick={(e) => openComprovante(partReceipt, e)}
+                                  >
+                                    <CreditCard className="h-2.5 w-2.5" /> Comprovante da Peça
+                                    <ArrowUpRight className="h-2.5 w-2.5" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground/70 italic">Sem comprovante da peça</span>
+                                )}
+                                {orderReceipt && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px] gap-1 bg-blue-500/10 text-blue-500 border-blue-500/30 hover:bg-blue-500/20 font-medium"
+                                    onClick={(e) => openComprovante(orderReceipt, e)}
+                                  >
+                                    <Truck className="h-2.5 w-2.5" /> Comprovante Pedido Fornecedor
+                                    <ArrowUpRight className="h-2.5 w-2.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <Button
                     type="button"
                     variant="outline"
@@ -196,38 +322,84 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Comprovantes existentes */}
-              {(selectedEntry.receipt_url || (selectedEntry as any).supplier_order_receipt_url) && (
-                <div className="space-y-2">
-                  <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wide">
-                    Comprovantes Anexados
+              {/* Comprovantes existentes consolidados */}
+              {(selectedEntry.receipt_url ||
+                linkedServiceOrder?.receipt_url ||
+                (selectedEntry as any).supplier_order_receipt_url ||
+                (linkedOrderItems && linkedOrderItems.some((it: any) => it.receipt_url || it.supplier_order_receipt_url || it.products?.parts_payment_voucher))) && (
+                <div className="space-y-2 pt-1 border-t border-border/40">
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wide flex items-center gap-1">
+                    <Receipt className="h-3 w-3 text-primary" /> Comprovantes Anexados
                   </p>
-                  {selectedEntry.receipt_url && (
-                    <a
-                      href={selectedEntry.receipt_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => openComprovante(selectedEntry.receipt_url, e)}
-                      className="flex items-center gap-2 text-xs text-primary font-semibold bg-primary/5 border border-primary/20 px-3 py-2 rounded-lg hover:bg-primary/10 transition-colors cursor-pointer"
-                    >
-                      <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                      Comprovante de Pagamento
-                      <ArrowUpRight className="h-3 w-3 ml-auto" />
-                    </a>
-                  )}
-                  {(selectedEntry as any).supplier_order_receipt_url && (
-                    <a
-                      href={(selectedEntry as any).supplier_order_receipt_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => openComprovante((selectedEntry as any).supplier_order_receipt_url, e)}
-                      className="flex items-center gap-2 text-xs text-blue-500 font-semibold bg-blue-500/5 border border-blue-500/20 px-3 py-2 rounded-lg hover:bg-blue-500/10 transition-colors cursor-pointer"
-                    >
-                      <Truck className="h-3.5 w-3.5 shrink-0" />
-                      Comprovante do Pedido (Fornecedor)
-                      <ArrowUpRight className="h-3 w-3 ml-auto" />
-                    </a>
-                  )}
+
+                  <div className="space-y-1.5">
+                    {/* Comprovante de Pagamento do Serviço */}
+                    {(selectedEntry.receipt_url || linkedServiceOrder?.receipt_url) && (
+                      <button
+                        type="button"
+                        onClick={(e) => openComprovante(selectedEntry.receipt_url || linkedServiceOrder?.receipt_url, e)}
+                        className="w-full flex items-center justify-between text-xs text-primary font-semibold bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg hover:bg-primary/20 transition-all cursor-pointer text-left"
+                      >
+                        <span className="flex items-center gap-2">
+                          <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                          Comprovante de Pagamento do Serviço
+                        </span>
+                        <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+                      </button>
+                    )}
+
+                    {/* Comprovante do Pedido ao Fornecedor do Lançamento */}
+                    {(selectedEntry as any).supplier_order_receipt_url && (
+                      <button
+                        type="button"
+                        onClick={(e) => openComprovante((selectedEntry as any).supplier_order_receipt_url, e)}
+                        className="w-full flex items-center justify-between text-xs text-blue-500 font-semibold bg-blue-500/10 border border-blue-500/30 px-3 py-2 rounded-lg hover:bg-blue-500/20 transition-all cursor-pointer text-left"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Truck className="h-3.5 w-3.5 shrink-0" />
+                          Comprovante do Pedido (Fornecedor)
+                        </span>
+                        <ArrowUpRight className="h-3.5 w-3.5 text-blue-500" />
+                      </button>
+                    )}
+
+                    {/* Comprovantes de cada peça vinculada */}
+                    {linkedOrderItems && linkedOrderItems.map((item: any, idx: number) => {
+                      const partReceipt = item.receipt_url || item.products?.parts_payment_voucher;
+                      const orderReceipt = item.supplier_order_receipt_url;
+                      if (!partReceipt && !orderReceipt) return null;
+                      return (
+                        <div key={item.id || idx} className="space-y-1 pt-0.5">
+                          {partReceipt && (
+                            <button
+                              type="button"
+                              onClick={(e) => openComprovante(partReceipt, e)}
+                              className="w-full flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg hover:bg-emerald-500/20 transition-all cursor-pointer text-left"
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <CreditCard className="h-3 w-3 shrink-0" />
+                                Comprovante Peça: {item.products?.name || "Peça"} {item.supplier_name ? `(${item.supplier_name})` : ""}
+                              </span>
+                              <ArrowUpRight className="h-3 w-3 shrink-0" />
+                            </button>
+                          )}
+                          {orderReceipt && (
+                            <button
+                              type="button"
+                              onClick={(e) => openComprovante(orderReceipt, e)}
+                              className="w-full flex items-center justify-between text-xs text-blue-500 font-medium bg-blue-500/10 border border-blue-500/30 px-3 py-1.5 rounded-lg hover:bg-blue-500/20 transition-all cursor-pointer text-left"
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <Truck className="h-3 w-3 shrink-0" />
+                                Pedido Peça: {item.products?.name || "Peça"} {item.supplier_name ? `(${item.supplier_name})` : ""}
+                              </span>
+                              <ArrowUpRight className="h-3 w-3 shrink-0" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

@@ -58,6 +58,7 @@ const Caixa = () => {
   const [entryDetailDialog, setEntryDetailDialog] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
   const [linkedServiceOrder, setLinkedServiceOrder] = useState<any | null>(null);
+  const [linkedOrderItems, setLinkedOrderItems] = useState<any[]>([]);
   const [loadingLinkedOrder, setLoadingLinkedOrder] = useState(false);
 
   // Dialog de Ordem de Serviço aberta a partir do Caixa
@@ -668,8 +669,18 @@ const Caixa = () => {
       }
 
       setLinkedServiceOrder(foundOrder);
+      if (foundOrder) {
+        const { data: items } = await supabase
+          .from("service_order_items" as any)
+          .select(`*, products (name, brand, model, parts_payment_voucher)`)
+          .eq("service_order_id", foundOrder.id);
+        setLinkedOrderItems(items || []);
+      } else {
+        setLinkedOrderItems([]);
+      }
     } catch (err) {
       console.error("Erro ao resolver OS vinculada ao lançamento:", err);
+      setLinkedOrderItems([]);
     } finally {
       setLoadingLinkedOrder(false);
     }
@@ -1162,6 +1173,7 @@ const Caixa = () => {
         selectedEntry={selectedEntry}
         setSelectedEntry={setSelectedEntry}
         linkedServiceOrder={linkedServiceOrder}
+        linkedOrderItems={linkedOrderItems}
         loadingLinkedOrder={loadingLinkedOrder}
         confirmFile={confirmFile}
         setConfirmFile={setConfirmFile}
