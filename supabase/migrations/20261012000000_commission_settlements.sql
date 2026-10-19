@@ -217,8 +217,8 @@ BEGIN
     v_source_account_id := (p_payload->>'source_account_id')::UUID;
     v_notes := p_payload->>'notes';
     v_receipt_url := p_payload->>'receipt_url';
-    v_sales_ids := pg_catalog.coalesce(p_payload->'sale_ids', '[]'::pg_catalog.jsonb);
-    v_os_ids := pg_catalog.coalesce(p_payload->'service_order_ids', '[]'::pg_catalog.jsonb);
+    v_sales_ids := COALESCE(p_payload->'sale_ids', '[]'::pg_catalog.jsonb);
+    v_os_ids := COALESCE(p_payload->'service_order_ids', '[]'::pg_catalog.jsonb);
 
     IF v_store_id IS NULL OR v_user_id IS NULL OR v_period_start IS NULL OR v_period_end IS NULL THEN
         RAISE EXCEPTION 'INVALID_ARGUMENTS: store_id, user_id, period_start e period_end são obrigatórios';
@@ -262,7 +262,7 @@ BEGIN
     END IF;
 
     -- Obter display_name do colaborador
-    SELECT pg_catalog.coalesce(display_name, 'Colaborador') INTO v_user_name
+    SELECT COALESCE(display_name, 'Colaborador') INTO v_user_name
     FROM public.profiles
     WHERE user_id = v_user_id;
 
@@ -375,9 +375,9 @@ BEGIN
         END IF;
 
         -- Validação estrita de elegibilidade individual da venda
-        IF pg_catalog.coalesce(v_sale_rec.commission_value, 0) <= 0 THEN
+        IF COALESCE(v_sale_rec.commission_value, 0) <= 0 THEN
             RAISE EXCEPTION 'SALE_COMMISSION_ZERO: Venda % não possui comissão positiva elegível (commission_value: %)', 
-                v_current_id, pg_catalog.coalesce(v_sale_rec.commission_value, 0);
+                v_current_id, COALESCE(v_sale_rec.commission_value, 0);
         END IF;
 
         -- Inserção do snapshot imutável do item (Venda histórica não fabrica cost_amount/profit_amount: armazena NULL)
@@ -387,14 +387,14 @@ BEGIN
             commission_percent, commission_amount
         ) VALUES (
             v_settlement_id, 'sale', v_sale_rec.id,
-            pg_catalog.coalesce(v_sale_rec.sale_price, 0),
+            COALESCE(v_sale_rec.sale_price, 0),
             NULL,
             NULL,
-            pg_catalog.coalesce(v_sale_rec.commission_percent, 0),
-            pg_catalog.coalesce(v_sale_rec.commission_value, 0)
+            COALESCE(v_sale_rec.commission_percent, 0),
+            COALESCE(v_sale_rec.commission_value, 0)
         );
 
-        v_total_sales_comm := v_total_sales_comm + pg_catalog.coalesce(v_sale_rec.commission_value, 0);
+        v_total_sales_comm := v_total_sales_comm + COALESCE(v_sale_rec.commission_value, 0);
         v_items_count := v_items_count + 1;
     END LOOP;
 
@@ -444,14 +444,14 @@ BEGIN
         END IF;
 
         -- Custo real apurado das peças vinculadas à OS
-        SELECT pg_catalog.coalesce(pg_catalog.sum(unit_cost * pg_catalog.coalesce(quantity, 1)), 0) INTO v_os_parts_cost
+        SELECT COALESCE(pg_catalog.sum(unit_cost * COALESCE(quantity, 1)), 0) INTO v_os_parts_cost
         FROM public.service_order_items
         WHERE service_order_id = v_os_rec.id;
 
         -- Validação estrita de habilitação e percentual de comissão de serviços do técnico
         SELECT 
-            pg_catalog.coalesce(commission_on_services, false),
-            pg_catalog.coalesce(commission_services_percent, 0)
+            COALESCE(commission_on_services, false),
+            COALESCE(commission_services_percent, 0)
         INTO v_os_comm_on_services, v_os_comm_pct
         FROM public.user_roles
         WHERE user_id = v_user_id
@@ -465,7 +465,7 @@ BEGIN
             RAISE EXCEPTION 'SERVICE_COMMISSION_PERCENT_ZERO: O técnico % possui percentual de comissão de serviços zero ou negativo (% %%)', v_user_id, v_os_comm_pct;
         END IF;
 
-        v_os_gross := pg_catalog.coalesce(v_os_rec.final_price, v_os_rec.estimated_price, 0);
+        v_os_gross := COALESCE(v_os_rec.final_price, v_os_rec.estimated_price, 0);
         v_os_profit := v_os_gross - v_os_parts_cost;
 
         -- Validação estrita de margem/lucro individual: deve ser estritamente positiva
