@@ -34,6 +34,7 @@ import { OSCard } from "@/components/features/os/OSCard";
 import { OSFormModal } from "@/components/features/os/OSFormModal";
 import { OSDetailModal } from "@/components/features/os/OSDetailModal";
 import { OSJustificationDialog } from "@/components/features/os/OSJustificationDialog";
+import { OSFinancialConfirmDialog } from "@/components/features/os/OSFinancialConfirmDialog";
 import {
   formatCurrency,
   TERMS_TEXT,
@@ -157,8 +158,14 @@ const OrdensServico = () => {
     );
   };
 
-  const handleConfirmFinancial = async (order: any) => {
+  const [financialConfirmOpen, setFinancialConfirmOpen] = useState(false);
+  const [financialConfirmOrder, setFinancialConfirmOrder] = useState<any | null>(null);
+  const [financialMissingItems, setFinancialMissingItems] = useState<string[]>([]);
+  const [financialConfirmLoading, setFinancialConfirmLoading] = useState(false);
+
+  const executeFinancialConfirmation = async (order: any, isBypass = false) => {
     if (!user || !order) return;
+    setFinancialConfirmLoading(true);
     try {
       const { error: cashErr } = await supabase
         .from("cash_entries" as any)
@@ -183,10 +190,74 @@ const OrdensServico = () => {
         return next;
       });
 
-      toast.success(`Transações da OS #${order.order_number} confirmadas no Caixa!`);
+      if (isBypass) {
+        logAction("UPDATE_RECORD", "service_orders", order.id, null, {
+          action: "ADMIN_BYPASS_FINANCIAL_CONFIRMATION",
+          order_number: order.order_number,
+          missing_items: financialMissingItems,
+          authorized_by: user.id,
+        }, order.store_id);
+        toast.success(`OS #${order.order_number} confirmada no Caixa sob autorização de Administrador.`);
+      } else {
+        toast.success(`Transações da OS #${order.order_number} confirmadas no Caixa!`);
+      }
+
+      setFinancialConfirmOpen(false);
+      setFinancialConfirmOrder(null);
       fetchData();
     } catch (err: any) {
       toast.error("Erro ao confirmar no financeiro: " + err.message);
+    } finally {
+      setFinancialConfirmLoading(false);
+    }
+  };
+
+  const handleConfirmFinancial = async (order: any) => {
+    if (!user || !order) return;
+    try {
+      // 1. Busca dados mais atualizados da OS e de suas peças
+      const { data: freshOrder } = await supabase
+        .from("service_orders")
+        .select("id, order_number, receipt_url, store_id")
+        .eq("id", order.id)
+        .maybeSingle();
+
+      const targetOrder = freshOrder || order;
+
+      const missing: string[] = [];
+      if (!targetOrder.receipt_url) {
+        missing.push("Comprovante de pagamento do serviço");
+      }
+
+      const { data: parts } = await supabase
+        .from("service_order_items" as any)
+        .select("id, unit_cost, receipt_url, supplier_name, products(name, brand, model, parts_payment_voucher)")
+        .eq("service_order_id", targetOrder.id);
+
+      if (parts && parts.length > 0) {
+        parts.forEach((p: any) => {
+          const hasPartReceipt = p.receipt_url || p.products?.parts_payment_voucher;
+          if (!hasPartReceipt) {
+            const partName = p.products?.name || "Peça";
+            const supplier = p.supplier_name ? ` (Fornecedor: ${p.supplier_name})` : "";
+            missing.push(`Comprovante de pagamento da peça: ${partName}${supplier}`);
+          }
+        });
+      }
+
+      if (missing.length === 0) {
+        // Todos os comprovantes necessários estão presentes: qualquer usuário confirma diretamente!
+        await executeFinancialConfirmation(targetOrder, false);
+      } else {
+        // Faltam comprovantes:
+        // - Se for admin: abre diálogo para autorizar por exceção administrativa
+        // - Se for técnico/vendedor/gerente: abre diálogo bloqueando e orientando a anexar
+        setFinancialConfirmOrder(targetOrder);
+        setFinancialMissingItems(missing);
+        setFinancialConfirmOpen(true);
+      }
+    } catch (err: any) {
+      toast.error("Erro ao verificar comprovantes: " + err.message);
     }
   };
 
@@ -1115,6 +1186,17 @@ const OrdensServico = () => {
             setPendingUpdate(null);
           }
         }}
+      />
+
+      {/* Diálogo de Confirmação Financeira com Trava de Comprovantes / Permissão Admin */}
+      <OSFinancialConfirmDialog
+        open={financialConfirmOpen}
+        onOpenChange={setFinancialConfirmOpen}
+        isAdmin={isAdmin}
+        orderNumber={financialConfirmOrder?.order_number || 0}
+        missingItems={financialMissingItems}
+        onConfirmAdminBypass={() => financialConfirmOrder && executeFinancialConfirmation(financialConfirmOrder, true)}
+        loading={financialConfirmLoading}
       />
     </div>
   );
