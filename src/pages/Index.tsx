@@ -50,6 +50,11 @@ const getPeriodDates = (period: string, customStart: string, customEnd: string) 
       end: customEnd ? new Date(customEnd + "T23:59:59").toISOString() : now.toISOString(),
     };
   }
+  if (period === "today") {
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { start: startOfDay.toISOString(), end: endOfDay.toISOString() };
+  }
   if (period === "week") { const d = new Date(now); d.setDate(d.getDate() - 7); return { start: d.toISOString(), end: now.toISOString() }; }
   if (period === "month") return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), end: now.toISOString() };
   if (period === "quarter") { const q = Math.floor(now.getMonth() / 3) * 3; return { start: new Date(now.getFullYear(), q, 1).toISOString(), end: now.toISOString() }; }
@@ -465,6 +470,7 @@ const Dashboard = () => {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="today">Hoje</SelectItem>
                 <SelectItem value="week">Esta Semana</SelectItem>
                 <SelectItem value="month">Este Mês</SelectItem>
                 <SelectItem value="quarter">Trimestre</SelectItem>
@@ -534,7 +540,9 @@ const Dashboard = () => {
             navigate("/ordens-servico");
           }}
           periodLabel={
-            period === "week"
+            period === "today"
+              ? "Hoje"
+              : period === "week"
               ? "Esta Semana"
               : period === "month"
               ? "Este Mês"

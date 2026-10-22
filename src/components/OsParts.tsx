@@ -230,45 +230,39 @@ export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
       const resolvedSupplierId = (!newPart.supplier_id || newPart.supplier_id === "none") ? null : newPart.supplier_id;
       const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
 
-      // 2. Insert product into stock with status=sold (keeps history, not phantom)
-      const { data: prodData, error: prodError } = await supabase
-        .from("products")
-        .insert({
-          store_id: storeId,
-          name: newPart.name,
-          brand: newPart.brand || "Genérico",
-          model: newPart.model || newPart.name,
-          cost_price: costPrice,
-          sale_price: salePrice,
-          status: "sold",           // Already used — not going through stock flow
-          product_type: "peca",
-          condition: "new",
-          created_by: user.id,
-          supplier_id: resolvedSupplierId,
-          supplier_name: supplierName,
-          parts_payment_voucher: receiptUrl || null,
-        } as any)
-        .select()
-        .single();
+      // 2. Inserção atômica via RPC: produto + service_order_items na mesma transação
+      const { error: rpcError } = await (supabase.rpc as any)(
+        "add_service_order_custom_part",
+        {
+          p_service_order_id: orderId,
+          p_name: newPart.name,
+          p_brand: newPart.brand || "Genérico",
+          p_model: newPart.model || newPart.name,
+          p_cost_price: costPrice,
+          p_sale_price: salePrice,
+          p_supplier_id: resolvedSupplierId,
+          p_supplier_name: supplierName,
+          p_receipt_url: receiptUrl || null,
+          p_supplier_order_receipt_url: orderReceiptUrl || null,
+        }
+      );
 
-      if (prodError) throw prodError;
-
-      // 3. Insert into service_order_items with supplier and both receipt types
-      const { error: itemError } = await supabase
-        .from("service_order_items" as any)
-        .insert({
-          service_order_id: orderId,
-          product_id: (prodData as any).id,
-          quantity: 1,
-          unit_price: salePrice,
-          unit_cost: costPrice,
-          supplier_id: resolvedSupplierId,
-          supplier_name: supplierName,
-          receipt_url: receiptUrl || null,
-          supplier_order_receipt_url: orderReceiptUrl || null,
-        });
-
-      if (itemError) throw itemError;
+      if (rpcError) {
+        // Se a transação falhou, limpa comprovantes recém-enviados
+        const cleanupPaths: string[] = [];
+        if (receiptUrl) {
+          const p1 = extractStoragePath(receiptUrl);
+          if (p1) cleanupPaths.push(p1);
+        }
+        if (orderReceiptUrl) {
+          const p2 = extractStoragePath(orderReceiptUrl);
+          if (p2) cleanupPaths.push(p2);
+        }
+        if (cleanupPaths.length > 0) {
+          await supabase.storage.from("comprovantes").remove(cleanupPaths);
+        }
+        throw rpcError;
+      }
 
       // 4. Automatic cash out and transaction entry
       let { data: register } = await supabase

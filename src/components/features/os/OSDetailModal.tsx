@@ -49,6 +49,7 @@ interface OSDetailModalProps {
   profileMap: Map<string, string>;
   profiles: Tables<"profiles">[];
   isAdmin: boolean;
+  userRole?: string | null;
   updateForm: {
     final_price: string;
     technician_id: string;
@@ -93,6 +94,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   profileMap,
   profiles,
   isAdmin,
+  userRole,
   updateForm,
   setUpdateForm,
   receiptFile,
@@ -452,8 +454,11 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                       />
                     </div>
                     <div className="space-y-1.5 col-span-2">
-                      <Label className="text-xs">Técnico Responsável</Label>
+                      <Label className="text-xs">
+                        Técnico Responsável {userRole === "vendedor" && <span className="text-[10px] text-muted-foreground font-normal">(apenas admin/gerente/técnico podem alterar)</span>}
+                      </Label>
                       <Select
+                        disabled={userRole === "vendedor"}
                         value={updateForm.technician_id || "none"}
                         onValueChange={(v) =>
                           setUpdateForm((f: any) => ({ ...f, technician_id: v }))
@@ -474,13 +479,15 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="pt-2">
-                    <OsChecklist
-                      title="Checklist de Saída (Testes Pós-Reparo)"
-                      data={updateForm.exit_checklist}
-                      onChange={(d) => setUpdateForm({ ...updateForm, exit_checklist: d })}
-                    />
-                  </div>
+                  {userRole !== "vendedor" && (
+                    <div className="pt-2">
+                      <OsChecklist
+                        title="Checklist de Saída (Testes Pós-Reparo)"
+                        data={updateForm.exit_checklist}
+                        onChange={(d) => setUpdateForm({ ...updateForm, exit_checklist: d })}
+                      />
+                    </div>
+                  )}
 
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
                     Formas de Pagamento Recebidas

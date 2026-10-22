@@ -286,6 +286,14 @@ const OrdensServico = () => {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Técnico logado vem como técnico responsável por padrão ao abrir o formulário de nova OS
+  // (continua podendo trocar para outro técnico ou "Nenhum" no select).
+  useEffect(() => {
+    if (dialogOpen && userRole === "tecnico" && user?.id) {
+      setForm(prev => (prev.technician_id ? prev : { ...prev, technician_id: user.id }));
+    }
+  }, [dialogOpen, userRole, user?.id]);
+
   const storeMap = new Map<string, string>(stores.map((s) => [s.id, s.name]));
   const profileMap = new Map<string, string>(profiles.map((p) => [p.user_id, p.display_name ?? ""]));
 
@@ -455,11 +463,22 @@ const OrdensServico = () => {
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (newStatus === "ready") updates.completed_at = new Date().toISOString();
 
-    const { error } = await supabase.from("service_orders").update(updates).eq("id", orderId);
+    const { data: updatedRows, error } = await supabase
+      .from("service_orders")
+      .update(updates)
+      .eq("id", orderId)
+      .select("id");
+
     if (error) { 
-      toast.error("Erro ao atualizar status"); 
+      toast.error("Erro ao atualizar status: " + error.message); 
       isSubmitting.current = false;
       return; 
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      toast.error("Sem permissão para alterar o status desta OS.");
+      isSubmitting.current = false;
+      return;
     }
 
     const order = orders.find(o => o.id === orderId);
@@ -645,19 +664,25 @@ const OrdensServico = () => {
     if (!updateForm.justification) { toast.error("Informe o motivo da alteração!"); return; }
     setLoading(true);
 
+    const isVendedor = userRole === "vendedor";
     const updates: any = {};
     if (updateForm.final_price) updates.final_price = parseFloat(updateForm.final_price);
-    const techResolution = resolveTechnicianIdOnUpdate(updateForm.technician_id, detailOrder.technician_id);
-    if (techResolution.shouldUpdate) {
-      updates.technician_id = techResolution.value;
+
+    // Vendedor não pode alterar técnico, checklist nem garantia
+    if (!isVendedor) {
+      const techResolution = resolveTechnicianIdOnUpdate(updateForm.technician_id, detailOrder.technician_id);
+      if (techResolution.shouldUpdate) {
+        updates.technician_id = techResolution.value;
+      }
+      updates.exit_checklist = updateForm.exit_checklist;
+      if (updateForm.warranty_end_date) updates.warranty_end_date = new Date(updateForm.warranty_end_date).toISOString();
     }
+
     if (updateForm.payment_cash !== "") updates.payment_cash = parseFloat(updateForm.payment_cash) || 0;
     if (updateForm.payment_card !== "") updates.payment_card = parseFloat(updateForm.payment_card) || 0;
     if (updateForm.payment_pix !== "") updates.payment_pix = parseFloat(updateForm.payment_pix) || 0;
     if (updateForm.payment_other !== "") updates.payment_other = parseFloat(updateForm.payment_other) || 0;
     if (updateForm.payment_notes) updates.payment_notes = updateForm.payment_notes;
-    updates.exit_checklist = updateForm.exit_checklist;
-    if (updateForm.warranty_end_date) updates.warranty_end_date = new Date(updateForm.warranty_end_date).toISOString();
     
     updates.receipt_url = existingReceiptUrl;
 
@@ -666,10 +691,25 @@ const OrdensServico = () => {
       if (url) updates.receipt_url = url;
     }
 
-    const { error } = await supabase.from("service_orders").update(updates).eq("id", detailOrder.id);
-    if (error) { toast.error(error.message); }
-    else {
-      toast.success("Serviço atualizado!");
+    const { data: updatedRows, error } = await supabase
+      .from("service_orders")
+      .update(updates)
+      .eq("id", detailOrder.id)
+      .select("id");
+
+    if (error) { 
+      toast.error(error.message); 
+      setLoading(false);
+      return;
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      toast.error("Sem permissão para atualizar esta OS ou nenhuma linha foi modificada.");
+      setLoading(false);
+      return;
+    }
+
+    toast.success("Serviço atualizado!");
       if (updates.receipt_url) {
         await supabase
           .from("cash_entries" as any)
@@ -700,7 +740,6 @@ const OrdensServico = () => {
       setDetailOrder(updated);
       fetchData();
       logAction("UPDATE_RECORD", "service_orders", detailOrder.id, null, { ...updates, justification: updateForm.justification }, detailOrder.store_id);
-    }
     setLoading(false);
   };
 
@@ -1146,6 +1185,7 @@ const OrdensServico = () => {
         profileMap={profileMap}
         profiles={profiles}
         isAdmin={isAdmin}
+        userRole={userRole}
         updateForm={updateForm}
         setUpdateForm={setUpdateForm}
         receiptFile={receiptFile}
