@@ -11,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, Package, ArrowRightLeft, AlertTriangle, Wrench, Pencil, Trash2 } from "lucide-react";
+import { DeviceScreenScanner, ScannedDeviceData } from "@/components/features/ai/DeviceScreenScanner";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela", "Troca de Bateria", "Conector de Carga",
@@ -76,8 +77,39 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-            <DialogHeader>
+            <DialogHeader className="flex flex-row items-center justify-between pb-2 border-b">
               <DialogTitle className="font-display">Cadastrar Aparelho</DialogTitle>
+              <DeviceScreenScanner
+                onScanComplete={(scanned: ScannedDeviceData) => {
+                  setForm((prev) => {
+                    const brandLower = (scanned.brand || "").toLowerCase();
+                    let normalizedBrand = prev.brand;
+                    if (brandLower.includes("apple") || brandLower.includes("iphone")) normalizedBrand = "iPhone";
+                    else if (brandLower.includes("samsung")) normalizedBrand = "Samsung";
+                    else if (brandLower.includes("xiaomi") || brandLower.includes("redmi") || brandLower.includes("poco")) normalizedBrand = "Xiaomi";
+                    else if (brandLower.includes("moto")) normalizedBrand = "Motorola";
+                    else if (scanned.brand) normalizedBrand = "Outro";
+
+                    const capacity = scanned.capacity || prev.capacity;
+                    const modelName = scanned.model || "";
+                    const modelCode = scanned.model_number || prev.model;
+                    const autoName = modelName
+                      ? `${modelName}${capacity ? ` ${capacity}GB` : ""}`
+                      : prev.name;
+
+                    return {
+                      ...prev,
+                      name: autoName || prev.name,
+                      brand: normalizedBrand,
+                      model: modelCode || (modelName ? modelName : prev.model),
+                      capacity: capacity,
+                      color: scanned.color || prev.color,
+                      battery_percentage: scanned.battery_percentage || prev.battery_percentage,
+                      imei: scanned.imei || prev.imei,
+                    };
+                  });
+                }}
+              />
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">

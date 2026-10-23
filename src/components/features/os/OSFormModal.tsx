@@ -11,6 +11,7 @@ import { Plus, User, Phone, Wrench } from "lucide-react";
 import SignatureCanvas from "@/components/SignatureCanvas";
 import { AndroidPatternLock } from "@/components/AndroidPatternLock";
 import { OsChecklist } from "@/components/OsChecklist";
+import { DeviceScreenScanner } from "@/components/features/ai/DeviceScreenScanner";
 
 const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condições descritas nesta OS.
 2. A loja não se responsabiliza por dados contidos no aparelho. Recomenda-se backup prévio.
@@ -96,9 +97,22 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
 
           {/* Aparelho */}
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-              <Phone className="h-3 w-3" /> Dados do Aparelho
-            </p>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <Phone className="h-3 w-3" /> Dados do Aparelho
+              </p>
+              <DeviceScreenScanner
+                onScanComplete={(scanned) => {
+                  setForm((prev: any) => ({
+                    ...prev,
+                    device_brand: scanned.brand || prev.device_brand,
+                    device_model: scanned.model || prev.device_model,
+                    device_imei: scanned.imei || prev.device_imei,
+                    device_color: scanned.color || prev.device_color,
+                  }));
+                }}
+              />
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Marca *</Label>
