@@ -103,7 +103,14 @@ export function DeviceScreenScanner({
       });
 
       if (error) {
-        throw new Error(error.message || "Erro ao comunicar com a inteligência artificial");
+        let msg = error.message;
+        try {
+          if ((error as any).context && typeof (error as any).context.json === "function") {
+            const errJson = await (error as any).context.json();
+            if (errJson?.error) msg = errJson.error;
+          }
+        } catch {}
+        throw new Error(msg || "Erro ao comunicar com a inteligência artificial");
       }
 
       const result: ScannedDeviceData = data?.result;
