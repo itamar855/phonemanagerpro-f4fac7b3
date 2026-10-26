@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { convertToWebP } from "@/utils/imageOptimizer";
-import { openComprovante, getSignedComprovanteUrl } from "@/lib/storageHelper";
+import { openComprovante, getSignedComprovanteUrl, parseReceiptUrls } from "@/lib/storageHelper";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { OsChecklist, ChecklistData, CHECKLIST_ITEMS, VISUAL_CHECKLIST_ITEMS } from "@/components/OsChecklist";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -74,6 +74,7 @@ const OrdensServico = () => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const isSubmitting = useRef(false);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptFiles, setReceiptFiles] = useState<File[]>([]);
   const [existingReceiptUrl, setExistingReceiptUrl] = useState<string | null>(null);
 
   // Update service form (shown in detail dialog)
@@ -226,15 +227,27 @@ const OrdensServico = () => {
   const checkMissingReceipts = async (orderId: string, fallbackOrder?: any) => {
     const { data: freshOrder } = await supabase
       .from("service_orders")
-      .select("id, order_number, receipt_url, store_id")
+      .select("id, order_number, receipt_url, store_id, payment_method, payment_cash, payment_card, payment_pix, payment_other")
       .eq("id", orderId)
       .maybeSingle();
 
     const targetOrder = freshOrder || fallbackOrder || orders.find(o => o.id === orderId);
 
     const missing: string[] = [];
-    if (!targetOrder?.receipt_url) {
-      missing.push("Comprovante de pagamento do serviço");
+
+    // Pagamento 100% em espécie/dinheiro não gera comprovante bancário digital
+    const cash = Number(targetOrder?.payment_cash || 0);
+    const card = Number(targetOrder?.payment_card || 0);
+    const pix = Number(targetOrder?.payment_pix || 0);
+    const other = Number(targetOrder?.payment_other || 0);
+    const defaultMethod = targetOrder?.payment_method || "dinheiro";
+
+    const is100PercentCash =
+      (cash > 0 && card === 0 && pix === 0 && other === 0) ||
+      (cash === 0 && card === 0 && pix === 0 && other === 0 && defaultMethod === "dinheiro");
+
+    if (!is100PercentCash && !targetOrder?.receipt_url) {
+      missing.push("Comprovante de pagamento do serviço (PIX / Cartão)");
     }
 
     const { data: parts } = await supabase
@@ -566,7 +579,8 @@ const OrdensServico = () => {
             const amount = Number(o.final_price || o.estimated_price || 0);
             if (amount > 0) {
               const defaultMethod = o.payment_method || "dinheiro";
-              await createPendingCashEntry(o.store_id, user.id, amount, desc, defaultMethod, o.receipt_url || null, o.id, canAutoConfirm);
+              const isCash = defaultMethod === "dinheiro";
+              await createPendingCashEntry(o.store_id, user.id, amount, desc, defaultMethod, o.receipt_url || null, o.id, canAutoConfirm || isCash);
               await supabase.from("transactions").insert({
                 type: "income",
                 category: "Manutenção",
@@ -576,12 +590,12 @@ const OrdensServico = () => {
                 store_id: o.store_id,
                 created_by: user.id,
                 expected_settlement_date: new Date().toISOString(),
-                reconciled: canAutoConfirm,
+                reconciled: canAutoConfirm || isCash,
               });
             }
           } else {
             if (cash > 0) {
-              await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro", o.receipt_url || null, o.id, canAutoConfirm);
+              await createPendingCashEntry(o.store_id, user.id, cash, desc, "dinheiro", o.receipt_url || null, o.id, true);
               await supabase.from("transactions").insert({
                 type: "income",
                 category: "Manutenção",
@@ -591,7 +605,7 @@ const OrdensServico = () => {
                 store_id: o.store_id,
                 created_by: user.id,
                 expected_settlement_date: new Date().toISOString(),
-                reconciled: canAutoConfirm,
+                reconciled: true,
               });
             }
             if (card > 0) {
@@ -697,9 +711,18 @@ const OrdensServico = () => {
     
     updates.receipt_url = existingReceiptUrl;
 
-    if (receiptFile) {
-      const url = await uploadReceipt(receiptFile);
-      if (url) updates.receipt_url = url;
+    const filesToUpload = receiptFiles.length > 0 ? receiptFiles : (receiptFile ? [receiptFile] : []);
+    if (filesToUpload.length > 0) {
+      const uploadedUrls: string[] = [];
+      for (const f of filesToUpload) {
+        const url = await uploadReceipt(f);
+        if (url) uploadedUrls.push(url);
+      }
+      if (uploadedUrls.length > 0) {
+        const existingList = parseReceiptUrls(existingReceiptUrl);
+        const combined = [...existingList, ...uploadedUrls];
+        updates.receipt_url = combined.length === 1 ? combined[0] : JSON.stringify(combined);
+      }
     }
 
     const { data: updatedRows, error } = await supabase
@@ -963,6 +986,9 @@ const OrdensServico = () => {
   // Preenche updateForm quando abre o detail
   const openDetail = (order: any) => {
     setDetailOrder(order);
+    setReceiptFile(null);
+    setReceiptFiles([]);
+    setExistingReceiptUrl(order.receipt_url || null);
     setUpdateForm({
       final_price: order.final_price ? String(order.final_price) : "",
       technician_id: order.technician_id ?? "none",
@@ -984,10 +1010,23 @@ const OrdensServico = () => {
   return (
     <div className="space-y-4">
       {/* Hidden file inputs */}
-      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) setReceiptFile(e.target.files[0]); e.target.value = ""; }} />
+      <input ref={fileInputRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
+        onChange={e => {
+          const files = Array.from(e.target.files || []);
+          if (files.length > 0) {
+            setReceiptFiles(prev => [...prev, ...files]);
+            setReceiptFile(files[0]);
+          }
+          e.target.value = "";
+        }} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) setReceiptFile(e.target.files[0]); e.target.value = ""; }} />
+        onChange={e => {
+          if (e.target.files?.[0]) {
+            setReceiptFiles(prev => [...prev, e.target.files![0]]);
+            setReceiptFile(e.target.files[0]);
+          }
+          e.target.value = "";
+        }} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -1201,6 +1240,8 @@ const OrdensServico = () => {
         setUpdateForm={setUpdateForm}
         receiptFile={receiptFile}
         setReceiptFile={setReceiptFile}
+        receiptFiles={receiptFiles}
+        setReceiptFiles={setReceiptFiles}
         existingReceiptUrl={existingReceiptUrl}
         setExistingReceiptUrl={setExistingReceiptUrl}
         cameraInputRef={cameraInputRef}

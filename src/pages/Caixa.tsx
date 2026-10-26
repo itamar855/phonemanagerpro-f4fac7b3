@@ -75,6 +75,7 @@ const Caixa = () => {
   const [sangriaForm, setSangriaForm] = useState({ amount: "", description: "" });
   const [confirmEntry, setConfirmEntry] = useState<CashEntry | null>(null);
   const [confirmFile, setConfirmFile] = useState<File | null>(null);
+  const [confirmFiles, setConfirmFiles] = useState<File[]>([]);
   const [confirmOrderFile, setConfirmOrderFile] = useState<File | null>(null);
   const [justification, setJustification] = useState("");
   const [pendingAction, setPendingAction] = useState<{type: "delete" | "unconfirm" | "reopen", id: string} | null>(null);
@@ -386,7 +387,10 @@ const Caixa = () => {
   const handleFileSelect = (file: File) => {
     if (activeTarget === "open")    setOpenForm(f => ({ ...f, receipt: file }));
     if (activeTarget === "close")   setCloseForm(f => ({ ...f, receipt: file }));
-    if (activeTarget === "confirm") setConfirmFile(file);
+    if (activeTarget === "confirm") {
+      setConfirmFile(file);
+      setConfirmFiles(prev => [...prev, file]);
+    }
   };
 
   const confirmedEntries = entries.filter(e => e.confirmed === true);
@@ -779,6 +783,7 @@ const Caixa = () => {
     if (!entry.confirmed) {
       setConfirmEntry(entry);
       setConfirmFile(null);
+      setConfirmFiles([]);
       setConfirmOrderFile(null);
     }
   };
@@ -786,26 +791,55 @@ const Caixa = () => {
   const openConfirmDialog = (entry: CashEntry) => {
     setConfirmEntry(entry);
     setConfirmFile(null);
+    setConfirmFiles([]);
     setConfirmOrderFile(null);
     setConfirmDialog(true);
   };
 
   const handleConfirmEntry = async (fromDetailDialog = false) => {
-    if (!confirmEntry || !confirmFile) return;
+    if (!confirmEntry) return;
+    const isCash = confirmEntry.payment_method === "dinheiro";
+    const filesToUpload = confirmFiles.length > 0 ? confirmFiles : (confirmFile ? [confirmFile] : []);
+
+    // Se não for dinheiro em espécie, é obrigatório anexar comprovante
+    if (!isCash && filesToUpload.length === 0) {
+      toast.error("Anexe pelo menos um comprovante para confirmar este lançamento!");
+      return;
+    }
+
     setLoading(true);
     const confirmStoreId = (confirmEntry as any).store_id || activeStoreId;
-    const url = await uploadReceipt(confirmFile, `${confirmStoreId}/confirmacao/${confirmEntry.id}-${Date.now()}`);
+
+    let finalReceiptUrl: string | null = null;
+    if (filesToUpload.length > 0) {
+      const uploadedUrls: string[] = [];
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const f = filesToUpload[i];
+        const u = await uploadReceipt(f, `${confirmStoreId}/confirmacao/${confirmEntry.id}-${Date.now()}-${i}`);
+        if (u) uploadedUrls.push(u);
+      }
+      if (uploadedUrls.length === 1) {
+        finalReceiptUrl = uploadedUrls[0];
+      } else if (uploadedUrls.length > 1) {
+        finalReceiptUrl = JSON.stringify(uploadedUrls);
+      }
+    }
+
     let orderUrl: string | null = null;
     if (confirmOrderFile) {
       orderUrl = await uploadReceipt(confirmOrderFile, `${confirmStoreId}/pedido-confirmacao/${confirmEntry.id}-${Date.now()}`);
     }
-    if (url) {
-      await supabase.from("cash_entries" as any).update({
-        confirmed: true,
-        receipt_url: url,
-        ...(orderUrl ? { supplier_order_receipt_url: orderUrl } : {}),
-      }).eq("id", confirmEntry.id);
-      toast.success("Confirmado!");
+
+    const { error: updateErr } = await supabase.from("cash_entries" as any).update({
+      confirmed: true,
+      ...(finalReceiptUrl ? { receipt_url: finalReceiptUrl } : {}),
+      ...(orderUrl ? { supplier_order_receipt_url: orderUrl } : {}),
+    }).eq("id", confirmEntry.id);
+
+    if (updateErr) {
+      toast.error("Erro ao confirmar lançamento: " + updateErr.message);
+    } else {
+      toast.success("Confirmado com sucesso!");
       if (fromDetailDialog) {
         setEntryDetailDialog(false);
         setSelectedEntry(null);
@@ -868,10 +902,31 @@ const Caixa = () => {
 
   return (
     <div className="space-y-4">
-      <input ref={fileInputRef} type="file" accept="image/*,application/pdf" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); e.target.value = ""; }} />
+      <input ref={fileInputRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
+        onChange={e => {
+          const files = Array.from(e.target.files || []);
+          if (files.length > 0) {
+            if (activeTarget === "confirm") {
+              setConfirmFiles(prev => [...prev, ...files]);
+              setConfirmFile(files[0]);
+            } else {
+              handleFileSelect(files[0]);
+            }
+          }
+          e.target.value = "";
+        }} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-        onChange={e => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); e.target.value = ""; }} />
+        onChange={e => {
+          if (e.target.files?.[0]) {
+            if (activeTarget === "confirm") {
+              setConfirmFiles(prev => [...prev, e.target.files![0]]);
+              setConfirmFile(e.target.files[0]);
+            } else {
+              handleFileSelect(e.target.files[0]);
+            }
+          }
+          e.target.value = "";
+        }} />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -1167,6 +1222,8 @@ const Caixa = () => {
         confirmEntry={confirmEntry}
         confirmFile={confirmFile}
         setConfirmFile={setConfirmFile}
+        confirmFiles={confirmFiles}
+        setConfirmFiles={setConfirmFiles}
         confirmOrderFile={confirmOrderFile}
         setConfirmOrderFile={setConfirmOrderFile}
         handleConfirmEntry={handleConfirmEntry}
@@ -1226,6 +1283,8 @@ const Caixa = () => {
         loadingLinkedOrder={loadingLinkedOrder}
         confirmFile={confirmFile}
         setConfirmFile={setConfirmFile}
+        confirmFiles={confirmFiles}
+        setConfirmFiles={setConfirmFiles}
         confirmOrderFile={confirmOrderFile}
         setConfirmOrderFile={setConfirmOrderFile}
         handleConfirmEntry={handleConfirmEntry}

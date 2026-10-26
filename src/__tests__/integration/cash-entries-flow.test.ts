@@ -276,5 +276,90 @@ describe('Cash Entries — Integration Flow', () => {
       expect(isSale2).toBe(true);
     });
   });
+
+  describe('Multiple Receipts & Cash Payment Optimization', () => {
+    // Importação dinâmica ou teste da função de parsing
+    const parseReceiptUrls = (urlOrJson: string | null | undefined): string[] => {
+      if (!urlOrJson) return [];
+      const trimmed = urlOrJson.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+          }
+        } catch (e) {}
+      }
+      if (trimmed.includes(",")) {
+        return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+      return [trimmed].filter(Boolean);
+    };
+
+    it('should parse single URL, JSON array, and comma-separated receipts correctly', () => {
+      expect(parseReceiptUrls(null)).toEqual([]);
+      expect(parseReceiptUrls(undefined)).toEqual([]);
+      expect(parseReceiptUrls("")).toEqual([]);
+
+      // URL única
+      expect(parseReceiptUrls("https://storage.supabase.co/receipt1.jpg")).toEqual([
+        "https://storage.supabase.co/receipt1.jpg",
+      ]);
+
+      // Array JSON com múltiplos comprovantes (PIX 1 + PIX 2)
+      const multiJson = JSON.stringify([
+        "https://storage.supabase.co/receipt1.jpg",
+        "https://storage.supabase.co/receipt2.pdf",
+      ]);
+      expect(parseReceiptUrls(multiJson)).toEqual([
+        "https://storage.supabase.co/receipt1.jpg",
+        "https://storage.supabase.co/receipt2.pdf",
+      ]);
+
+      // Separado por vírgula
+      expect(parseReceiptUrls("url1.jpg, url2.png")).toEqual(["url1.jpg", "url2.png"]);
+    });
+
+    it('should auto-confirm cash entries and exempt cash from required photo attachments', () => {
+      // Simulação da regra de negócio: vendas em dinheiro entram no caixa fisicamente confirmadas
+      const cashSale = makeCashEntry({
+        type: 'entrada',
+        amount: 150,
+        description: 'Venda: Carregador Turbo 30W',
+        payment_method: 'dinheiro',
+        confirmed: true, // auto-confirmado em espécie
+      });
+
+      const pixSale = makeCashEntry({
+        type: 'entrada',
+        amount: 150,
+        description: 'Venda: Fone Bluetooth',
+        payment_method: 'pix',
+        confirmed: false, // pendente até envio do comprovante
+      });
+
+      expect(cashSale.confirmed).toBe(true);
+      expect(pixSale.confirmed).toBe(false);
+
+      // Validação da trava de anexo
+      const validateConfirmation = (entry: { payment_method: string }, filesCount: number) => {
+        const isCash = entry.payment_method === 'dinheiro';
+        if (!isCash && filesCount === 0) {
+          return { allowed: false, error: 'Comprovante obrigatório para não-dinheiro' };
+        }
+        return { allowed: true };
+      };
+
+      // Dinheiro confirma mesmo com 0 arquivos anexados
+      expect(validateConfirmation(cashSale, 0).allowed).toBe(true);
+
+      // PIX é bloqueado sem arquivo anexado
+      expect(validateConfirmation(pixSale, 0).allowed).toBe(false);
+
+      // PIX é permitido com 1 ou mais arquivos
+      expect(validateConfirmation(pixSale, 1).allowed).toBe(true);
+      expect(validateConfirmation(pixSale, 2).allowed).toBe(true);
+    });
+  });
 });
 

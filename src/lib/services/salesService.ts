@@ -18,7 +18,16 @@ export const formatDescription = (desc: string | null) => {
   return desc;
 };
 
-export const createPendingCashEntry = async (storeId: string | null, userId: string, amount: number, description: string, paymentMethod: string, retroDate?: string, referenceKey?: string) => {
+export const createPendingCashEntry = async (
+  storeId: string | null,
+  userId: string,
+  amount: number,
+  description: string,
+  paymentMethod: string,
+  retroDate?: string,
+  referenceKey?: string,
+  autoConfirm?: boolean
+) => {
   let query = supabase
     .from("cash_registers" as any)
     .select("id, store_id")
@@ -57,10 +66,13 @@ export const createPendingCashEntry = async (storeId: string | null, userId: str
 
   if (registerId) {
     const actualStoreId = (register as any)?.store_id || (storeId !== "all" ? storeId : null);
+    const isCash = paymentMethod === "dinheiro";
+    const isConfirmed = autoConfirm !== undefined ? Boolean(autoConfirm) : isCash;
+
     const { error: insertError } = await supabase.from("cash_entries" as any).insert({
       cash_register_id: registerId, store_id: actualStoreId,
       type: "entrada", amount, description,
-      payment_method: paymentMethod, receipt_url: null, confirmed: false, created_by: userId,
+      payment_method: paymentMethod, receipt_url: null, confirmed: isConfirmed, created_by: userId,
       reference_id: referenceKey || null,
       ...(retroDate ? { created_at: new Date(retroDate + "T12:00:00").toISOString() } : {}),
     });

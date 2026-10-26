@@ -12,7 +12,7 @@ import {
   CashEntry, CashRegister, formatCurrency, getMistoLabel,
   paymentLabels, statusConfig
 } from "./types";
-import { openComprovante } from "@/lib/storageHelper";
+import { openComprovante, parseReceiptUrls } from "@/lib/storageHelper";
 
 interface CashEntryDetailModalProps {
   entryDetailDialog: boolean;
@@ -25,6 +25,8 @@ interface CashEntryDetailModalProps {
 
   confirmFile: File | null;
   setConfirmFile: (file: File | null) => void;
+  confirmFiles?: File[];
+  setConfirmFiles?: React.Dispatch<React.SetStateAction<File[]>> | ((files: File[]) => void);
   confirmOrderFile: File | null;
   setConfirmOrderFile: (file: File | null) => void;
   handleConfirmEntry: (fromDetailModal: boolean) => Promise<void>;
@@ -54,6 +56,8 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
 
   confirmFile,
   setConfirmFile,
+  confirmFiles,
+  setConfirmFiles,
   confirmOrderFile,
   setConfirmOrderFile,
   handleConfirmEntry,
@@ -333,20 +337,27 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                   </p>
 
                   <div className="space-y-1.5">
-                    {/* Comprovante de Pagamento do Serviço */}
-                    {(selectedEntry.receipt_url || linkedServiceOrder?.receipt_url) && (
-                      <button
-                        type="button"
-                        onClick={(e) => openComprovante(selectedEntry.receipt_url || linkedServiceOrder?.receipt_url, e)}
-                        className="w-full flex items-center justify-between text-xs text-primary font-semibold bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg hover:bg-primary/20 transition-all cursor-pointer text-left"
-                      >
-                        <span className="flex items-center gap-2">
-                          <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                          Comprovante de Pagamento do Serviço
-                        </span>
-                        <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
-                      </button>
-                    )}
+                    {/* Comprovante(s) de Pagamento do Serviço / Venda */}
+                    {(() => {
+                      const rawReceipt = selectedEntry.receipt_url || linkedServiceOrder?.receipt_url;
+                      if (!rawReceipt) return null;
+                      const urls = parseReceiptUrls(rawReceipt);
+                      if (urls.length === 0) return null;
+                      return urls.map((url, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={(e) => openComprovante(url, e)}
+                          className="w-full flex items-center justify-between text-xs text-primary font-semibold bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg hover:bg-primary/20 transition-all cursor-pointer text-left"
+                        >
+                          <span className="flex items-center gap-2">
+                            <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                            Comprovante de Pagamento {urls.length > 1 ? `#${idx + 1}` : ""}
+                          </span>
+                          <ArrowUpRight className="h-3.5 w-3.5 text-primary" />
+                        </button>
+                      ));
+                    })()}
 
                     {/* Comprovante do Pedido ao Fornecedor do Lançamento */}
                     {(selectedEntry as any).supplier_order_receipt_url && (
@@ -404,44 +415,70 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
               )}
 
               {/* Seção de confirmação embutida — só para pendentes */}
-              {!selectedEntry.confirmed && (
-                <div className="space-y-3 border border-orange-500/30 bg-orange-500/5 rounded-lg p-3">
-                  <p className="text-[10px] uppercase font-semibold text-orange-500 tracking-wide flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Confirmar este lançamento
-                  </p>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1">
-                      <CreditCard className="h-3 w-3 text-primary" /> Comprovante de Pagamento{" "}
-                      <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      className="h-8 text-xs"
-                      onChange={(e) => setConfirmFile(e.target.files?.[0] || null)}
-                    />
+              {!selectedEntry.confirmed && (() => {
+                const isCash = selectedEntry.payment_method === "dinheiro";
+                const currentFilesCount = confirmFiles ? confirmFiles.length : (confirmFile ? 1 : 0);
+
+                return (
+                  <div className="space-y-3 border border-orange-500/30 bg-orange-500/5 rounded-lg p-3">
+                    <p className="text-[10px] uppercase font-semibold text-orange-500 tracking-wide flex items-center gap-1">
+                      <Clock className="h-3 w-3" /> Confirmar este lançamento
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <CreditCard className="h-3 w-3 text-primary" /> Comprovante de Pagamento
+                          {!isCash && <span className="text-destructive">*</span>}
+                        </span>
+                        {isCash ? (
+                          <span className="text-[10px] text-emerald-600 font-medium">
+                            (Opcional em dinheiro)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">
+                            (Permite múltiplos)
+                          </span>
+                        )}
+                      </Label>
+                      <Input
+                        type="file"
+                        multiple
+                        accept="image/*,application/pdf"
+                        className="h-8 text-xs"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (setConfirmFiles) setConfirmFiles(files);
+                          setConfirmFile(files[0] || null);
+                        }}
+                      />
+                      {confirmFiles && confirmFiles.length > 1 && (
+                        <p className="text-[10px] text-primary font-medium">
+                          {confirmFiles.length} comprovantes selecionados
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1 text-blue-500">
+                        <Truck className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor{" "}
+                        <span className="text-muted-foreground">(opcional)</span>
+                      </Label>
+                      <Input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="h-8 text-xs"
+                        onChange={(e) => setConfirmOrderFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                    <Button
+                      className="w-full h-8 text-xs"
+                      onClick={() => handleConfirmEntry(true)}
+                      disabled={loading || (!isCash && currentFilesCount === 0)}
+                    >
+                      {loading ? "Confirmando..." : "Confirmar Lançamento"}
+                    </Button>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs flex items-center gap-1 text-blue-500">
-                      <Truck className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor{" "}
-                      <span className="text-muted-foreground">(opcional)</span>
-                    </Label>
-                    <Input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      className="h-8 text-xs"
-                      onChange={(e) => setConfirmOrderFile(e.target.files?.[0] || null)}
-                    />
-                  </div>
-                  <Button
-                    className="w-full h-8 text-xs"
-                    onClick={() => handleConfirmEntry(true)}
-                    disabled={loading || !confirmFile}
-                  >
-                    {loading ? "Confirmando..." : "Confirmar Lançamento"}
-                  </Button>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </DialogContent>

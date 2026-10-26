@@ -78,6 +78,28 @@ export async function getSignedComprovanteUrl(
 }
 
 /**
+ * Analisa e extrai uma lista de URLs de comprovantes a partir de string única, JSON array ou separadas por vírgula.
+ */
+export function parseReceiptUrls(urlOrJson: string | null | undefined): string[] {
+  if (!urlOrJson) return [];
+  const trimmed = urlOrJson.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+      }
+    } catch (e) {
+      // Ignora falha de parse e segue para fallback
+    }
+  }
+  if (trimmed.includes(",")) {
+    return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return [trimmed].filter(Boolean);
+}
+
+/**
  * Abre o comprovante em nova aba de forma segura utilizando URL assinada sem bloqueio de popup.
  */
 export async function openComprovante(urlOrPath: string | null | undefined, e?: React.MouseEvent) {
@@ -87,6 +109,15 @@ export async function openComprovante(urlOrPath: string | null | undefined, e?: 
   }
   if (!urlOrPath) return;
 
+  const urls = parseReceiptUrls(urlOrPath);
+  if (urls.length === 0) return;
+
+  for (const target of urls) {
+    await openSingleComprovante(target);
+  }
+}
+
+async function openSingleComprovante(urlOrPath: string) {
   const isFullUrl =
     urlOrPath.startsWith("http://") ||
     urlOrPath.startsWith("https://") ||

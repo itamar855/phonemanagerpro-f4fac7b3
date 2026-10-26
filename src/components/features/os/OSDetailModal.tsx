@@ -34,7 +34,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
-import { openComprovante } from "@/lib/storageHelper";
+import { openComprovante, parseReceiptUrls } from "@/lib/storageHelper";
 import { OsChecklist, ChecklistData } from "@/components/OsChecklist";
 import { OsPhotoGallery } from "@/components/OsPhotoGallery";
 import { OsParts } from "@/components/OsParts";
@@ -65,6 +65,8 @@ interface OSDetailModalProps {
   setUpdateForm: React.Dispatch<React.SetStateAction<any>>;
   receiptFile: File | null;
   setReceiptFile: (f: File | null) => void;
+  receiptFiles?: File[];
+  setReceiptFiles?: React.Dispatch<React.SetStateAction<File[]>> | ((f: File[]) => void);
   existingReceiptUrl: string | null;
   setExistingReceiptUrl: (url: string | null) => void;
   cameraInputRef: React.RefObject<HTMLInputElement>;
@@ -99,6 +101,8 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   setUpdateForm,
   receiptFile,
   setReceiptFile,
+  receiptFiles,
+  setReceiptFiles,
   existingReceiptUrl,
   setExistingReceiptUrl,
   cameraInputRef,
@@ -366,19 +370,31 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                     <p className="text-muted-foreground">{detailOrder.payment_notes}</p>
                   )}
 
-                  {detailOrder.receipt_url && (
-                    <div className="mt-2 pt-2 border-t border-border/50">
-                      <a
-                        href={detailOrder.receipt_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => openComprovante(detailOrder.receipt_url, e)}
-                        className="text-[10px] text-primary underline flex items-center gap-1 font-semibold cursor-pointer"
-                      >
-                        <Receipt className="h-3 w-3" /> Ver Comprovante de Pagamento
-                      </a>
-                    </div>
-                  )}
+                  {detailOrder.receipt_url && (() => {
+                    const urls = parseReceiptUrls(detailOrder.receipt_url);
+                    if (urls.length === 0) return null;
+                    return (
+                      <div className="mt-2 pt-2 border-t border-border/50 space-y-1.5">
+                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                          Comprovante{urls.length > 1 ? `s (${urls.length})` : " de Pagamento"}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {urls.map((url, idx) => (
+                            <a
+                              key={idx}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => openComprovante(url, e)}
+                              className="text-[10px] text-primary underline flex items-center gap-1 font-semibold cursor-pointer bg-primary/5 px-2 py-1 rounded border border-primary/20 hover:bg-primary/10 transition-colors"
+                            >
+                              <Receipt className="h-3 w-3" /> Ver Comprovante {urls.length > 1 ? `#${idx + 1}` : ""}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -567,48 +583,123 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-[10px] font-semibold flex items-center gap-1">
-                      <Receipt className="h-3 w-3" /> Anexar Comprovante
-                    </Label>
-                    {receiptFile ? (
-                      <div className="flex items-center gap-2 rounded bg-primary/10 p-2 text-[10px] text-primary border border-primary/20 font-medium">
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate flex-1">{receiptFile.name}</span>
-                        <button onClick={() => setReceiptFile(null)} className="hover:underline">
-                          Remover
-                        </button>
-                      </div>
-                    ) : existingReceiptUrl ? (
-                      <div className="flex items-center gap-2 rounded bg-green-500/10 p-2 text-[10px] text-green-600 border border-green-500/20 font-medium">
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate flex-1">Comprovante já enviado</span>
-                        <button
-                          onClick={() => setExistingReceiptUrl(null)}
-                          className="text-destructive hover:underline"
-                        >
-                          Trocar
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8 text-[10px] gap-1.5"
-                          onClick={() => cameraInputRef.current?.click()}
-                        >
-                          <Camera className="h-3 w-3" /> Tirar Foto
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8 text-[10px] gap-1.5"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <Upload className="h-3 w-3" /> Galeria
-                        </Button>
-                      </div>
-                    )}
+                    {(() => {
+                      const cashVal = parseFloat(updateForm.payment_cash) || 0;
+                      const cardVal = parseFloat(updateForm.payment_card) || 0;
+                      const pixVal = parseFloat(updateForm.payment_pix) || 0;
+                      const otherVal = parseFloat(updateForm.payment_other) || 0;
+                      const isCashOnly = cashVal > 0 && cardVal === 0 && pixVal === 0 && otherVal === 0;
+                      const allAttached = (receiptFiles && receiptFiles.length > 0) ? receiptFiles : (receiptFile ? [receiptFile] : []);
+
+                      return (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-[10px] font-semibold flex items-center gap-1">
+                              <Receipt className="h-3 w-3" /> Anexar Comprovante(s)
+                            </Label>
+                            {isCashOnly ? (
+                              <span className="text-[10px] text-emerald-600 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                Dispensa foto (Dinheiro em espécie)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">
+                                Múltiplos anexos permitidos
+                              </span>
+                            )}
+                          </div>
+
+                          {allAttached.length > 0 && (
+                            <div className="space-y-1.5 rounded bg-primary/5 p-2 border border-primary/20">
+                              <div className="flex items-center justify-between text-[10px] font-medium text-primary">
+                                <span>{allAttached.length} arquivo(s) selecionado(s)</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (setReceiptFiles) setReceiptFiles([]);
+                                    if (setReceiptFile) setReceiptFile(null);
+                                  }}
+                                  className="text-destructive hover:underline"
+                                >
+                                  Limpar todos
+                                </button>
+                              </div>
+                              <div className="space-y-1 max-h-24 overflow-y-auto">
+                                {allAttached.map((file, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between gap-1 text-[10px] bg-background/80 px-2 py-1 rounded border border-border"
+                                  >
+                                    <span className="truncate flex-1 font-mono">{file.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = allAttached.filter((_, i) => i !== idx);
+                                        if (setReceiptFiles) (setReceiptFiles as any)(updated);
+                                        if (setReceiptFile) setReceiptFile(updated[0] || null);
+                                      }}
+                                      className="text-destructive text-[10px] px-1 hover:font-bold"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {existingReceiptUrl && (
+                            <div className="space-y-1 rounded bg-green-500/10 p-2 text-[10px] text-green-700 dark:text-green-400 border border-green-500/20">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 font-semibold">
+                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                  <span>Comprovante(s) já salvo(s)</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setExistingReceiptUrl(null)}
+                                  className="text-destructive hover:underline text-[10px]"
+                                >
+                                  Substituir
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {parseReceiptUrls(existingReceiptUrl).map((url, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => openComprovante(url, e)}
+                                    className="underline text-[10px] flex items-center gap-1 font-medium bg-background/60 px-1.5 py-0.5 rounded border border-green-500/30"
+                                  >
+                                    <Receipt className="h-2.5 w-2.5" /> Anexo #{idx + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 text-[10px] gap-1.5"
+                              onClick={() => cameraInputRef.current?.click()}
+                            >
+                              <Camera className="h-3 w-3" /> Tirar Foto
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 text-[10px] gap-1.5"
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              <Upload className="h-3 w-3" /> Galeria / PDF
+                            </Button>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Total pago preview */}

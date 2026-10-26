@@ -51,6 +51,9 @@ export const createPendingCashEntry = async (
 
   if (registerId) {
     const actualStoreId = (register as any)?.store_id || (storeId !== "all" ? storeId : null);
+    const isCash = paymentMethod === "dinheiro";
+    const isConfirmed = Boolean(confirmed) || isCash;
+
     const { error: insertError } = await supabase.from("cash_entries" as any).insert({
       cash_register_id: registerId,
       store_id: actualStoreId,
@@ -59,7 +62,7 @@ export const createPendingCashEntry = async (
       description,
       payment_method: paymentMethod,
       receipt_url: receiptUrl || null,
-      confirmed: Boolean(confirmed),
+      confirmed: isConfirmed,
       created_by: userId,
       reference_id: referenceId || null,
     } as any);

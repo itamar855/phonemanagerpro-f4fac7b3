@@ -22,6 +22,8 @@ interface CashActionModalsProps {
   confirmEntry: CashEntry | null;
   confirmFile: File | null;
   setConfirmFile: (file: File | null) => void;
+  confirmFiles?: File[];
+  setConfirmFiles?: React.Dispatch<React.SetStateAction<File[]>> | ((files: File[]) => void);
   confirmOrderFile: File | null;
   setConfirmOrderFile: (file: File | null) => void;
   handleConfirmEntry: (fromDetailModal: boolean) => Promise<void>;
@@ -84,6 +86,8 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
   confirmEntry,
   confirmFile,
   setConfirmFile,
+  confirmFiles,
+  setConfirmFiles,
   confirmOrderFile,
   setConfirmOrderFile,
   handleConfirmEntry,
@@ -165,33 +169,64 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
             <p className="text-xs">
               {confirmEntry?.description} - {confirmEntry && formatCurrency(Number(confirmEntry.amount))}
             </p>
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-1">
-                <CreditCard className="h-3 w-3" /> Comprovante de Pagamento (obrigatório)
-              </Label>
-              <Input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => setConfirmFile(e.target.files?.[0] || null)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs flex items-center gap-1 text-blue-500">
-                <Receipt className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor (opcional)
-              </Label>
-              <Input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => setConfirmOrderFile(e.target.files?.[0] || null)}
-              />
-            </div>
-            <Button
-              className="w-full"
-              onClick={() => handleConfirmEntry(false)}
-              disabled={loading || !confirmFile}
-            >
-              Confirmar
-            </Button>
+            {(() => {
+              const isCash = confirmEntry?.payment_method === "dinheiro";
+              const currentFilesCount = confirmFiles ? confirmFiles.length : (confirmFile ? 1 : 0);
+
+              return (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-xs flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <CreditCard className="h-3 w-3" /> Comprovante de Pagamento
+                        {!isCash && <span className="text-destructive">*</span>}
+                      </span>
+                      {isCash ? (
+                        <span className="text-[10px] text-emerald-600 font-medium">
+                          (Opcional para dinheiro em espécie)
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">
+                          (Permite múltiplos)
+                        </span>
+                      )}
+                    </Label>
+                    <Input
+                      type="file"
+                      multiple
+                      accept="image/*,application/pdf"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (setConfirmFiles) setConfirmFiles(files);
+                        setConfirmFile(files[0] || null);
+                      }}
+                    />
+                    {confirmFiles && confirmFiles.length > 1 && (
+                      <p className="text-[10px] text-primary font-medium">
+                        {confirmFiles.length} comprovantes selecionados
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs flex items-center gap-1 text-blue-500">
+                      <Receipt className="h-3 w-3" /> Comprovante do Pedido ao Fornecedor (opcional)
+                    </Label>
+                    <Input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setConfirmOrderFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => handleConfirmEntry(false)}
+                    disabled={loading || (!isCash && currentFilesCount === 0)}
+                  >
+                    {loading ? "Confirmando..." : "Confirmar"}
+                  </Button>
+                </>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
