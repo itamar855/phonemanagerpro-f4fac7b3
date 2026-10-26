@@ -135,11 +135,22 @@ const OrdensServico = () => {
     const numSet = new Set<number>();
     if (cashRes.data) {
       cashRes.data.forEach((entry: any) => {
+        const desc = entry.description || "";
+        // Ignora lançamentos que são comprovadamente PDV, Venda de aparelho, abertura ou sangria
+        if (
+          desc.startsWith("PDV:") ||
+          desc.startsWith("Venda:") ||
+          entry.type === "abertura" ||
+          entry.type === "sangria"
+        ) {
+          return;
+        }
+
         if (entry.reference_id) {
           idSet.add(entry.reference_id);
         }
-        if (entry.description) {
-          const match = entry.description.match(/OS\s*#?\s*(\d+)/i);
+        if (desc) {
+          const match = desc.match(/\bOS\s*#?\s*(\d+)\b/i);
           if (match && match[1]) {
             numSet.add(parseInt(match[1], 10));
           }

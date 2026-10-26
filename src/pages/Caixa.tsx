@@ -566,6 +566,47 @@ const Caixa = () => {
     setLoadingLinkedOrder(true);
     setLinkedServiceOrder(null);
     try {
+      const desc = entry.description || "";
+
+      // 0. Trava de segurança: Vendas de PDV, vendas de aparelhos, aberturas ou sangrias NUNCA são Ordens de Serviço
+      const isSaleOrRegisterOp =
+        desc.startsWith("PDV:") ||
+        desc.startsWith("Venda:") ||
+        entry.type === "abertura" ||
+        entry.type === "sangria";
+
+      if (isSaleOrRegisterOp) {
+        // Se for venda de PDV que foi contaminada por auto-vinculação anterior, restaura reference_id
+        if (desc.startsWith("PDV:") && (entry as any).reference_id) {
+          const { data: isOs } = await supabase
+            .from("service_orders")
+            .select("id")
+            .eq("id", (entry as any).reference_id)
+            .maybeSingle();
+
+          if (isOs) {
+            const cleanDesc = desc.replace(/\s*\[MISTO:\{.*?\}\]/, "");
+            const { data: tx } = await supabase
+              .from("transactions")
+              .select("id")
+              .like("description", `${cleanDesc}%`)
+              .limit(1)
+              .maybeSingle();
+
+            await supabase
+              .from("cash_entries" as any)
+              .update({ reference_id: tx?.id || null })
+              .eq("id", entry.id);
+
+            (entry as any).reference_id = tx?.id || null;
+          }
+        }
+
+        setLinkedServiceOrder(null);
+        setLinkedOrderItems([]);
+        return;
+      }
+
       let foundOrder: any = null;
 
       // 1. Diretamente por reference_id
@@ -579,19 +620,27 @@ const Caixa = () => {
       }
 
       // 2. Por número de OS na descrição (ex: "OS #70", "(OS #70)", "OS 70")
+      // Usa \b para evitar capturar palavras como "IOS 30", "CABOS 10", etc.
       if (!foundOrder && entry.description) {
-        const match = entry.description.match(/OS\s*#?\s*(\d+)/i);
+        const match = entry.description.match(/\bOS\s*#?\s*(\d+)\b/i);
         if (match && match[1]) {
           const orderNum = parseInt(match[1], 10);
-          const { data } = await supabase
+          let osQuery = supabase
             .from("service_orders")
             .select("*")
-            .eq("order_number", orderNum)
-            .maybeSingle();
+            .eq("order_number", orderNum);
+
+          if ((entry as any).store_id && (entry as any).store_id !== "all") {
+            osQuery = osQuery.eq("store_id", (entry as any).store_id);
+          }
+
+          const { data } = await osQuery.maybeSingle();
           if (data) {
             foundOrder = data;
-            // Auto-vincula para próximos acessos
-            supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+            // Só auto-vincula se a descrição for comprovadamente formato de OS
+            if (entry.description.startsWith("OS #") || entry.description.includes("(OS #")) {
+              supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+            }
           }
         }
       }

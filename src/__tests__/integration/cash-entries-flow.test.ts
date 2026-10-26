@@ -243,4 +243,38 @@ describe('Cash Entries — Integration Flow', () => {
       expect(shouldFilter).toBe(false);
     });
   });
+
+  describe('OS Linking & PDV Isolation (Regression Prevention)', () => {
+    it('should NEVER match accessories with "IOS 30W" as an OS number', () => {
+      const pdvDesc = "PDV: 1x CABO USB TIPO-C P/ IOS 30W (CB-50) A'GOLD";
+      const osRegex = /\bOS\s*#?\s*(\d+)\b/i;
+      const match = pdvDesc.match(osRegex);
+      expect(match).toBeNull();
+    });
+
+    it('should correctly identify legitimate OS descriptions', () => {
+      const osRegex = /\bOS\s*#?\s*(\d+)\b/i;
+      
+      const osDesc1 = "OS #30 — Troca de Tela (Jaiciel Vieira)";
+      const match1 = osDesc1.match(osRegex);
+      expect(match1).not.toBeNull();
+      expect(match1![1]).toBe("30");
+
+      const osDesc2 = "Compra de Peça (OS #42): Conector de Carga";
+      const match2 = osDesc2.match(osRegex);
+      expect(match2).not.toBeNull();
+      expect(match2![1]).toBe("42");
+    });
+
+    it('should recognize PDV and Venda descriptions as non-OS operations', () => {
+      const pdvDesc = "PDV: 1x CABO USB TIPO-C P/ IOS 30W (CB-50) A'GOLD";
+      const vendaDesc = "Venda: iPhone 12 Pro Max - Carlos";
+      const isSale1 = pdvDesc.startsWith("PDV:") || pdvDesc.startsWith("Venda:");
+      const isSale2 = vendaDesc.startsWith("PDV:") || vendaDesc.startsWith("Venda:");
+
+      expect(isSale1).toBe(true);
+      expect(isSale2).toBe(true);
+    });
+  });
 });
+
