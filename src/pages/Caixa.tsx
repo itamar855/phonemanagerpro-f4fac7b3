@@ -434,6 +434,24 @@ const Caixa = () => {
     setLoading(true);
     let receiptUrl: string | null = null;
     const targetStoreId = activeStoreId === "all" ? userStoreIds[0] : activeStoreId;
+
+    // Trava de segurança: impede abrir múltiplos caixas simultâneos para a mesma loja
+    if (targetStoreId) {
+      const { data: existingOpen } = await supabase
+        .from("cash_registers" as any)
+        .select("id, opened_at")
+        .eq("store_id", targetStoreId)
+        .eq("status", "open")
+        .limit(1)
+        .maybeSingle();
+
+      if (existingOpen) {
+        toast.error("Já existe um caixa aberto para esta loja! Encerre o caixa anterior antes de abrir um novo.");
+        setLoading(false);
+        return;
+      }
+    }
+
     if (openForm.receipt) receiptUrl = await uploadReceipt(openForm.receipt, `${targetStoreId}/abertura/${Date.now()}-${openForm.receipt.name}`);
 
     const { data: reg, error } = await supabase.from("cash_registers" as any).insert({
@@ -956,46 +974,87 @@ const Caixa = () => {
                 Nenhum caixa aberto no momento.
               </div>
             ) : (
-              allOpenRegisters.map(reg => (
-                <Card key={reg.id} className="overflow-hidden border-primary/20 hover:border-primary/40 transition-all cursor-pointer group"
-                  onClick={() => {
-                    selectedRegisterIdRef.current = reg.id;
-                    setCurrentRegister(reg);
-                    setActiveTab("current");
-                  }}>
-                  <div className="p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
-                          {reg.profiles?.display_name?.charAt(0).toUpperCase()}
+              allOpenRegisters.map(reg => {
+                const operatorName = reg.profiles?.display_name || "Operador";
+                const initial = operatorName.charAt(0).toUpperCase();
+                const openedDate = new Date(reg.opened_at);
+                const diffMs = Date.now() - openedDate.getTime();
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+                let relativeTime = "";
+                if (diffDays > 0) {
+                  relativeTime = `há ${diffDays} dia${diffDays > 1 ? "s" : ""}`;
+                } else if (diffHours > 0) {
+                  relativeTime = `há ${diffHours}h`;
+                } else {
+                  relativeTime = "hoje";
+                }
+
+                return (
+                  <Card key={reg.id} className="overflow-hidden border-primary/20 hover:border-primary/40 transition-all cursor-pointer group"
+                    onClick={() => {
+                      selectedRegisterIdRef.current = reg.id;
+                      setCurrentRegister(reg);
+                      setActiveTab("current");
+                    }}>
+                    <div className="p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                            {initial}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm tracking-tight">{operatorName}</p>
+                            <Badge variant="outline" className="text-[10px] py-0 h-4 bg-primary/5 border-primary/20">
+                              {reg.stores?.name || "Loja"}
+                            </Badge>
+                          </div>
                         </div>
+                        <div className="text-right">
+                          <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Aberto em</p>
+                          <p className="text-xs font-mono font-medium">
+                            {openedDate.toLocaleDateString("pt-BR")} às {openedDate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                          <span className="text-[10px] text-amber-500 font-semibold">{relativeTime}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-border/50">
                         <div>
-                          <p className="font-bold text-sm tracking-tight">{reg.profiles?.display_name}</p>
-                          <Badge variant="outline" className="text-[10px] py-0 h-4 bg-primary/5 border-primary/20">
-                            {reg.stores?.name}
-                          </Badge>
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">Fundo Inicial</p>
+                          <p className="font-bold text-sm">{formatCurrency(reg.opening_amount)}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px] text-destructive hover:bg-destructive/10 border-destructive/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectedRegisterIdRef.current = reg.id;
+                              setCurrentRegister(reg);
+                              setCloseForm({
+                                amount: String(reg.opening_amount || 0),
+                                note: "Fechamento pelo Administrador",
+                                reason: "Regularização de caixa",
+                                receipt: null,
+                              });
+                              setCloseDialog(true);
+                            }}
+                          >
+                            Fechar Caixa
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 text-[10px] group-hover:bg-primary group-hover:text-white">
+                            Gerenciar <ArrowUpRight className="ml-1 h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Aberto há</p>
-                        <p className="text-xs font-mono">{new Date(reg.opened_at).toLocaleTimeString()}</p>
-                      </div>
                     </div>
-                    
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50">
-                      <div>
-                        <p className="text-[10px] text-muted-foreground uppercase font-semibold">Fundo</p>
-                        <p className="font-bold text-sm">{formatCurrency(reg.opening_amount)}</p>
-                      </div>
-                      <div className="text-right">
-                         <Button variant="ghost" size="sm" className="h-7 text-[10px] group-hover:bg-primary group-hover:text-white">
-                           Gerenciar <ArrowUpRight className="ml-1 h-3 w-3" />
-                         </Button>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              ))
+                  </Card>
+                );
+              })
             )}
           </div>
         </TabsContent>

@@ -342,7 +342,7 @@ describe('Cash Entries — Integration Flow', () => {
       expect(pixSale.confirmed).toBe(false);
 
       // Validação da trava de anexo
-      const validateConfirmation = (entry: { payment_method: string }, filesCount: number) => {
+      const validateConfirmation = (entry: any, filesCount: number) => {
         const isCash = entry.payment_method === 'dinheiro';
         if (!isCash && filesCount === 0) {
           return { allowed: false, error: 'Comprovante obrigatório para não-dinheiro' };
@@ -359,6 +359,27 @@ describe('Cash Entries — Integration Flow', () => {
       // PIX é permitido com 1 ou mais arquivos
       expect(validateConfirmation(pixSale, 1).allowed).toBe(true);
       expect(validateConfirmation(pixSale, 2).allowed).toBe(true);
+    });
+
+    it('should block opening a second cash register for the same store if one is already open', () => {
+      const openRegisters = [
+        makeCashRegister({
+          id: 'reg-store-1',
+          store_id: TEST_STORE_ID,
+          status: 'open',
+        }),
+      ];
+
+      const canOpenRegister = (storeId: string) => {
+        const hasOpen = openRegisters.some(r => r.store_id === storeId && r.status === 'open');
+        return !hasOpen;
+      };
+
+      // Tentativa de abrir outro caixa na mesma loja deve ser bloqueada
+      expect(canOpenRegister(TEST_STORE_ID)).toBe(false);
+
+      // Tentativa de abrir caixa em outra loja deve ser permitida
+      expect(canOpenRegister('other-store-id')).toBe(true);
     });
   });
 });
