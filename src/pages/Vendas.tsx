@@ -1146,6 +1146,11 @@ const Vendas = () => {
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm truncate">{formatDescription(tx.description)}</p>
                         <Badge className="text-[10px] bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 shrink-0">PDV</Badge>
+                        {Number(tx.metadata?.discount) > 0 && (
+                          <Badge className="text-[10px] text-yellow-500 border border-yellow-500/30 bg-transparent shrink-0">
+                            🏷️ -{formatCurrency(Number(tx.metadata.discount))}
+                          </Badge>
+                        )}
                         {activeStoreId === "all" && (
                           <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
                             {(storeMap.get(tx.store_id) as any)?.name}
@@ -1170,7 +1175,12 @@ const Vendas = () => {
                         )}
                       </div>
                     </div>
-                    <p className="font-display font-bold text-sm text-primary shrink-0">{formatCurrency(Number(tx.amount))}</p>
+                    <div className="text-right shrink-0">
+                      <p className="font-display font-bold text-sm text-primary">{formatCurrency(Number(tx.amount))}</p>
+                      {Number(tx.metadata?.discount) > 0 && (
+                        <p className="text-[10px] text-yellow-500">-{formatCurrency(Number(tx.metadata.discount))}</p>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

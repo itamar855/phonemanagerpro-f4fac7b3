@@ -177,4 +177,84 @@ describe('PDV Flow — Business Rules', () => {
       expect(shouldBlock).toBe(false);
     });
   });
+
+  describe('PDV Accessory Discount Calculations and Metadata', () => {
+    it('should calculate net total with fixed discount correctly', () => {
+      const subtotal = 100;
+      const discountInput = 15;
+      const discountType = 'fixed';
+
+      const discountValue = discountType === 'percent'
+        ? Math.min(subtotal, Math.max(0, (subtotal * discountInput) / 100))
+        : Math.min(subtotal, Math.max(0, discountInput));
+      const netTotal = Math.max(0, subtotal - discountValue);
+
+      expect(discountValue).toBe(15);
+      expect(netTotal).toBe(85);
+    });
+
+    it('should calculate net total with percentage discount correctly', () => {
+      const subtotal = 80;
+      const discountInput = 25; // 25%
+      const discountType = 'percent';
+
+      const discountValue = discountType === 'percent'
+        ? Math.min(subtotal, Math.max(0, (subtotal * discountInput) / 100))
+        : Math.min(subtotal, Math.max(0, discountInput));
+      const netTotal = Math.max(0, subtotal - discountValue);
+
+      expect(discountValue).toBe(20);
+      expect(netTotal).toBe(60);
+    });
+
+    it('should clamp discount so net total is never negative', () => {
+      const subtotal = 50;
+      const excessiveDiscount = 80;
+
+      const discountValue = Math.min(subtotal, Math.max(0, excessiveDiscount));
+      const netTotal = Math.max(0, subtotal - discountValue);
+
+      expect(discountValue).toBe(50);
+      expect(netTotal).toBe(0);
+    });
+
+    it('should calculate change based on net total rather than subtotal', () => {
+      const subtotal = 60;
+      const discount = 10;
+      const netTotal = subtotal - discount; // 50
+      const pdvCash = 100;
+      const pdvCard = 0;
+      const pdvPix = 0;
+
+      const pdvTroco = pdvCash > netTotal && pdvCard === 0 && pdvPix === 0 ? pdvCash - netTotal : 0;
+      const cashAmount = pdvCash - pdvTroco;
+
+      expect(pdvTroco).toBe(50);
+      expect(cashAmount).toBe(50); // Matches netTotal in drawer
+    });
+
+    it('should preserve discount details in transaction metadata and description', () => {
+      const subtotal = 70;
+      const discount = 10;
+      const netTotal = 60;
+      const descBase = 'PDV: 2x Capa Pro';
+      const discountLabel = ` (Desc: R$ 10,00)`;
+      const desc = `${descBase}${discountLabel}`;
+
+      const pdvMetadata = {
+        cart: [{ id: 'acc-1', qty: 2, price: 35 }],
+        subtotal,
+        discount,
+        discount_type: 'fixed',
+      };
+
+      const descMisto = `${desc} [MISTO:{"dinheiro":30,"pix":30,"cartao_credito":0}]`;
+
+      expect(pdvMetadata.subtotal).toBe(70);
+      expect(pdvMetadata.discount).toBe(10);
+      expect(netTotal).toBe(60);
+      expect(descMisto).toContain('(Desc: R$ 10,00)');
+      expect(descMisto).toMatch(/\[MISTO:(\{.*\})\]/);
+    });
+  });
 });

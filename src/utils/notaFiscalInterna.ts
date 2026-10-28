@@ -31,6 +31,8 @@ export interface NotaFiscalData {
   produtoImei?: string;
   produtoCor?: string;
   valorVenda: number;
+  subtotal?: number;
+  desconto?: number;
   valorDinheiro?: number;
   valorCartao?: number;
   valorPix?: number;
@@ -141,6 +143,10 @@ export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<any>
   drawSectionHeader("Pagamento e Observações");
   doc.setDrawColor(...COLORS.BORDER); doc.rect(M, y, CW, 20);
   const pays: string[] = [];
+  if (data.subtotal && data.desconto && data.desconto > 0) {
+    pays.push(`SUBTOTAL: ${formatCurrency(data.subtotal)}`);
+    pays.push(`DESC: -${formatCurrency(data.desconto)}`);
+  }
   if (data.valorDinheiro) pays.push(`DINHEIRO: ${formatCurrency(data.valorDinheiro)}`);
   if (data.valorPix) pays.push(`PIX: ${formatCurrency(data.valorPix)}`);
   if (data.valorCartao) pays.push(`CARTÃO: ${formatCurrency(data.valorCartao)}`);

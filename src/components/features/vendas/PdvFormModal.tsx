@@ -1,10 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Search, Zap, FileText } from "lucide-react";
+import { Trash2, Search, Zap, FileText, Tag } from "lucide-react";
 
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };
@@ -24,7 +24,17 @@ interface PdvFormModalProps {
   pdvPayment: any;
   setPdvPayment: (payment: any) => void;
   stores: any[];
-  handlePdvSubmit: (gerarNotinha: boolean, pdvCash: number, pdvCard: number, pdvPix: number, pdvTroco: number, cartTotal: number) => void;
+  handlePdvSubmit: (
+    gerarNotinha: boolean,
+    pdvCash: number,
+    pdvCard: number,
+    pdvPix: number,
+    pdvTroco: number,
+    cartTotal: number,
+    subtotal?: number,
+    discount?: number,
+    discountType?: "fixed" | "percent"
+  ) => void;
   loading: boolean;
 }
 
@@ -49,15 +59,33 @@ export const PdvFormModal: React.FC<PdvFormModalProps> = ({
   handlePdvSubmit,
   loading
 }) => {
-  const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const [discountInput, setDiscountInput] = useState("");
+  const [discountType, setDiscountType] = useState<"fixed" | "percent">("fixed");
+
+  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const rawDiscount = parseFloat(discountInput) || 0;
+  const discountValue = discountType === "percent"
+    ? Math.min(subtotal, Math.max(0, (subtotal * rawDiscount) / 100))
+    : Math.min(subtotal, Math.max(0, rawDiscount));
+  const cartTotal = Math.max(0, subtotal - discountValue);
+
   const pdvCash = parseFloat(pdvPayment.cash) || 0;
   const pdvCard = parseFloat(pdvPayment.card) || 0;
   const pdvPix = parseFloat(pdvPayment.pix) || 0;
   const pdvRemaining = cartTotal - pdvCash - pdvCard - pdvPix;
   const pdvTroco = pdvCash > cartTotal && pdvCard === 0 && pdvPix === 0 ? pdvCash - cartTotal : 0;
 
+  const handleModalClose = (open: boolean) => {
+    setPdvOpen(open);
+    if (!open) {
+      setDiscountInput("");
+      setDiscountType("fixed");
+      resetPdv();
+    }
+  };
+
   return (
-    <Dialog open={pdvOpen} onOpenChange={o => { setPdvOpen(o); if (!o) resetPdv(); }}>
+    <Dialog open={pdvOpen} onOpenChange={handleModalClose}>
       <DialogTrigger asChild>
         <Button className="gap-2 h-10 border bg-transparent text-foreground hover:bg-muted" disabled={activeStoreId === "all"}>
           <Zap className="h-4 w-4 text-yellow-500" /> PDV Rápido
@@ -107,7 +135,67 @@ export const PdvFormModal: React.FC<PdvFormModalProps> = ({
             )}
             {cart.length > 0 && (
               <div className="space-y-3 pt-2 border-t border-border">
-                <div className="flex justify-between items-center"><span className="font-semibold">Total</span><span className="font-display font-bold text-lg text-primary">{formatCurrency(cartTotal)}</span></div>
+                {/* Resumo de Valores: Subtotal, Desconto e Total */}
+                <div className="space-y-2 bg-muted/30 p-2.5 rounded-lg border border-border/60">
+                  <div className="flex justify-between items-center text-xs text-muted-foreground">
+                    <span>Subtotal ({cart.reduce((s, i) => s + i.qty, 0)} itens)</span>
+                    <span className="font-semibold text-foreground">{formatCurrency(subtotal)}</span>
+                  </div>
+
+                  {/* Campo de Desconto */}
+                  <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <Tag className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+                      <Label className="text-[11px] font-semibold shrink-0">Desconto:</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={discountInput}
+                        onChange={e => setDiscountInput(e.target.value)}
+                        placeholder="0.00"
+                        className="h-7 text-xs flex-1 bg-background"
+                      />
+                    </div>
+                    <div className="flex rounded-md border border-border overflow-hidden shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType("fixed")}
+                        className={`px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                          discountType === "fixed"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-background text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        R$
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountType("percent")}
+                        className={`px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                          discountType === "percent"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-background text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        %
+                      </button>
+                    </div>
+                  </div>
+
+                  {discountValue > 0 && (
+                    <div className="flex justify-between items-center text-xs text-yellow-500 font-semibold">
+                      <span>Desconto {discountType === "percent" ? `(${rawDiscount}%)` : ""}</span>
+                      <span>-{formatCurrency(discountValue)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-center pt-1.5 border-t border-border/60">
+                    <span className="font-semibold text-sm">Total a Pagar</span>
+                    <span className="font-display font-bold text-lg text-primary">{formatCurrency(cartTotal)}</span>
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label className="text-xs">Loja</Label>
                   <Select value={pdvPayment.store_id} onValueChange={v => setPdvPayment({ ...pdvPayment, store_id: v })}>
@@ -138,10 +226,19 @@ export const PdvFormModal: React.FC<PdvFormModalProps> = ({
                   <span>{formatCurrency(pdvTroco > 0 ? pdvTroco : pdvRemaining)}</span>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Button className="w-full h-10 font-semibold" onClick={() => handlePdvSubmit(false, pdvCash, pdvCard, pdvPix, pdvTroco, cartTotal)} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
+                  <Button
+                    className="w-full h-10 font-semibold"
+                    onClick={() => handlePdvSubmit(false, pdvCash, pdvCard, pdvPix, pdvTroco, cartTotal, subtotal, discountValue, discountType)}
+                    disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}
+                  >
                     {loading ? "Registrando..." : `Finalizar — ${formatCurrency(cartTotal)}`}
                   </Button>
-                  <Button variant="outline" className="w-full h-10 font-semibold border-primary/50 text-primary hover:bg-primary/5" onClick={() => handlePdvSubmit(true, pdvCash, pdvCard, pdvPix, pdvTroco, cartTotal)} disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}>
+                  <Button
+                    variant="outline"
+                    className="w-full h-10 font-semibold border-primary/50 text-primary hover:bg-primary/5"
+                    onClick={() => handlePdvSubmit(true, pdvCash, pdvCard, pdvPix, pdvTroco, cartTotal, subtotal, discountValue, discountType)}
+                    disabled={loading || (Math.abs(pdvRemaining) > 0.01 && pdvTroco === 0) || !activeStoreId}
+                  >
                     <FileText className="h-4 w-4 mr-2" />
                     Finalizar e Gerar Notinha
                   </Button>

@@ -39,7 +39,17 @@ export const useCartManager = (
   
   const resetPdv = () => { setCart([]); setPdvPayment({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: activeStoreId || "" }); setAccSearch(""); };
 
-  const handlePdvSubmit = async (gerarNotinha = false, pdvCash: number, pdvCard: number, pdvPix: number, pdvTroco: number, cartTotal: number) => {
+  const handlePdvSubmit = async (
+    gerarNotinha = false,
+    pdvCash: number,
+    pdvCard: number,
+    pdvPix: number,
+    pdvTroco: number,
+    cartTotal: number,
+    subtotal?: number,
+    discount?: number,
+    discountType?: "fixed" | "percent"
+  ) => {
     if (!user || cart.length === 0 || !activeStoreId) return;
     if (isPdvSubmitting.current) return;
     
@@ -78,9 +88,15 @@ export const useCartManager = (
         if (accError) throw new Error(`Erro ao atualizar estoque de ${item.acc.name}: ${accError.message}`);
       }
 
-      const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
+      const discountLabel = discount && discount > 0 ? ` (Desc: ${formatCurrency(discount)})` : "";
+      const desc = `PDV: ${cart.map(i => `${i.qty}x ${i.acc.name}`).join(", ")}${discountLabel}${pdvPayment.customer ? ` → ${pdvPayment.customer}` : ""}`;
       let txIdForNote: string | undefined = undefined;
-      const pdvMetadata = { cart: cart.map(i => ({ id: i.acc.id, qty: i.qty })) };
+      const pdvMetadata = {
+        cart: cart.map(i => ({ id: i.acc.id, qty: i.qty, price: i.price })),
+        subtotal: subtotal ?? cartTotal,
+        discount: discount ?? 0,
+        discount_type: discountType ?? "fixed",
+      };
 
       const cashAmount = pdvCash - pdvTroco;
       const paymentsCount = [cashAmount > 0, pdvCard > 0, pdvPix > 0].filter(Boolean).length;
@@ -147,6 +163,8 @@ export const useCartManager = (
             produtoMarca: "",
             observacoes: cart.map(i => `${i.qty}x ${i.acc.name} (${formatCurrency(i.price)})`).join("\n"),
             valorVenda: cartTotal,
+            subtotal: subtotal && discount && discount > 0 ? subtotal : undefined,
+            desconto: discount && discount > 0 ? discount : undefined,
             valorDinheiro: pdvCash > 0 ? pdvCash : undefined,
             valorCartao: pdvCard > 0 ? pdvCard : undefined,
             valorPix: pdvPix > 0 ? pdvPix : undefined,
