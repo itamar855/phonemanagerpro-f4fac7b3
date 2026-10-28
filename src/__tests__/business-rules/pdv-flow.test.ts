@@ -179,29 +179,28 @@ describe('PDV Flow — Business Rules', () => {
   });
 
   describe('PDV Accessory Discount Calculations and Metadata', () => {
-    it('should calculate net total with fixed discount correctly', () => {
-      const subtotal = 100;
-      const discountInput = 15;
-      const discountType = 'fixed';
-
-      const discountValue = discountType === 'percent'
-        ? Math.min(subtotal, Math.max(0, (subtotal * discountInput) / 100))
-        : Math.min(subtotal, Math.max(0, discountInput));
+    const calculateDiscount = (
+      subtotal: number,
+      discountInput: number,
+      discountType: 'fixed' | 'percent'
+    ) => {
+      const discountValue =
+        discountType === 'percent'
+          ? Math.min(subtotal, Math.max(0, (subtotal * discountInput) / 100))
+          : Math.min(subtotal, Math.max(0, discountInput));
       const netTotal = Math.max(0, subtotal - discountValue);
+      return { discountValue, netTotal };
+    };
+
+    it('should calculate net total with fixed discount correctly', () => {
+      const { discountValue, netTotal } = calculateDiscount(100, 15, 'fixed');
 
       expect(discountValue).toBe(15);
       expect(netTotal).toBe(85);
     });
 
     it('should calculate net total with percentage discount correctly', () => {
-      const subtotal = 80;
-      const discountInput = 25; // 25%
-      const discountType = 'percent';
-
-      const discountValue = discountType === 'percent'
-        ? Math.min(subtotal, Math.max(0, (subtotal * discountInput) / 100))
-        : Math.min(subtotal, Math.max(0, discountInput));
-      const netTotal = Math.max(0, subtotal - discountValue);
+      const { discountValue, netTotal } = calculateDiscount(80, 25, 'percent');
 
       expect(discountValue).toBe(20);
       expect(netTotal).toBe(60);
