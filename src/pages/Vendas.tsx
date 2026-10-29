@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +20,7 @@ import {
   Plus, ShoppingBag, Smartphone, CreditCard, Banknote, QrCode,
   Zap, Trash2, Search, FileText, MessageCircle, User as UserIcon, UserPlus,
   ChevronDown, ChevronUp, History, Tag, Shield, Landmark, Store, AlertTriangle, Eye,
-  MapPin, Percent, CalendarDays, StickyNote, ArrowLeftRight, Wallet, RefreshCcw, Pencil,
+  MapPin, Percent, CalendarDays, StickyNote, ArrowLeftRight, Wallet, RefreshCcw, Pencil, Trophy,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
@@ -48,6 +49,7 @@ import { createPendingCashEntry, formatDescription } from "@/lib/services/salesS
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
 
 const Vendas = () => {
+  const navigate = useNavigate();
   const { user, userRole, activeStoreId, setActiveStoreId } = useAuth();
   const {
     sales, setSales,
@@ -1018,6 +1020,15 @@ const Vendas = () => {
         >
           <RefreshCcw className="h-3.5 w-3.5" />
           Limpar Cache
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5 text-xs border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 shadow-sm"
+          onClick={() => navigate("/ranking")}
+        >
+          <Trophy className="h-3.5 w-3.5 text-yellow-500" />
+          Ranking & Metas
         </Button>
       </div>
       <div className="flex justify-end gap-2">

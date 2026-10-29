@@ -17,6 +17,7 @@ import OrdensServico from "./pages/OrdensServico";
 import Equipe from "./pages/Equipe";
 import Clientes from "./pages/Clientes";
 import Relatorios from "./pages/Relatorios";
+import Ranking from "./pages/Ranking";
 import Instalar from "./pages/Instalar";
 import ResetPassword from "./pages/ResetPassword";
 import Auditoria from "./pages/Auditoria";
@@ -79,6 +80,7 @@ const App = () => (
                 <Route path="/equipe" element={<ProtectedRoute><Equipe /></ProtectedRoute>} />
                 <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
                 <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
+                <Route path="/ranking" element={<ProtectedRoute><Ranking /></ProtectedRoute>} />
                 <Route path="/caixa" element={<ProtectedRoute><Caixa /></ProtectedRoute>} />
                 <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
                 <Route path="/configuracoes-fiscais" element={<ProtectedRoute><ConfiguracoesFiscais /></ProtectedRoute>} />

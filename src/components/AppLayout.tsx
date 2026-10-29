@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Package, ArrowUpDown, ShoppingBag, Store, Landmark, PiggyBank,
   LogOut, Smartphone, Wrench, Users, Sun, Moon, UserCircle, FileText, Download, Brain, Settings, Activity, ChevronDown, Wallet, MessageSquare, ShieldCheck,
-  MoreHorizontal, X, KeyRound, ReceiptText
+  MoreHorizontal, X, KeyRound, ReceiptText, Trophy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import ChangePasswordModal from "./ChangePasswordModal";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", permission: "dashboard" },
+  { label: "Ranking & Metas", icon: Trophy, path: "/ranking" },
   { label: "Vendas", icon: ShoppingBag, path: "/vendas", permission: "vendas" },
   { label: "Estoque", icon: Package, path: "/estoque", permission: "estoque" },
   { label: "OS", icon: Wrench, path: "/ordens-servico", permission: "os" },
