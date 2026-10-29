@@ -227,7 +227,7 @@ const OrdensServico = () => {
   const checkMissingReceipts = async (orderId: string, fallbackOrder?: any) => {
     const { data: freshOrder } = await supabase
       .from("service_orders")
-      .select("id, order_number, receipt_url, store_id, payment_method, payment_cash, payment_card, payment_pix, payment_other")
+      .select("*")
       .eq("id", orderId)
       .maybeSingle();
 
@@ -547,7 +547,9 @@ const OrdensServico = () => {
       const order = freshTarget || orders.find(o => o.id === orderId);
       if (order && (order as any).store_id) {
         const o = order as any;
-        const desc = `OS #${o.order_number} — ${o.requested_service} (${o.customer_name})`;
+        const serviceName = o.requested_service || [o.device_brand, o.device_model].filter(Boolean).join(" ") || "Serviço";
+        const clientName = o.customer_name || "Cliente";
+        const desc = `OS #${o.order_number} — ${serviceName} (${clientName})`;
 
         // Pode auto-confirmar se não houver nenhuma pendência de comprovante
         const canAutoConfirm = deliveryMissing.length === 0;

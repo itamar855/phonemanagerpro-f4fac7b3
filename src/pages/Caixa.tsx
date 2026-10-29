@@ -191,7 +191,37 @@ const Caixa = () => {
          .order("created_at", { ascending: false });
        
        if (entriesError) console.error("Error fetching entries:", entriesError);
-       setEntries((entriesData as unknown as CashEntry[]) ?? []);
+       const initialEntries = (entriesData as unknown as CashEntry[]) ?? [];
+       setEntries(initialEntries);
+
+       // Auto-cura para lançamentos com "undefined" na descrição (ex: OS #97 / OS #98)
+       if (entriesData && entriesData.length > 0) {
+         entriesData.forEach(async (entry: any) => {
+           if (entry.description && entry.description.includes("undefined")) {
+             const match = entry.description.match(/\bOS\s*#?\s*(\d+)\b/i);
+             if (match && match[1]) {
+               const osNum = parseInt(match[1], 10);
+               const { data: osData } = await supabase
+                 .from("service_orders")
+                 .select("order_number, requested_service, customer_name, device_brand, device_model")
+                 .eq("order_number", osNum)
+                 .maybeSingle();
+
+               if (osData) {
+                 const sName = osData.requested_service || [osData.device_brand, osData.device_model].filter(Boolean).join(" ") || "Serviço";
+                 const cName = osData.customer_name || "Cliente";
+                 const correctedDesc = `OS #${osData.order_number} — ${sName} (${cName})`;
+
+                 await supabase.from("cash_entries" as any).update({ description: correctedDesc }).eq("id", entry.id);
+                 await supabase.from("transactions").update({ description: `${correctedDesc} [${(entry.payment_method || "dinheiro").toUpperCase()}]` })
+                   .like("description", `OS #${osData.order_number} —%undefined%`);
+
+                 setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, description: correctedDesc } : e));
+               }
+             }
+           }
+         });
+       }
     } else {
        setEntries([]);
     }

@@ -84,18 +84,26 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
           if (!open) setSelectedEntry(null);
         }}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="w-[95vw] sm:max-w-lg max-h-[90dvh] p-0 flex flex-col overflow-hidden rounded-xl border border-border shadow-2xl">
+          <DialogHeader className="p-4 sm:p-5 pb-3 border-b border-border/40 bg-muted/20 shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base">
               <Receipt className="h-5 w-5 text-primary" /> Detalhes do Lançamento
             </DialogTitle>
           </DialogHeader>
           {selectedEntry && (
-            <div className="space-y-4 py-2">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
               {/* Info principal */}
               <div className="bg-muted/30 rounded-lg p-3 space-y-2 border border-border/50">
                 <p className="font-semibold text-sm leading-snug">
-                  {(selectedEntry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "")}
+                  {(() => {
+                    const rawDesc = (selectedEntry.description || "").replace(/\s*\[MISTO:\{.*?\}\]/, "");
+                    if (rawDesc.includes("undefined") && linkedServiceOrder) {
+                      const sName = linkedServiceOrder.requested_service || [linkedServiceOrder.device_brand, linkedServiceOrder.device_model].filter(Boolean).join(" ") || "Serviço";
+                      const cName = linkedServiceOrder.customer_name || "Cliente";
+                      return `OS #${linkedServiceOrder.order_number} — ${sName} (${cName})`;
+                    }
+                    return rawDesc;
+                  })()}
                 </p>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
@@ -165,7 +173,14 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                     <div>
                       <span className="text-[10px] text-muted-foreground uppercase font-semibold block">Aparelho</span>
                       <p className="font-medium text-foreground">
-                        {linkedServiceOrder.device_brand} {linkedServiceOrder.device_model}
+                        {(() => {
+                          const brand = linkedServiceOrder.device_brand || "";
+                          const model = linkedServiceOrder.device_model || "";
+                          if (brand && model.toLowerCase().startsWith(brand.toLowerCase())) {
+                            return model;
+                          }
+                          return `${brand} ${model}`.trim() || "Aparelho";
+                        })()}
                       </p>
                       {linkedServiceOrder.device_color && (
                         <span className="text-[10px] text-muted-foreground block">
@@ -210,7 +225,15 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                       <div className="flex justify-between items-center font-bold text-foreground pb-1 border-b border-border/40">
                         <span>Valor Total do Serviço:</span>
                         <span className="text-primary font-mono text-xs">
-                          {formatCurrency(Number(linkedServiceOrder.final_price || linkedServiceOrder.estimated_price || 0))}
+                          {(() => {
+                            const sumPayments =
+                              (Number(linkedServiceOrder.payment_cash) || 0) +
+                              (Number(linkedServiceOrder.payment_card) || 0) +
+                              (Number(linkedServiceOrder.payment_pix) || 0) +
+                              (Number(linkedServiceOrder.payment_other) || 0);
+                            const finalVal = Number(linkedServiceOrder.final_price || linkedServiceOrder.estimated_price || 0) || sumPayments;
+                            return formatCurrency(finalVal);
+                          })()}
                         </span>
                       </div>
 
@@ -486,9 +509,9 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
 
       {/* Dialog Completo de Visualização da OS a partir do Caixa */}
       <Dialog open={osModalOpen} onOpenChange={setOsModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2 pr-4">
+        <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90dvh] p-0 flex flex-col overflow-hidden rounded-xl border border-border shadow-2xl">
+          <DialogHeader className="p-4 sm:p-5 pb-3 border-b border-border/40 bg-muted/20 shrink-0">
+            <DialogTitle className="flex items-center justify-between gap-2 pr-4 text-base">
               <span className="flex items-center gap-2">
                 <Wrench className="h-5 w-5 text-primary" />
                 Ordem de Serviço #{osModalOrder?.order_number}
@@ -506,7 +529,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
           </DialogHeader>
 
           {osModalOrder && (
-            <div className="space-y-4 py-1 text-xs">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 text-xs">
               {/* Header com Loja e Datas */}
               <div className="flex items-center justify-between text-muted-foreground bg-muted/30 p-2.5 rounded-lg border border-border/40">
                 <span className="flex items-center gap-1.5">

@@ -136,7 +136,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
     <>
       {/* Abrir Caixa */}
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogTitle>Abrir Caixa</DialogTitle>
           <div className="space-y-4 mt-2">
             <Label className="text-xs">Fundo inicial (R$)</Label>
@@ -163,7 +163,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
 
       {/* Confirmar Lançamento */}
       <Dialog open={confirmDialog} onOpenChange={setConfirmDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogTitle>Confirmar Lançamento</DialogTitle>
           <div className="space-y-4 mt-2">
             <p className="text-xs">
@@ -233,7 +233,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
 
       {/* Fechar Caixa */}
       <Dialog open={closeDialog} onOpenChange={setCloseDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogTitle>Fechar Caixa</DialogTitle>
           <div className="space-y-4 mt-2">
             {!isBlind && (
@@ -299,7 +299,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
 
       {/* Sangria */}
       <Dialog open={sangriaDialog} onOpenChange={setSangriaDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogTitle>Realizar Sangria</DialogTitle>
           <div className="space-y-4 mt-2">
             <div className="space-y-1.5">
@@ -333,7 +333,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
 
       {/* Novo Lançamento */}
       <Dialog open={entryDialog} onOpenChange={setEntryDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogTitle>Novo Lançamento</DialogTitle>
           <div className="space-y-4 mt-2">
             <Select
@@ -369,7 +369,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
 
       {/* Bloqueio de Fechamento */}
       <Dialog open={blockCloseDialog} onOpenChange={setBlockCloseDialog}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogTitle className="text-destructive flex items-center gap-2">
             <AlertTriangle className="h-5 w-5" /> Fechamento Bloqueado
           </DialogTitle>
@@ -399,7 +399,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
 
       {/* Justificativa de Ação (Excluir, Desconfirmar, Reabrir) */}
       <Dialog open={justDialogOpened} onOpenChange={setJustDialogOpened}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               <AlertTriangle className="h-5 w-5" /> Justificar Ação
