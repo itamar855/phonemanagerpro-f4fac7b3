@@ -141,6 +141,37 @@ const Ranking = () => {
     fetchRankingData();
   }, [fetchRankingData]);
 
+  // Sincronização em tempo real (Vendas adicionadas, alteradas ou canceladas no caixa)
+  useEffect(() => {
+    const channel = supabase
+      .channel("ranking_realtime_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sales" },
+        () => {
+          fetchRankingData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "transactions" },
+        () => {
+          fetchRankingData();
+        }
+      )
+      .subscribe();
+
+    const handleSettingsChanged = () => {
+      fetchRankingData();
+    };
+    window.addEventListener("ranking_patent_settings_changed", handleSettingsChanged);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener("ranking_patent_settings_changed", handleSettingsChanged);
+    };
+  }, [fetchRankingData]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">

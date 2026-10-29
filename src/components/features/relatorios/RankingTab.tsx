@@ -29,13 +29,25 @@ import {
   HelpCircle,
   Coins,
   Flame,
+  Settings,
+  RotateCcw,
+  SlidersHorizontal,
+  Shield,
 } from "lucide-react";
+import { toast } from "sonner";
 import { formatCurrency, exportRankingPDF, exportCSV, COLORS } from "./relatorioPdf";
 import { RankBadge, PeriodSelect, ExportBtns } from "./types";
 import {
   PATENT_CONFIGS,
   PHONE_TIERS,
   ACCESSORY_TIERS,
+  getPatentSettings,
+  savePatentSettings,
+  resetPatentSettings,
+  DEFAULT_PATENT_SETTINGS,
+  type PatentSettings,
+  type PhoneRuleTier,
+  type AccessoryRuleTier,
   type RankSellerPhone,
   type RankSellerAccessory,
   type StoreAccessoryMetrics,
@@ -156,6 +168,133 @@ export const RankingTab: React.FC<RankingTabProps> = ({
 }) => {
   const [track, setTrack] = useState<"phones" | "accessories" | "rules">("phones");
   const [dictOpen, setDictOpen] = useState(false);
+  const [adminConfigOpen, setAdminConfigOpen] = useState(false);
+
+  // Configurações customizáveis de patentes e metas
+  const [patentSettings, setPatentSettings] = useState<PatentSettings>(() => getPatentSettings());
+  const [editPhoneTiers, setEditPhoneTiers] = useState<PhoneRuleTier[]>(() => getPatentSettings().phoneTiers);
+  const [editAccessoryTiers, setEditAccessoryTiers] = useState<AccessoryRuleTier[]>(() => getPatentSettings().accessoryTiers);
+
+  React.useEffect(() => {
+    const handleChanged = () => {
+      const s = getPatentSettings();
+      setPatentSettings(s);
+      setEditPhoneTiers(s.phoneTiers);
+      setEditAccessoryTiers(s.accessoryTiers);
+    };
+    window.addEventListener("ranking_patent_settings_changed", handleChanged);
+    return () => window.removeEventListener("ranking_patent_settings_changed", handleChanged);
+  }, []);
+
+  const handleOpenAdminConfig = () => {
+    const s = getPatentSettings();
+    setEditPhoneTiers(JSON.parse(JSON.stringify(s.phoneTiers)));
+    setEditAccessoryTiers(JSON.parse(JSON.stringify(s.accessoryTiers)));
+    setAdminConfigOpen(true);
+  };
+
+  const updatePhoneTierField = (tierName: "prata" | "ouro" | "diamante", field: keyof PhoneRuleTier, value: any) => {
+    setEditPhoneTiers((prev) =>
+      prev.map((t) => (t.tier === tierName ? { ...t, [field]: value } : t))
+    );
+  };
+
+  const updateAccessoryTierField = (tierName: "prata" | "ouro" | "diamante", field: keyof AccessoryRuleTier, value: any) => {
+    setEditAccessoryTiers((prev) =>
+      prev.map((t) => (t.tier === tierName ? { ...t, [field]: value } : t))
+    );
+  };
+
+  const handleSaveAdminConfig = () => {
+    const prataPhone = editPhoneTiers.find((t) => t.tier === "prata");
+    const ouroPhone = editPhoneTiers.find((t) => t.tier === "ouro");
+    const diamantePhone = editPhoneTiers.find((t) => t.tier === "diamante");
+
+    const sanitizedPhoneTiers: PhoneRuleTier[] = [
+      {
+        tier: "bronze",
+        minQty: 0,
+        maxQty: Math.max(0, (prataPhone?.minQty ?? 6) - 1),
+        bonusReais: 0,
+        extraCommissionPct: 0,
+        description: `Até ${(prataPhone?.minQty ?? 6) - 1} aparelhos vendidos. Comissão base da loja.`,
+      },
+      {
+        tier: "prata",
+        minQty: Number(prataPhone?.minQty) || 6,
+        maxQty: Math.max(Number(prataPhone?.minQty) || 6, (ouroPhone?.minQty ?? 13) - 1),
+        bonusReais: Number(prataPhone?.bonusReais) || 0,
+        extraCommissionPct: Number(prataPhone?.extraCommissionPct) || 0,
+        description: `${prataPhone?.minQty || 6} a ${(ouroPhone?.minQty ?? 13) - 1} aparelhos. Meta Batida! Bônus de ${formatCurrency(Number(prataPhone?.bonusReais) || 0)} em dinheiro.`,
+      },
+      {
+        tier: "ouro",
+        minQty: Number(ouroPhone?.minQty) || 13,
+        maxQty: Math.max(Number(ouroPhone?.minQty) || 13, (diamantePhone?.minQty ?? 21) - 1),
+        bonusReais: Number(ouroPhone?.bonusReais) || 0,
+        extraCommissionPct: Number(ouroPhone?.extraCommissionPct) || 0,
+        description: `${ouroPhone?.minQty || 13} a ${(diamantePhone?.minQty ?? 21) - 1} aparelhos. Bônus de ${formatCurrency(Number(ouroPhone?.bonusReais) || 0)} + ${ouroPhone?.extraCommissionPct || 0}% de comissão extra.`,
+      },
+      {
+        tier: "diamante",
+        minQty: Number(diamantePhone?.minQty) || 21,
+        maxQty: null,
+        bonusReais: Number(diamantePhone?.bonusReais) || 0,
+        extraCommissionPct: Number(diamantePhone?.extraCommissionPct) || 0,
+        description: `Mais de ${(diamantePhone?.minQty ?? 21) - 1} aparelhos. Bônus de ${formatCurrency(Number(diamantePhone?.bonusReais) || 0)} + ${diamantePhone?.extraCommissionPct || 0}% extra + Destaque da Rede.`,
+      },
+    ];
+
+    const prataAcc = editAccessoryTiers.find((t) => t.tier === "prata");
+    const ouroAcc = editAccessoryTiers.find((t) => t.tier === "ouro");
+    const diamanteAcc = editAccessoryTiers.find((t) => t.tier === "diamante");
+
+    const sanitizedAccessoryTiers: AccessoryRuleTier[] = [
+      {
+        tier: "bronze",
+        minAmount: 0,
+        maxAmount: Number(prataAcc?.minAmount) || 2500,
+        bonusReais: 0,
+        description: `Até ${formatCurrency(Number(prataAcc?.minAmount) || 2500)} faturados em acessórios no mês.`,
+      },
+      {
+        tier: "prata",
+        minAmount: (Number(prataAcc?.minAmount) || 2500) + 0.01,
+        maxAmount: Number(ouroAcc?.minAmount) || 5000,
+        bonusReais: Number(prataAcc?.bonusReais) || 100,
+        description: `${formatCurrency((Number(prataAcc?.minAmount) || 2500) + 1)} a ${formatCurrency(Number(ouroAcc?.minAmount) || 5000)}. Meta 1 Batida! Bônus de ${formatCurrency(Number(prataAcc?.bonusReais) || 100)}.`,
+      },
+      {
+        tier: "ouro",
+        minAmount: (Number(ouroAcc?.minAmount) || 5000) + 0.01,
+        maxAmount: Number(diamanteAcc?.minAmount) || 8000,
+        bonusReais: Number(ouroAcc?.bonusReais) || 250,
+        description: `${formatCurrency((Number(ouroAcc?.minAmount) || 5000) + 1)} a ${formatCurrency(Number(diamanteAcc?.minAmount) || 8000)}. Super Meta! Bônus de ${formatCurrency(Number(ouroAcc?.bonusReais) || 250)}.`,
+      },
+      {
+        tier: "diamante",
+        minAmount: (Number(diamanteAcc?.minAmount) || 8000) + 0.01,
+        maxAmount: null,
+        bonusReais: Number(diamanteAcc?.bonusReais) || 500,
+        description: `Acima de ${formatCurrency(Number(diamanteAcc?.minAmount) || 8000)}. Recorde de vendas! Bônus de ${formatCurrency(Number(diamanteAcc?.bonusReais) || 500)}.`,
+      },
+    ];
+
+    savePatentSettings({
+      phoneTiers: sanitizedPhoneTiers,
+      accessoryTiers: sanitizedAccessoryTiers,
+    });
+    toast.success("Metas e patentes salvas com sucesso!");
+    setAdminConfigOpen(false);
+  };
+
+  const handleResetAdminConfig = () => {
+    resetPatentSettings();
+    const defaults = getPatentSettings();
+    setEditPhoneTiers(defaults.phoneTiers);
+    setEditAccessoryTiers(defaults.accessoryTiers);
+    toast.info("Configurações restauradas para o padrão do sistema.");
+  };
 
   // Vendedor ativo para exibir barra de evolução pessoal
   const myPhoneStats = rankingPhones.find((p) => p.uid === currentUserId);
@@ -222,8 +361,39 @@ export const RankingTab: React.FC<RankingTabProps> = ({
       {/* ── Top Bar: Controles de Período, Loja e Exportação ───────────────────────── */}
       <div className="flex flex-wrap items-end justify-between gap-3 p-3 rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
         <div className="flex flex-wrap gap-2.5 items-end">
+          {/* Alternância Rápida: Este Mês vs Mês Passado */}
           <div className="space-y-1">
-            <Label className="text-xs font-medium text-muted-foreground">Período de Análise</Label>
+            <Label className="text-xs font-medium text-muted-foreground">Ciclo do Ranking</Label>
+            <div className="flex items-center gap-1 bg-muted/60 p-0.5 rounded-lg border border-border/60 h-9">
+              <button
+                type="button"
+                onClick={() => setRankPeriod("month")}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  rankPeriod === "month"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Flame className="h-3.5 w-3.5 text-amber-400" />
+                <span>Este Mês (Corrida Ativa)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRankPeriod("last_month")}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  rankPeriod === "last_month"
+                    ? "bg-amber-500 text-slate-950 font-bold shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Trophy className="h-3.5 w-3.5 text-yellow-500" />
+                <span>Mês Passado (Final)</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">Outros Filtros</Label>
             <PeriodSelect value={rankPeriod} onChange={setRankPeriod} includeCustom={false} />
           </div>
           {rankPeriod === "day" && (
@@ -259,6 +429,19 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOpenAdminConfig}
+              className="h-9 gap-1.5 text-xs border-amber-500/40 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 shadow-sm font-semibold"
+            >
+              <Settings className="h-4 w-4 text-amber-500" />
+              <span className="hidden sm:inline">Ajustar Metas & Patentes</span>
+              <span className="sm:hidden">Ajustar Metas</span>
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -267,7 +450,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
             className="h-9 gap-1.5 text-xs border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 shadow-sm"
           >
             <BookOpen className="h-4 w-4 text-primary" />
-            <span className="hidden sm:inline font-semibold">Mini Dicionário de Metas</span>
+            <span className="hidden sm:inline font-semibold">Mini Dicionário</span>
             <span className="sm:hidden font-semibold">Dicionário</span>
           </Button>
           <ExportBtns
@@ -276,6 +459,44 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           />
         </div>
       </div>
+
+      {/* ── BANNER DAS CAMPEÃS DO MÊS PASSADO (HALL DA FAMA) ── */}
+      {rankPeriod === "last_month" && (
+        <Card className="border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-transparent p-4 shadow-sm animate-in fade-in duration-300">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                👑
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-bold text-sm md:text-base text-foreground flex items-center gap-1.5">
+                    Hall da Fama — Campeãs do Mês Passado
+                  </h3>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/30">
+                    {currentRankPeriodLabel}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Resultado oficial congelado do fechamento do mês anterior. Parabéns às vencedoras pelo topo do pódio!
+                </p>
+              </div>
+            </div>
+            {rankingPhones[0] && (
+              <div className="flex items-center gap-2.5 bg-background/80 border border-amber-500/30 px-3.5 py-2 rounded-xl text-xs shadow-sm">
+                <span className="text-xl">🏆</span>
+                <div>
+                  <div className="text-[10px] text-muted-foreground font-semibold">1º Lugar Geral (Celulares)</div>
+                  <div className="font-bold text-foreground">
+                    {rankingPhones[0].nome}{" "}
+                    <span className="text-amber-500 font-mono font-extrabold">({rankingPhones[0].qtdCelulares} un)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* ── Seletor de Trilhas de Gamificação ────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2 border-b border-border/60 pb-3">
@@ -728,7 +949,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
               <Smartphone className="h-3.5 w-3.5 text-primary" /> Régua de Metas — Celulares (Vendedoras + Técnicos)
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {PHONE_TIERS.map((tier) => {
+              {patentSettings.phoneTiers.map((tier) => {
                 const cfg = PATENT_CONFIGS[tier.tier];
                 return (
                   <Card key={tier.tier} className={`border p-4 ${cfg.bgColor} ${cfg.borderColor}`}>
@@ -762,7 +983,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
               <Headphones className="h-3.5 w-3.5 text-primary" /> Régua de Metas — Acessórios (Por Loja)
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {ACCESSORY_TIERS.map((tier) => {
+              {patentSettings.accessoryTiers.map((tier) => {
                 const cfg = PATENT_CONFIGS[tier.tier];
                 return (
                   <Card key={tier.tier} className={`border p-4 ${cfg.bgColor} ${cfg.borderColor}`}>
@@ -891,6 +1112,280 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── MODAL EXCLUSIVO ADMIN: AJUSTAR METAS & PATENTES ── */}
+      {isAdmin && (
+        <Dialog open={adminConfigOpen} onOpenChange={setAdminConfigOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-base font-display flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-foreground font-bold">
+                  <Settings className="h-5 w-5 text-amber-500" />
+                  Painel Admin: Ajustar Metas e Porcentagens das Patentes
+                </span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Personalize as réguas de metas, porcentagens extras e bônus em dinheiro de cada patente. Todas as colaboradoras verão as metas atualizadas instantaneamente.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-2">
+              {/* SEÇÃO 1: TRILHA CELULARES */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-border/60 pb-1.5">
+                  <Smartphone className="h-4 w-4 text-primary" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Trilha de Celulares (Metas, Bônus e Comissão Extra)
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Prata */}
+                  <div className="p-3 rounded-xl border border-slate-400/40 bg-slate-500/5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        🥈 Patente Prata
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Mínimo de Aparelhos</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editPhoneTiers.find((t) => t.tier === "prata")?.minQty || 6}
+                        onChange={(e) => updatePhoneTierField("prata", "minQty", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Bônus Fixo em Dinheiro (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editPhoneTiers.find((t) => t.tier === "prata")?.bonusReais ?? 150}
+                        onChange={(e) => updatePhoneTierField("prata", "bonusReais", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Comissão Extra (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={editPhoneTiers.find((t) => t.tier === "prata")?.extraCommissionPct ?? 0}
+                        onChange={(e) => updatePhoneTierField("prata", "extraCommissionPct", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ouro */}
+                  <div className="p-3 rounded-xl border border-yellow-500/40 bg-yellow-500/5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        🥇 Patente Ouro
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Mínimo de Aparelhos</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editPhoneTiers.find((t) => t.tier === "ouro")?.minQty || 13}
+                        onChange={(e) => updatePhoneTierField("ouro", "minQty", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Bônus Fixo em Dinheiro (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editPhoneTiers.find((t) => t.tier === "ouro")?.bonusReais ?? 350}
+                        onChange={(e) => updatePhoneTierField("ouro", "bonusReais", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Comissão Extra (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={editPhoneTiers.find((t) => t.tier === "ouro")?.extraCommissionPct ?? 0.5}
+                        onChange={(e) => updatePhoneTierField("ouro", "extraCommissionPct", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Diamante */}
+                  <div className="p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/5 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        💎 Patente Diamante
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Mínimo de Aparelhos</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={editPhoneTiers.find((t) => t.tier === "diamante")?.minQty || 21}
+                        onChange={(e) => updatePhoneTierField("diamante", "minQty", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Bônus Fixo em Dinheiro (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editPhoneTiers.find((t) => t.tier === "diamante")?.bonusReais ?? 700}
+                        onChange={(e) => updatePhoneTierField("diamante", "bonusReais", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Comissão Extra (%)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={editPhoneTiers.find((t) => t.tier === "diamante")?.extraCommissionPct ?? 1.0}
+                        onChange={(e) => updatePhoneTierField("diamante", "extraCommissionPct", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SEÇÃO 2: TRILHA ACESSÓRIOS */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-border/60 pb-1.5">
+                  <Headphones className="h-4 w-4 text-primary" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Trilha de Acessórios (Faturamento Mínimo e Bônus)
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Prata Acessórios */}
+                  <div className="p-3 rounded-xl border border-slate-400/40 bg-slate-500/5 space-y-2.5">
+                    <span className="text-xs font-bold text-foreground">🥈 Prata (Acessórios)</span>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Faturamento Mínimo (R$)</Label>
+                      <Input
+                        type="number"
+                        step="100"
+                        value={Math.floor(editAccessoryTiers.find((t) => t.tier === "prata")?.minAmount || 2500)}
+                        onChange={(e) => updateAccessoryTierField("prata", "minAmount", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Bônus Fixo (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editAccessoryTiers.find((t) => t.tier === "prata")?.bonusReais ?? 100}
+                        onChange={(e) => updateAccessoryTierField("prata", "bonusReais", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Ouro Acessórios */}
+                  <div className="p-3 rounded-xl border border-yellow-500/40 bg-yellow-500/5 space-y-2.5">
+                    <span className="text-xs font-bold text-foreground">🥇 Ouro (Acessórios)</span>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Faturamento Mínimo (R$)</Label>
+                      <Input
+                        type="number"
+                        step="100"
+                        value={Math.floor(editAccessoryTiers.find((t) => t.tier === "ouro")?.minAmount || 5000)}
+                        onChange={(e) => updateAccessoryTierField("ouro", "minAmount", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Bônus Fixo (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editAccessoryTiers.find((t) => t.tier === "ouro")?.bonusReais ?? 250}
+                        onChange={(e) => updateAccessoryTierField("ouro", "bonusReais", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Diamante Acessórios */}
+                  <div className="p-3 rounded-xl border border-cyan-500/40 bg-cyan-500/5 space-y-2.5">
+                    <span className="text-xs font-bold text-foreground">💎 Diamante (Acessórios)</span>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Faturamento Mínimo (R$)</Label>
+                      <Input
+                        type="number"
+                        step="100"
+                        value={Math.floor(editAccessoryTiers.find((t) => t.tier === "diamante")?.minAmount || 8000)}
+                        onChange={(e) => updateAccessoryTierField("diamante", "minAmount", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] text-muted-foreground">Bônus Fixo (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={editAccessoryTiers.find((t) => t.tier === "diamante")?.bonusReais ?? 500}
+                        onChange={(e) => updateAccessoryTierField("diamante", "bonusReais", Number(e.target.value))}
+                        className="h-8 text-xs bg-background"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border/60">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleResetAdminConfig}
+                  className="text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Restaurar Padrões de Fábrica
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdminConfigOpen(false)}
+                    className="text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSaveAdminConfig}
+                    className="text-xs font-semibold gap-1.5 bg-primary text-primary-foreground shadow-sm"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Salvar Alterações
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

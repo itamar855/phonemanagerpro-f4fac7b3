@@ -145,6 +145,64 @@ export const ACCESSORY_TIERS: AccessoryRuleTier[] = [
   },
 ];
 
+// ── Configurações Customizáveis pelo Administrador ───────────────────────────
+export interface PatentSettings {
+  phoneTiers: PhoneRuleTier[];
+  accessoryTiers: AccessoryRuleTier[];
+}
+
+export const DEFAULT_PATENT_SETTINGS: PatentSettings = {
+  phoneTiers: PHONE_TIERS,
+  accessoryTiers: ACCESSORY_TIERS,
+};
+
+const PATENT_SETTINGS_STORAGE_KEY = "ranking_patent_settings_v1";
+
+export function getPatentSettings(): PatentSettings {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return {
+      phoneTiers: [...PHONE_TIERS],
+      accessoryTiers: [...ACCESSORY_TIERS],
+    };
+  }
+  try {
+    const raw = localStorage.getItem(PATENT_SETTINGS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.phoneTiers) && Array.isArray(parsed.accessoryTiers)) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn("Erro ao ler ranking_patent_settings:", err);
+  }
+  return {
+    phoneTiers: [...PHONE_TIERS],
+    accessoryTiers: [...ACCESSORY_TIERS],
+  };
+}
+
+export function savePatentSettings(settings: PatentSettings): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    localStorage.setItem(PATENT_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    window.dispatchEvent(new Event("ranking_patent_settings_changed"));
+  } catch (err) {
+    console.error("Erro ao salvar ranking_patent_settings:", err);
+  }
+}
+
+export function resetPatentSettings(): PatentSettings {
+  if (typeof window !== "undefined" && window.localStorage) {
+    localStorage.removeItem(PATENT_SETTINGS_STORAGE_KEY);
+    window.dispatchEvent(new Event("ranking_patent_settings_changed"));
+  }
+  return {
+    phoneTiers: [...PHONE_TIERS],
+    accessoryTiers: [...ACCESSORY_TIERS],
+  };
+}
+
 // ── Tipos de Saída Estruturados ──────────────────────────────────────────────────
 export interface SellerPatentProgress {
   currentTier: PatentTier;
@@ -203,28 +261,34 @@ export interface StoreAccessoryMetrics {
 /**
  * Calcula a patente e a barra de progresso para a trilha de Celulares (com base na quantidade de aparelhos).
  */
-export function calculatePhonePatent(qtdAparelhos: number): SellerPatentProgress {
+export function calculatePhonePatent(qtdAparelhos: number, customTiers?: PhoneRuleTier[]): SellerPatentProgress {
   const count = Math.max(0, qtdAparelhos);
+  const tiers = customTiers || (typeof window !== "undefined" ? getPatentSettings().phoneTiers : PHONE_TIERS);
 
-  if (count >= 21) {
+  const bronze = tiers.find((t) => t.tier === "bronze") || PHONE_TIERS[0];
+  const prata = tiers.find((t) => t.tier === "prata") || PHONE_TIERS[1];
+  const ouro = tiers.find((t) => t.tier === "ouro") || PHONE_TIERS[2];
+  const diamante = tiers.find((t) => t.tier === "diamante") || PHONE_TIERS[3];
+
+  if (count >= diamante.minQty) {
     return {
       currentTier: "diamante",
       nextTier: null,
       currentValue: count,
-      targetValue: 21,
+      targetValue: diamante.minQty,
       remainingValue: 0,
       progressPercent: 100,
-      bonusUnlocked: 700,
+      bonusUnlocked: diamante.bonusReais,
       nextBonus: 0,
-      extraCommissionPct: 1.0,
+      extraCommissionPct: diamante.extraCommissionPct,
     };
   }
 
-  if (count >= 13) {
-    const target = 21;
-    const remaining = target - count;
-    const range = 21 - 13;
-    const progress = Math.min(100, Math.round(((count - 13) / range) * 100));
+  if (count >= ouro.minQty) {
+    const target = diamante.minQty;
+    const remaining = Math.max(0, target - count);
+    const range = Math.max(1, diamante.minQty - ouro.minQty);
+    const progress = Math.min(100, Math.round(((count - ouro.minQty) / range) * 100));
     return {
       currentTier: "ouro",
       nextTier: "diamante",
@@ -232,17 +296,17 @@ export function calculatePhonePatent(qtdAparelhos: number): SellerPatentProgress
       targetValue: target,
       remainingValue: remaining,
       progressPercent: progress,
-      bonusUnlocked: 350,
-      nextBonus: 700,
-      extraCommissionPct: 0.5,
+      bonusUnlocked: ouro.bonusReais,
+      nextBonus: diamante.bonusReais,
+      extraCommissionPct: ouro.extraCommissionPct,
     };
   }
 
-  if (count >= 6) {
-    const target = 13;
-    const remaining = target - count;
-    const range = 13 - 6;
-    const progress = Math.min(100, Math.round(((count - 6) / range) * 100));
+  if (count >= prata.minQty) {
+    const target = ouro.minQty;
+    const remaining = Math.max(0, target - count);
+    const range = Math.max(1, ouro.minQty - prata.minQty);
+    const progress = Math.min(100, Math.round(((count - prata.minQty) / range) * 100));
     return {
       currentTier: "prata",
       nextTier: "ouro",
@@ -250,15 +314,15 @@ export function calculatePhonePatent(qtdAparelhos: number): SellerPatentProgress
       targetValue: target,
       remainingValue: remaining,
       progressPercent: progress,
-      bonusUnlocked: 150,
-      nextBonus: 350,
-      extraCommissionPct: 0,
+      bonusUnlocked: prata.bonusReais,
+      nextBonus: ouro.bonusReais,
+      extraCommissionPct: prata.extraCommissionPct,
     };
   }
 
   // Bronze
-  const target = 6;
-  const remaining = target - count;
+  const target = Math.max(1, prata.minQty);
+  const remaining = Math.max(0, target - count);
   const progress = Math.min(100, Math.round((count / target) * 100));
   return {
     currentTier: "bronze",
@@ -267,37 +331,47 @@ export function calculatePhonePatent(qtdAparelhos: number): SellerPatentProgress
     targetValue: target,
     remainingValue: remaining,
     progressPercent: progress,
-    bonusUnlocked: 0,
-    nextBonus: 150,
-    extraCommissionPct: 0,
+    bonusUnlocked: bronze.bonusReais,
+    nextBonus: prata.bonusReais,
+    extraCommissionPct: bronze.extraCommissionPct,
   };
 }
 
 /**
  * Calcula a patente e a barra de progresso para a trilha de Acessórios (com base no faturamento R$).
  */
-export function calculateAccessoryPatent(totalAmount: number): SellerPatentProgress {
+export function calculateAccessoryPatent(totalAmount: number, customTiers?: AccessoryRuleTier[]): SellerPatentProgress {
   const amount = Math.max(0, totalAmount);
+  const tiers = customTiers || (typeof window !== "undefined" ? getPatentSettings().accessoryTiers : ACCESSORY_TIERS);
 
-  if (amount > 8000) {
+  const bronze = tiers.find((t) => t.tier === "bronze") || ACCESSORY_TIERS[0];
+  const prata = tiers.find((t) => t.tier === "prata") || ACCESSORY_TIERS[1];
+  const ouro = tiers.find((t) => t.tier === "ouro") || ACCESSORY_TIERS[2];
+  const diamante = tiers.find((t) => t.tier === "diamante") || ACCESSORY_TIERS[3];
+
+  const ouroLimit = ouro.maxAmount ?? 8000;
+  const prataLimit = prata.maxAmount ?? 5000;
+  const bronzeLimit = bronze.maxAmount ?? 2500;
+
+  if (amount > ouroLimit) {
     return {
       currentTier: "diamante",
       nextTier: null,
       currentValue: amount,
-      targetValue: 8000,
+      targetValue: ouroLimit,
       remainingValue: 0,
       progressPercent: 100,
-      bonusUnlocked: 500,
+      bonusUnlocked: diamante.bonusReais,
       nextBonus: 0,
       extraCommissionPct: 0,
     };
   }
 
-  if (amount > 5000) {
-    const target = 8000;
-    const remaining = target - amount;
-    const range = 8000 - 5000;
-    const progress = Math.min(100, Math.round(((amount - 5000) / range) * 100));
+  if (amount > prataLimit) {
+    const target = ouroLimit;
+    const remaining = Math.max(0, target - amount);
+    const range = Math.max(1, ouroLimit - prataLimit);
+    const progress = Math.min(100, Math.round(((amount - prataLimit) / range) * 100));
     return {
       currentTier: "ouro",
       nextTier: "diamante",
@@ -305,17 +379,17 @@ export function calculateAccessoryPatent(totalAmount: number): SellerPatentProgr
       targetValue: target,
       remainingValue: remaining,
       progressPercent: progress,
-      bonusUnlocked: 250,
-      nextBonus: 500,
+      bonusUnlocked: ouro.bonusReais,
+      nextBonus: diamante.bonusReais,
       extraCommissionPct: 0,
     };
   }
 
-  if (amount > 2500) {
-    const target = 5000;
-    const remaining = target - amount;
-    const range = 5000 - 2500;
-    const progress = Math.min(100, Math.round(((amount - 2500) / range) * 100));
+  if (amount > bronzeLimit) {
+    const target = prataLimit;
+    const remaining = Math.max(0, target - amount);
+    const range = Math.max(1, prataLimit - bronzeLimit);
+    const progress = Math.min(100, Math.round(((amount - bronzeLimit) / range) * 100));
     return {
       currentTier: "prata",
       nextTier: "ouro",
@@ -323,15 +397,15 @@ export function calculateAccessoryPatent(totalAmount: number): SellerPatentProgr
       targetValue: target,
       remainingValue: remaining,
       progressPercent: progress,
-      bonusUnlocked: 100,
-      nextBonus: 250,
+      bonusUnlocked: prata.bonusReais,
+      nextBonus: ouro.bonusReais,
       extraCommissionPct: 0,
     };
   }
 
   // Bronze
-  const target = 2500;
-  const remaining = target - amount;
+  const target = Math.max(1, bronzeLimit);
+  const remaining = Math.max(0, target - amount);
   const progress = Math.min(100, Math.round((amount / target) * 100));
   return {
     currentTier: "bronze",
@@ -340,8 +414,8 @@ export function calculateAccessoryPatent(totalAmount: number): SellerPatentProgr
     targetValue: target,
     remainingValue: remaining,
     progressPercent: progress,
-    bonusUnlocked: 0,
-    nextBonus: 100,
+    bonusUnlocked: bronze.bonusReais,
+    nextBonus: prata.bonusReais,
     extraCommissionPct: 0,
   };
 }
@@ -355,8 +429,10 @@ export function aggregatePhoneRanking(params: {
   stores: any[];
   userRoles: any[];
   productMap?: Map<string, any>;
+  patentSettings?: PatentSettings;
 }): RankSellerPhone[] {
-  const { sales, profiles, stores, userRoles, productMap } = params;
+  const { sales, profiles, stores, userRoles, productMap, patentSettings } = params;
+  const currentSettings = patentSettings || (typeof window !== "undefined" ? getPatentSettings() : DEFAULT_PATENT_SETTINGS);
 
   const profileMap = new Map<string, any>(profiles.map((p) => [p.user_id || p.id, p]));
   const storeMap = new Map<string, any>(stores.map((s) => [s.id, s]));
@@ -427,7 +503,7 @@ export function aggregatePhoneRanking(params: {
   // Converter para array e calcular métricas derivadas + patentes
   const result: RankSellerPhone[] = Array.from(map.values()).map((item) => {
     const ticketMedio = item.qtdCelulares > 0 ? item.totalVendas / item.qtdCelulares : 0;
-    const patent = calculatePhonePatent(item.qtdCelulares);
+    const patent = calculatePhonePatent(item.qtdCelulares, currentSettings.phoneTiers);
 
     return {
       ...item,
@@ -457,11 +533,13 @@ export function aggregateAccessoryRanking(params: {
   stores: any[];
   userRoles: any[];
   filterStoreId?: string; // Se 'all', traz todas
+  patentSettings?: PatentSettings;
 }): {
   ranking: RankSellerAccessory[];
   storeMetrics: Record<string, StoreAccessoryMetrics>;
 } {
-  const { transactions, sales, profiles, stores, userRoles, filterStoreId } = params;
+  const { transactions, sales, profiles, stores, userRoles, filterStoreId, patentSettings } = params;
+  const currentSettings = patentSettings || (typeof window !== "undefined" ? getPatentSettings() : DEFAULT_PATENT_SETTINGS);
 
   const profileMap = new Map<string, any>(profiles.map((p) => [p.user_id || p.id, p]));
   const storeMap = new Map<string, any>(stores.map((s) => [s.id, s]));
@@ -578,7 +656,7 @@ export function aggregateAccessoryRanking(params: {
   const ranking: RankSellerAccessory[] = Array.from(sellerMap.values()).map((item) => {
     const ticketMedioTransacao = item.qtdTransacoes > 0 ? item.totalFaturado / item.qtdTransacoes : 0;
     const ticketMedioPeca = item.qtdPecas > 0 ? item.totalFaturado / item.qtdPecas : 0;
-    const patent = calculateAccessoryPatent(item.totalFaturado);
+    const patent = calculateAccessoryPatent(item.totalFaturado, currentSettings.accessoryTiers);
 
     return {
       ...item,

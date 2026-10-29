@@ -33,6 +33,11 @@ export const getPeriodDates = (period: string, customStart: string, customEnd: s
   if (period === "month") {
     return { start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), end: now.toISOString() };
   }
+  if (period === "last_month") {
+    const s = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0).toISOString();
+    const e = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString();
+    return { start: s, end: e };
+  }
   if (period === "quarter") {
     const q = Math.floor(now.getMonth() / 3) * 3;
     return { start: new Date(now.getFullYear(), q, 1).toISOString(), end: now.toISOString() };
@@ -52,6 +57,11 @@ export const getPeriodLabel = (period: string, customStart: string, customEnd: s
   if (period === "month") {
     const n = new Date();
     return MONTHS[n.getMonth()] + "/" + n.getFullYear();
+  }
+  if (period === "last_month") {
+    const n = new Date();
+    const prev = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+    return MONTHS[prev.getMonth()] + "/" + prev.getFullYear() + " (Mês Passado)";
   }
   if (period === "quarter") {
     const n = new Date();
@@ -88,6 +98,7 @@ export const PeriodSelect = ({
       <SelectItem value="day">Diário (Outro Dia)</SelectItem>
       <SelectItem value="week">Esta Semana</SelectItem>
       <SelectItem value="month">Este Mês</SelectItem>
+      <SelectItem value="last_month">Mês Passado</SelectItem>
       <SelectItem value="quarter">Trimestre</SelectItem>
       <SelectItem value="year">Este Ano</SelectItem>
       {includeCustom && <SelectItem value="custom">Personalizado</SelectItem>}

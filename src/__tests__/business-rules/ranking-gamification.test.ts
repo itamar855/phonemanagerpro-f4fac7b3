@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   calculatePhonePatent,
   calculateAccessoryPatent,
@@ -7,6 +7,11 @@ import {
   PHONE_TIERS,
   ACCESSORY_TIERS,
   PATENT_CONFIGS,
+  getPatentSettings,
+  savePatentSettings,
+  resetPatentSettings,
+  type PhoneRuleTier,
+  type AccessoryRuleTier,
 } from "@/utils/rankingGamification";
 
 describe("Sistema de Gamificação e Ranking — Trilha de Celulares", () => {
@@ -200,5 +205,52 @@ describe("Agregações de Ranking", () => {
     expect(storeMatriz.totalCelularesLoja).toBe(2);
     // Taxa de anexo: 4 peças / 2 celulares = 2.0 peças por aparelho
     expect(storeMatriz.taxaAnexo).toBe(2.0);
+  });
+
+  describe("Customização de Patentes e Metas pelo Painel Admin", () => {
+    it("deve recalcular patentes de celulares quando o admin customizar as réguas e bônus", () => {
+      const customPhoneTiers: PhoneRuleTier[] = [
+        { tier: "bronze", minQty: 0, maxQty: 3, bonusReais: 0, extraCommissionPct: 0, description: "Bronze" },
+        { tier: "prata", minQty: 4, maxQty: 9, bonusReais: 200, extraCommissionPct: 0, description: "Prata" },
+        { tier: "ouro", minQty: 10, maxQty: 15, bonusReais: 500, extraCommissionPct: 1.5, description: "Ouro" },
+        { tier: "diamante", minQty: 16, maxQty: null, bonusReais: 1000, extraCommissionPct: 2.5, description: "Diamante" },
+      ];
+
+      // Com a régua customizada: 4 celulares já é Prata com bônus de 200
+      const p4 = calculatePhonePatent(4, customPhoneTiers);
+      expect(p4.currentTier).toBe("prata");
+      expect(p4.bonusUnlocked).toBe(200);
+
+      // 10 celulares já é Ouro com bônus de 500 e 1.5% extra
+      const p10 = calculatePhonePatent(10, customPhoneTiers);
+      expect(p10.currentTier).toBe("ouro");
+      expect(p10.bonusUnlocked).toBe(500);
+      expect(p10.extraCommissionPct).toBe(1.5);
+
+      // 16 celulares é Diamante com bônus de 1000 e 2.5% extra
+      const p16 = calculatePhonePatent(16, customPhoneTiers);
+      expect(p16.currentTier).toBe("diamante");
+      expect(p16.bonusUnlocked).toBe(1000);
+      expect(p16.extraCommissionPct).toBe(2.5);
+    });
+
+    it("deve recalcular patentes de acessórios quando o admin customizar os limites de faturamento", () => {
+      const customAccessoryTiers: AccessoryRuleTier[] = [
+        { tier: "bronze", minAmount: 0, maxAmount: 1500, bonusReais: 0, description: "Bronze" },
+        { tier: "prata", minAmount: 1500.01, maxAmount: 3000, bonusReais: 150, description: "Prata" },
+        { tier: "ouro", minAmount: 3000.01, maxAmount: 6000, bonusReais: 400, description: "Ouro" },
+        { tier: "diamante", minAmount: 6000.01, maxAmount: null, bonusReais: 800, description: "Diamante" },
+      ];
+
+      // R$ 2.000 já atinge Prata na régua customizada
+      const p2000 = calculateAccessoryPatent(2000, customAccessoryTiers);
+      expect(p2000.currentTier).toBe("prata");
+      expect(p2000.bonusUnlocked).toBe(150);
+
+      // R$ 6.500 já atinge Diamante na régua customizada
+      const p6500 = calculateAccessoryPatent(6500, customAccessoryTiers);
+      expect(p6500.currentTier).toBe("diamante");
+      expect(p6500.bonusUnlocked).toBe(800);
+    });
   });
 });
