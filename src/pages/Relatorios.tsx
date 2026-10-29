@@ -575,6 +575,13 @@ const Relatorios = () => {
   useEffect(() => { if (tab === "os") fetchOS(); }, [tab, fetchOS]);
   useEffect(() => { if (tab === "caixa") fetchCaixa(); }, [tab, fetchCaixa]);
   useEffect(() => { if (tab === "ranking" || tab === "comissoes") fetchRanking(); }, [tab, fetchRanking]);
+  useEffect(() => {
+    const handlePatentSettings = () => {
+      fetchRanking();
+    };
+    window.addEventListener("ranking_patent_settings_changed", handlePatentSettings);
+    return () => window.removeEventListener("ranking_patent_settings_changed", handlePatentSettings);
+  }, [fetchRanking]);
   useEffect(() => { if (tab === "leads") fetchLeads(); }, [tab, fetchLeads]);
   useEffect(() => { if (tab === "financeiro") fetchFinanceiro(); }, [tab, fetchFinanceiro]);
 
