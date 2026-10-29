@@ -348,3 +348,38 @@ export const generateThermalPdf = async (order: any, store: any, techName: strin
   textC("Assinatura do Cliente", 8);
   return doc;
 };
+
+/**
+ * Salva e opcionalmente visualiza o PDF em nova aba.
+ * Resolve a incompatibilidade do Chrome/Chromium onde doc.save() sem anexar ao DOM
+ * faz o download com nome de UUID sem extensão .pdf, gerando erro ao abrir no Windows.
+ */
+export const saveAndOpenPdf = (doc: any, filename: string, openInNewTab = true) => {
+  const safeName = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  const blobOutput = doc.output("blob");
+  const pdfBlob = new Blob([blobOutput], { type: "application/pdf" });
+  const blobUrl = URL.createObjectURL(pdfBlob);
+
+  if (openInNewTab) {
+    try {
+      window.open(blobUrl, "_blank");
+    } catch (_) {}
+  }
+
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = safeName;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+
+  setTimeout(() => {
+    try {
+      document.body.removeChild(link);
+    } catch (_) {}
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+    }, 120000);
+  }, 1000);
+};
+

@@ -41,6 +41,7 @@ import {
   paymentLabels,
   generateOSPdf,
   generateThermalPdf,
+  saveAndOpenPdf,
 } from "@/components/features/os/osPdf";
 // Mapeamento de caixa da OS: utiliza a coluna oficial "cash_register_id" via helper modularizado
 import { createPendingCashEntry } from "@/components/features/os/osCashHelper";
@@ -842,10 +843,11 @@ const OrdensServico = () => {
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
-      doc.save(`OS-${order.order_number}.pdf`);
+      const orderNum = order.order_number ?? order.id?.slice(0, 8) ?? "OS";
+      saveAndOpenPdf(doc, `OS-${orderNum}.pdf`, true);
       toast.success("PDF gerado!");
     } catch (err) {
-      toast.error("Erro ao gerar PDF. Instale: npm install jspdf");
+      toast.error("Erro ao gerar PDF.");
     }
     setPdfLoading(false);
   };
@@ -857,7 +859,8 @@ const OrdensServico = () => {
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
       const doc = await generateThermalPdf(order, storeObj, techName, publicUrl);
-      doc.save(`OS-Cupom-${order.order_number}.pdf`);
+      const orderNum = order.order_number ?? order.id?.slice(0, 8) ?? "Cupom";
+      saveAndOpenPdf(doc, `OS-Cupom-${orderNum}.pdf`, true);
       toast.success("Cupom gerado (80mm)!");
     } catch (err) { toast.error("Erro ao gerar cupom termal."); }
     setPdfLoading(false);
