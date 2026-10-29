@@ -1,8 +1,16 @@
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from "recharts";
 import {
   Trophy,
@@ -17,6 +25,10 @@ import {
   Sparkles,
   ArrowRight,
   Info,
+  BookOpen,
+  HelpCircle,
+  Coins,
+  Flame,
 } from "lucide-react";
 import { formatCurrency, exportRankingPDF, exportCSV, COLORS } from "./relatorioPdf";
 import { RankBadge, PeriodSelect, ExportBtns } from "./types";
@@ -29,6 +41,81 @@ import {
   type StoreAccessoryMetrics,
   type PatentTier,
 } from "@/utils/rankingGamification";
+
+export interface DictionaryItem {
+  icon: string;
+  title: string;
+  category: string;
+  summary: string;
+  description: string;
+}
+
+export const DICTIONARY_ITEMS: DictionaryItem[] = [
+  {
+    icon: "🎖️",
+    title: "Patente (Bronze, Prata, Ouro e Diamante)",
+    category: "Carreira",
+    summary: "Seu nível de maestria e evolução de vendas na empresa.",
+    description:
+      "Cada colaborador inicia em Bronze e vai conquistando novas patentes conforme vende mais no mês. Subir de patente libera bônus em dinheiro maiores, comissão progressiva extra e reconhecimento de liderança.",
+  },
+  {
+    icon: "🏁",
+    title: "Corrida do Mês (Pódio 1º, 2º e 3º)",
+    category: "Competição",
+    summary: "Disputa mensal saudável que reinicia todo dia 1º.",
+    description:
+      "No início de cada mês, o placar zera para que todos comecem em igualdade de condições. Isso garante que todo mundo tenha chance real de subir no pódio e conquistar os prêmios do mês.",
+  },
+  {
+    icon: "💵",
+    title: "Bônus Fixo em Dinheiro",
+    category: "Recompensa",
+    summary: "Valor financeiro pago diretamente ao atingir faixas de metas.",
+    description:
+      "Bateu a meta da patente dentro do mês? O bônus em dinheiro (ex: R$ 150 em Celulares ou R$ 100 em Acessórios) é somado à sua comissão, sem pegadinhas nem burocracia.",
+  },
+  {
+    icon: "📈",
+    title: "Comissão Progressiva Extra",
+    category: "Comissão",
+    summary: "Porcentagem adicional que turbina seus ganhos nas faixas mais altas.",
+    description:
+      "Ao alcançar a patente Ouro (+0,5%) ou Diamante (+1,0%), você ganha um acréscimo percentual sobre o faturamento de celulares, premiando quem entrega alta performance constante.",
+  },
+  {
+    icon: "🔌",
+    title: "Taxa de Anexo (Acessórios)",
+    category: "Estratégia",
+    summary: "Quantidade média de acessórios vendidos junto com cada aparelho ou atendimento.",
+    description:
+      "Mede o quanto você aproveita o momento da venda. Se o cliente comprou um celular e você ofereceu e vendeu película 3D + capinha antichoque + fonte turbo, você realizou uma taxa de 3.0x de anexo! O segredo é nunca deixar o cliente sair sem proteção para o aparelho novo.",
+  },
+  {
+    icon: "🔄",
+    title: "Trade-In (Aparelho na Troca)",
+    category: "Negociação",
+    summary: "Celular usado que o cliente entrega para abater no preço do novo.",
+    description:
+      "Aparelhos na troca são fundamentais para gerar estoque de seminovos com excelente margem. Cada troca captada ganha destaque com selo especial no ranking geral.",
+  },
+  {
+    icon: "🎯",
+    title: "Ticket Médio",
+    category: "Eficiência",
+    summary: "Valor financeiro médio gerado por atendimento.",
+    description:
+      "Calculado dividindo o faturamento total pelo número de vendas. Para subir o ticket médio, foque em aparelhos de maior valor agregado e combos de acessórios completos.",
+  },
+  {
+    icon: "👥",
+    title: "Regras de Participação (Celulares vs Acessórios)",
+    category: "Regulamento",
+    summary: "Divisão inteligente entre competição geral e crescimento da sua loja.",
+    description:
+      "O Ranking de Celulares é unificado entre todas as lojas e inclui também nossos técnicos. Já o Ranking de Acessórios é focado na meta local da sua unidade, permitindo que cada vendedora cresça junto com sua loja.",
+  },
+];
 
 export interface RankingTabProps {
   rankPeriod: string;
@@ -68,6 +155,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
   currentUserId,
 }) => {
   const [track, setTrack] = useState<"phones" | "accessories" | "rules">("phones");
+  const [dictOpen, setDictOpen] = useState(false);
 
   // Vendedor ativo para exibir barra de evolução pessoal
   const myPhoneStats = rankingPhones.find((p) => p.uid === currentUserId);
@@ -170,10 +258,23 @@ export const RankingTab: React.FC<RankingTabProps> = ({
             </div>
           )}
         </div>
-        <ExportBtns
-          onCSV={handleExportCSV}
-          onPDF={() => exportRankingPDF(ranking, currentRankPeriodLabel, currentStoreName)}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setDictOpen(true)}
+            className="h-9 gap-1.5 text-xs border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 shadow-sm"
+          >
+            <BookOpen className="h-4 w-4 text-primary" />
+            <span className="hidden sm:inline font-semibold">Mini Dicionário de Metas</span>
+            <span className="sm:hidden font-semibold">Dicionário</span>
+          </Button>
+          <ExportBtns
+            onCSV={handleExportCSV}
+            onPDF={() => exportRankingPDF(ranking, currentRankPeriodLabel, currentStoreName)}
+          />
+        </div>
       </div>
 
       {/* ── Seletor de Trilhas de Gamificação ────────────────────────────────────── */}
@@ -690,6 +791,45 @@ export const RankingTab: React.FC<RankingTabProps> = ({
               })}
             </div>
           </div>
+
+          {/* ── 📖 MINI DICIONÁRIO DE METAS & GAMIFICAÇÃO ── */}
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-border/60 pb-2 gap-1">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <BookOpen className="h-4 w-4 text-primary" /> Mini Dicionário de Metas & Regras da Loja
+              </h4>
+              <span className="text-[11px] text-muted-foreground">
+                Tudo o que você precisa saber para evoluir e ganhar mais
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {DICTIONARY_ITEMS.map((item, idx) => (
+                <Card
+                  key={idx}
+                  className="border border-border/60 bg-card/60 p-4 hover:border-primary/40 transition-colors shadow-sm"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl shrink-0 p-1.5 rounded-lg bg-muted/60 border border-border/40">
+                      {item.icon}
+                    </span>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-foreground">{item.title}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-semibold uppercase">
+                          {item.category}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-primary">{item.summary}</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed pt-0.5">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -713,6 +853,44 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           </CardContent>
         </Card>
       )}
+
+      {/* ── MODAL DIALOG DO MINI DICIONÁRIO DE METAS ── */}
+      <Dialog open={dictOpen} onOpenChange={setDictOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-display flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              Mini Dicionário de Metas & Gamificação
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Entenda cada conceito, como conquistar as patentes e como multiplicar seus ganhos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {DICTIONARY_ITEMS.map((item, idx) => (
+              <div
+                key={idx}
+                className="p-3.5 rounded-xl border border-border/60 bg-muted/20 space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{item.icon}</span>
+                    <span className="font-bold text-sm text-foreground">{item.title}</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-semibold uppercase">
+                    {item.category}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-primary pl-7">{item.summary}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed pl-7">
+                  {item.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
