@@ -1,12 +1,34 @@
-import React from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from "recharts";
-import { Trophy } from "lucide-react";
+import {
+  Trophy,
+  Smartphone,
+  Headphones,
+  Award,
+  Zap,
+  TrendingUp,
+  Store,
+  Wrench,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  Info,
+} from "lucide-react";
 import { formatCurrency, exportRankingPDF, exportCSV, COLORS } from "./relatorioPdf";
 import { RankBadge, PeriodSelect, ExportBtns } from "./types";
+import {
+  PATENT_CONFIGS,
+  PHONE_TIERS,
+  ACCESSORY_TIERS,
+  type RankSellerPhone,
+  type RankSellerAccessory,
+  type StoreAccessoryMetrics,
+  type PatentTier,
+} from "@/utils/rankingGamification";
 
 export interface RankingTabProps {
   rankPeriod: string;
@@ -18,8 +40,13 @@ export interface RankingTabProps {
   setStoreId: (v: string) => void;
   stores: any[];
   ranking: any[];
+  rankingPhones?: RankSellerPhone[];
+  rankingAccessories?: RankSellerAccessory[];
+  storeAccessoryMetrics?: Record<string, StoreAccessoryMetrics>;
   currentRankPeriodLabel: string;
   currentStoreName: string;
+  activeStoreId?: string | null;
+  currentUserId?: string | null;
 }
 
 export const RankingTab: React.FC<RankingTabProps> = ({
@@ -32,20 +59,88 @@ export const RankingTab: React.FC<RankingTabProps> = ({
   setStoreId,
   stores,
   ranking,
+  rankingPhones = [],
+  rankingAccessories = [],
+  storeAccessoryMetrics = {},
   currentRankPeriodLabel,
   currentStoreName,
+  activeStoreId,
+  currentUserId,
 }) => {
+  const [track, setTrack] = useState<"phones" | "accessories" | "rules">("phones");
+
+  // Vendedor ativo para exibir barra de evolução pessoal
+  const myPhoneStats = rankingPhones.find((p) => p.uid === currentUserId);
+  const myAccessoryStats = rankingAccessories.find((a) => a.uid === currentUserId);
+
+  // Métrica da loja ativa para acessórios
+  const effectiveStore = isAdmin ? storeId : activeStoreId || "all";
+  const currentStoreMetric =
+    effectiveStore !== "all"
+      ? storeAccessoryMetrics[effectiveStore]
+      : Object.values(storeAccessoryMetrics)[0];
+
+  const handleExportCSV = () => {
+    if (track === "phones") {
+      exportCSV(
+        rankingPhones.map((v, i) => ({
+          posicao: `${i + 1}º`,
+          colaborador: v.nome,
+          funcao: v.isTechnician ? "Técnico" : "Vendedor",
+          loja: v.storeName,
+          patente: PATENT_CONFIGS[v.patent.currentTier].label,
+          celulares_vendidos: v.qtdCelulares,
+          com_troca_trade_in: v.tradeInCount,
+          ticket_medio: formatCurrency(v.ticketMedio),
+          total_vendido: formatCurrency(v.totalVendas),
+          bonus_desbloqueado: formatCurrency(v.patent.bonusUnlocked),
+        })),
+        `ranking-celulares-${currentRankPeriodLabel.replace(/\s+/g, "_")}.csv`
+      );
+    } else if (track === "accessories") {
+      exportCSV(
+        rankingAccessories.map((v, i) => ({
+          posicao: `${i + 1}º`,
+          vendedora: v.nome,
+          loja: v.storeName,
+          patente: PATENT_CONFIGS[v.patent.currentTier].label,
+          pecas_vendidas: v.qtdPecas,
+          transacoes: v.qtdTransacoes,
+          ticket_medio_transacao: formatCurrency(v.ticketMedioTransacao),
+          ticket_medio_peca: formatCurrency(v.ticketMedioPeca),
+          total_faturado: formatCurrency(v.totalFaturado),
+          bonus_desbloqueado: formatCurrency(v.patent.bonusUnlocked),
+        })),
+        `ranking-acessorios-${currentRankPeriodLabel.replace(/\s+/g, "_")}.csv`
+      );
+    } else {
+      exportCSV(
+        ranking.map((v, i) => ({
+          posicao: i + 1 + "o",
+          vendedor: v.nome,
+          vendas: v.qtdVendas,
+          total_vendido: formatCurrency(v.totalVendas),
+          lucro: formatCurrency(v.lucro),
+          comissao: formatCurrency(v.comissoes),
+          os_entregues: v.osEntregues,
+        })),
+        "ranking-geral.csv"
+      );
+    }
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap gap-2 items-end">
+    <div className="space-y-5">
+      {/* ── Top Bar: Controles de Período, Loja e Exportação ───────────────────────── */}
+      <div className="flex flex-wrap items-end justify-between gap-3 p-3 rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
+        <div className="flex flex-wrap gap-2.5 items-end">
           <div className="space-y-1">
-            <Label className="text-xs">Periodo</Label>
+            <Label className="text-xs font-medium text-muted-foreground">Período de Análise</Label>
             <PeriodSelect value={rankPeriod} onChange={setRankPeriod} includeCustom={false} />
           </div>
           {rankPeriod === "day" && (
             <div className="space-y-1">
-              <Label className="text-xs">Dia</Label>
+              <Label className="text-xs font-medium text-muted-foreground">Dia Específico</Label>
               <Input
                 type="date"
                 value={rankSpecificDay}
@@ -56,9 +151,11 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           )}
           {isAdmin && (
             <div className="space-y-1">
-              <Label className="text-xs">Loja</Label>
+              <Label className="text-xs font-medium text-muted-foreground">
+                {track === "accessories" ? "Filtrar Loja (Acessórios)" : "Loja"}
+              </Label>
               <Select value={storeId} onValueChange={setStoreId}>
-                <SelectTrigger className="h-9 w-40">
+                <SelectTrigger className="h-9 w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -74,83 +171,533 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           )}
         </div>
         <ExportBtns
-          onCSV={() =>
-            exportCSV(
-              ranking.map((v, i) => ({
-                posicao: i + 1 + "o",
-                vendedor: v.nome,
-                vendas: v.qtdVendas,
-                total_vendido: formatCurrency(v.totalVendas),
-                lucro: formatCurrency(v.lucro),
-                comissao: formatCurrency(v.comissoes),
-                os_entregues: v.osEntregues,
-              })),
-              "ranking.csv"
-            )
-          }
+          onCSV={handleExportCSV}
           onPDF={() => exportRankingPDF(ranking, currentRankPeriodLabel, currentStoreName)}
         />
       </div>
 
-      <Card className="border-border/50">
-        <CardHeader className="pb-2">
-          <CardTitle className="font-display text-sm flex items-center gap-2">
-            <Trophy className="h-4 w-4 text-yellow-500" /> Ranking de Vendedores
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {ranking.length > 0 ? (
-            <div className="space-y-2">
-              {ranking.map((v, i) => (
-                <div
-                  key={v.uid}
-                  className={
-                    "flex items-center gap-3 rounded-lg p-3 border " +
-                    (i === 0
-                      ? "border-yellow-500/30 bg-yellow-500/5"
-                      : i === 1
-                      ? "border-slate-400/30 bg-slate-400/5"
-                      : i === 2
-                      ? "border-amber-600/30 bg-amber-600/5"
-                      : "border-border/50 bg-muted/30")
-                  }
-                >
-                  <div className="shrink-0 w-7 flex justify-center">
-                    <RankBadge pos={i + 1} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{v.nome}</p>
-                    <div className="flex flex-wrap gap-3 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground">
-                        {v.qtdVendas} venda{v.qtdVendas !== 1 ? "s" : ""}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">{v.osEntregues} OS</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        lucro: {formatCurrency(v.lucro)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-display font-bold text-base text-primary">
-                      {formatCurrency(v.totalVendas)}
+      {/* ── Seletor de Trilhas de Gamificação ────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2 border-b border-border/60 pb-3">
+        <button
+          type="button"
+          onClick={() => setTrack("phones")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+            track === "phones"
+              ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          <Smartphone className="h-4 w-4" />
+          <span>Celulares (Geral / Unificado)</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 font-mono">
+            {rankingPhones.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTrack("accessories")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+            track === "accessories"
+              ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          <Headphones className="h-4 w-4" />
+          <span>Acessórios (Por Loja)</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 font-mono">
+            {rankingAccessories.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTrack("rules")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+            track === "rules"
+              ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          <Award className="h-4 w-4 text-yellow-400" />
+          <span>Patentes & Premiações</span>
+        </button>
+      </div>
+
+      {/* ── TRILHA 1: CELULARES (GERAL / UNIFICADO) ──────────────────────────────── */}
+      {track === "phones" && (
+        <div className="space-y-5">
+          {/* Banner Motivacional / Pódio dos 3 Primeiros */}
+          {rankingPhones.length >= 3 && (
+            <Card className="border-border/60 bg-gradient-to-b from-card to-muted/20 overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-display flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-yellow-500 animate-pulse" />
+                    Pódio do Mês — Celulares Vendidos
+                  </span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Corrida mensal (reinicia todo dia 1º)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 items-end pt-4 pb-2">
+                  {/* 2º Lugar */}
+                  <div className="flex flex-col items-center p-3 rounded-xl border border-slate-400/30 bg-slate-500/5 text-center">
+                    <span className="text-2xl sm:text-3xl mb-1">🥈</span>
+                    <span className="text-xs font-semibold text-slate-400">2º Lugar</span>
+                    <p className="font-bold text-xs sm:text-sm text-foreground truncate max-w-full mt-1">
+                      {rankingPhones[1].nome}
                     </p>
-                    {v.comissoes > 0 && (
-                      <p className="text-[10px] text-yellow-500">comissao: {formatCurrency(v.comissoes)}</p>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {rankingPhones[1].isTechnician ? "🔧 Técnico" : "💼 Vendedora"}
+                    </span>
+                    <div className="mt-2 text-xs font-extrabold text-foreground">
+                      {rankingPhones[1].qtdCelulares} <span className="font-normal text-[10px] text-muted-foreground">aparelhos</span>
+                    </div>
+                    <span className="text-[10px] text-primary font-semibold">
+                      {formatCurrency(rankingPhones[1].totalVendas)}
+                    </span>
+                  </div>
+
+                  {/* 1º Lugar (Mais alto) */}
+                  <div className="flex flex-col items-center p-3.5 sm:p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 text-center shadow-lg shadow-yellow-500/10 -mt-2">
+                    <span className="text-3xl sm:text-4xl mb-1">🥇</span>
+                    <span className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Líder Geral</span>
+                    <p className="font-extrabold text-sm sm:text-base text-foreground truncate max-w-full mt-1">
+                      {rankingPhones[0].nome}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {rankingPhones[0].isTechnician ? "🔧 Técnico" : "💼 Vendedora"} • {rankingPhones[0].storeName}
+                    </span>
+                    <div className="mt-2 text-sm sm:text-base font-extrabold text-yellow-500">
+                      {rankingPhones[0].qtdCelulares} <span className="font-normal text-[10px] text-muted-foreground">aparelhos</span>
+                    </div>
+                    <span className="text-[10px] text-primary font-bold">
+                      {formatCurrency(rankingPhones[0].totalVendas)}
+                    </span>
+                    {rankingPhones[0].patent.bonusUnlocked > 0 && (
+                      <span className="mt-1 text-[9px] px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 font-semibold">
+                        Bônus: {formatCurrency(rankingPhones[0].patent.bonusUnlocked)}
+                      </span>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground text-center py-8">Sem vendas no periodo</p>
-          )}
-        </CardContent>
-      </Card>
 
-      {ranking.length > 0 && (
+                  {/* 3º Lugar */}
+                  <div className="flex flex-col items-center p-3 rounded-xl border border-amber-700/30 bg-amber-700/5 text-center">
+                    <span className="text-2xl sm:text-3xl mb-1">🥉</span>
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-500">3º Lugar</span>
+                    <p className="font-bold text-xs sm:text-sm text-foreground truncate max-w-full mt-1">
+                      {rankingPhones[2].nome}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {rankingPhones[2].isTechnician ? "🔧 Técnico" : "💼 Vendedora"}
+                    </span>
+                    <div className="mt-2 text-xs font-extrabold text-foreground">
+                      {rankingPhones[2].qtdCelulares} <span className="font-normal text-[10px] text-muted-foreground">aparelhos</span>
+                    </div>
+                    <span className="text-[10px] text-primary font-semibold">
+                      {formatCurrency(rankingPhones[2].totalVendas)}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Card de Evolução Pessoal da Vendedora / Técnico Logado */}
+          {myPhoneStats && (
+            <Card className="border border-primary/30 bg-primary/5">
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs uppercase font-bold tracking-wider text-primary">Seu Desempenho no Período</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${PATENT_CONFIGS[myPhoneStats.patent.currentTier].badgeClass}`}>
+                        {PATENT_CONFIGS[myPhoneStats.patent.currentTier].icon} Patente {PATENT_CONFIGS[myPhoneStats.patent.currentTier].label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Você vendeu <strong className="text-foreground">{myPhoneStats.qtdCelulares} aparelhos</strong> ({formatCurrency(myPhoneStats.totalVendas)}).
+                      {myPhoneStats.patent.nextTier ? (
+                        <> Faltam apenas <strong className="text-primary">{myPhoneStats.patent.remainingValue} celulares</strong> para alcançar a patente <strong>{PATENT_CONFIGS[myPhoneStats.patent.nextTier].label}</strong> e liberar <strong>{formatCurrency(myPhoneStats.patent.nextBonus)}</strong> de bônus!</>
+                      ) : (
+                        <> Parabéns! Você atingiu a patente máxima <strong>Diamante</strong> com bônus de {formatCurrency(myPhoneStats.patent.bonusUnlocked)}!</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="w-full sm:w-48 text-right">
+                    <span className="text-xs font-bold text-foreground">{myPhoneStats.patent.progressPercent}%</span>
+                    <div className="w-full h-2 rounded-full bg-muted mt-1 overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-500 rounded-full"
+                        style={{ width: `${myPhoneStats.patent.progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Tabela do Ranking de Celulares */}
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-display flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-primary" /> Classificação Geral — Vendedoras & Técnicos
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {rankingPhones.length} participante{rankingPhones.length !== 1 ? "s" : ""}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {rankingPhones.length > 0 ? (
+                <div className="space-y-2">
+                  {rankingPhones.map((v, i) => {
+                    const cfg = PATENT_CONFIGS[v.patent.currentTier];
+                    return (
+                      <div
+                        key={v.uid}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all gap-2 ${
+                          i === 0
+                            ? "border-yellow-500/40 bg-yellow-500/5 shadow-sm"
+                            : i === 1
+                            ? "border-slate-400/40 bg-slate-400/5"
+                            : i === 2
+                            ? "border-amber-700/40 bg-amber-700/5"
+                            : "border-border/50 bg-card hover:bg-muted/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 shrink-0 flex justify-center">
+                            <RankBadge pos={i + 1} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-foreground">{v.nome}</span>
+                              {v.isTechnician ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 border border-blue-500/20 font-medium flex items-center gap-1">
+                                  <Wrench className="h-2.5 w-2.5" /> Técnico
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-medium">
+                                  💼 Vendedora
+                                </span>
+                              )}
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${cfg.badgeClass}`}>
+                                {cfg.icon} {cfg.label}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-muted-foreground mt-1">
+                              <span className="flex items-center gap-1">
+                                <Store className="h-3 w-3" /> {v.storeName}
+                              </span>
+                              <span>•</span>
+                              <span>Ticket Médio: <strong className="text-foreground">{formatCurrency(v.ticketMedio)}</strong></span>
+                              {v.tradeInCount > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-cyan-500 font-medium">
+                                    🔄 {v.tradeInCount} com Troca ({formatCurrency(v.tradeInTotalValue)})
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-border/40">
+                          <div className="text-left sm:text-right">
+                            <div className="text-sm sm:text-base font-extrabold text-foreground">
+                              {v.qtdCelulares} <span className="text-xs font-normal text-muted-foreground">aparelho{v.qtdCelulares !== 1 ? "s" : ""}</span>
+                            </div>
+                            <div className="text-xs font-bold text-primary">
+                              {formatCurrency(v.totalVendas)}
+                            </div>
+                          </div>
+                          {v.patent.bonusUnlocked > 0 && (
+                            <div className="text-right pl-3 border-l border-border/50">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">Bônus Meta</span>
+                              <span className="text-xs font-extrabold text-emerald-500">
+                                +{formatCurrency(v.patent.bonusUnlocked)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground text-xs">
+                  Nenhuma venda de celular registrada no período selecionado.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── TRILHA 2: ACESSÓRIOS (POR LOJA / FOCO LOCAL) ─────────────────────────── */}
+      {track === "accessories" && (
+        <div className="space-y-5">
+          {/* Card Resumo de Metas da Loja */}
+          {currentStoreMetric && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Card className="border-border/60 bg-card p-3.5">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Faturamento Acessórios</span>
+                <span className="text-base sm:text-xl font-extrabold text-primary block mt-1">
+                  {formatCurrency(currentStoreMetric.totalFaturado)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">{currentStoreMetric.storeName}</span>
+              </Card>
+
+              <Card className="border-border/60 bg-card p-3.5">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Peças Vendidas</span>
+                <span className="text-base sm:text-xl font-extrabold text-foreground block mt-1">
+                  {currentStoreMetric.qtdPecas} <span className="text-xs font-normal text-muted-foreground">itens</span>
+                </span>
+                <span className="text-[10px] text-muted-foreground">{currentStoreMetric.qtdTransacoes} atendimentos</span>
+              </Card>
+
+              <Card className="border-border/60 bg-card p-3.5">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">Ticket Médio</span>
+                <span className="text-base sm:text-xl font-extrabold text-foreground block mt-1">
+                  {formatCurrency(currentStoreMetric.ticketMedioTransacao)}
+                </span>
+                <span className="text-[10px] text-muted-foreground">Por atendimento</span>
+              </Card>
+
+              <Card className="border-border/60 bg-card p-3.5 relative overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Taxa de Anexo</span>
+                  <Zap className="h-3.5 w-3.5 text-yellow-500" />
+                </div>
+                <span className="text-base sm:text-xl font-extrabold text-amber-500 block mt-1">
+                  {currentStoreMetric.taxaAnexo}x
+                </span>
+                <span className="text-[10px] text-muted-foreground">Acessórios / celular</span>
+              </Card>
+            </div>
+          )}
+
+          {/* Card de Evolução Pessoal em Acessórios */}
+          {myAccessoryStats && (
+            <Card className="border border-emerald-500/30 bg-emerald-500/5">
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs uppercase font-bold tracking-wider text-emerald-600 dark:text-emerald-400">
+                        Sua Meta de Acessórios
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${PATENT_CONFIGS[myAccessoryStats.patent.currentTier].badgeClass}`}>
+                        {PATENT_CONFIGS[myAccessoryStats.patent.currentTier].icon} Patente {PATENT_CONFIGS[myAccessoryStats.patent.currentTier].label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Você faturou <strong className="text-foreground">{formatCurrency(myAccessoryStats.totalFaturado)}</strong> em acessórios ({myAccessoryStats.qtdPecas} peças vendidas).
+                      {myAccessoryStats.patent.nextTier ? (
+                        <> Faltam <strong className="text-emerald-500">{formatCurrency(myAccessoryStats.patent.remainingValue)}</strong> para subir para a patente <strong>{PATENT_CONFIGS[myAccessoryStats.patent.nextTier].label}</strong> e ganhar <strong>{formatCurrency(myAccessoryStats.patent.nextBonus)}</strong> de bônus!</>
+                      ) : (
+                        <> Parabéns! Você atingiu a patente máxima de acessórios com bônus de {formatCurrency(myAccessoryStats.patent.bonusUnlocked)}!</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="w-full sm:w-48 text-right">
+                    <span className="text-xs font-bold text-foreground">{myAccessoryStats.patent.progressPercent}%</span>
+                    <div className="w-full h-2 rounded-full bg-muted mt-1 overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500 transition-all duration-500 rounded-full"
+                        style={{ width: `${myAccessoryStats.patent.progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Tabela de Vendedoras de Acessórios */}
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-display flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Headphones className="h-4 w-4 text-primary" /> Vendas de Acessórios por Colaboradora
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Meta mensal por loja
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {rankingAccessories.length > 0 ? (
+                <div className="space-y-2">
+                  {rankingAccessories.map((v, i) => {
+                    const cfg = PATENT_CONFIGS[v.patent.currentTier];
+                    return (
+                      <div
+                        key={v.uid}
+                        className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all gap-2 ${
+                          i === 0
+                            ? "border-yellow-500/40 bg-yellow-500/5 shadow-sm"
+                            : "border-border/50 bg-card hover:bg-muted/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 shrink-0 flex justify-center">
+                            <RankBadge pos={i + 1} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-foreground">{v.nome}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                {v.storeName}
+                              </span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${cfg.badgeClass}`}>
+                                {cfg.icon} {cfg.label}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                              <span>{v.qtdPecas} peças em {v.qtdTransacoes} vendas</span>
+                              <span>•</span>
+                              <span>Ticket Médio: <strong className="text-foreground">{formatCurrency(v.ticketMedioTransacao)}</strong></span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-border/40">
+                          <div className="text-left sm:text-right">
+                            <div className="text-sm sm:text-base font-extrabold text-primary">
+                              {formatCurrency(v.totalFaturado)}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {v.qtdPecas} itens vendidos
+                            </div>
+                          </div>
+                          {v.patent.bonusUnlocked > 0 && (
+                            <div className="text-right pl-3 border-l border-border/50">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">Bônus</span>
+                              <span className="text-xs font-extrabold text-emerald-500">
+                                +{formatCurrency(v.patent.bonusUnlocked)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground text-xs">
+                  Nenhuma venda de acessório registrada no período para a loja selecionada.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── TRILHA 3: PATENTES, METAS & REGRAS DE BONIFICAÇÃO ─────────────────────── */}
+      {track === "rules" && (
+        <div className="space-y-5">
+          {/* Explicação da Filosofia de Crescimento */}
+          <Card className="border-border/60 bg-card p-4">
+            <div className="flex items-start gap-3">
+              <Sparkles className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-bold text-sm text-foreground">Como Funciona a Gamificação da Rede</h3>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Nosso modelo de crescimento foi desenhado para incentivar e premiar o esforço de todos. Ele combina:
+                  <strong className="text-foreground"> Bônus fixo em dinheiro por meta batida</strong>,
+                  <strong className="text-foreground"> comissão progressiva</strong> e
+                  <strong className="text-foreground"> reconhecimento público da liderança</strong>.
+                  A corrida do mês reinicia todo dia 1º para que todos sempre tenham chance de vencer, enquanto as patentes consagram a consistência ao longo do tempo.
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Cards das Patentes de Celulares */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+              <Smartphone className="h-3.5 w-3.5 text-primary" /> Régua de Metas — Celulares (Vendedoras + Técnicos)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {PHONE_TIERS.map((tier) => {
+                const cfg = PATENT_CONFIGS[tier.tier];
+                return (
+                  <Card key={tier.tier} className={`border p-4 ${cfg.bgColor} ${cfg.borderColor}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-2xl">{cfg.icon}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${cfg.badgeClass}`}>
+                        {cfg.label}
+                      </span>
+                    </div>
+                    <h5 className="font-bold text-sm text-foreground">
+                      {tier.maxQty ? `${tier.minQty} a ${tier.maxQty} Aparelhos` : `Acima de ${tier.minQty} Aparelhos`}
+                    </h5>
+                    <p className="text-xs text-muted-foreground mt-1 min-h-[36px]">
+                      {tier.description}
+                    </p>
+                    <div className="mt-3 pt-2.5 border-t border-border/40 flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground">Premiação:</span>
+                      <span className="text-xs font-extrabold text-emerald-500">
+                        {tier.bonusReais > 0 ? `+${formatCurrency(tier.bonusReais)} Bônus` : "Comissão Base"}
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Cards das Patentes de Acessórios */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+              <Headphones className="h-3.5 w-3.5 text-primary" /> Régua de Metas — Acessórios (Por Loja)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {ACCESSORY_TIERS.map((tier) => {
+                const cfg = PATENT_CONFIGS[tier.tier];
+                return (
+                  <Card key={tier.tier} className={`border p-4 ${cfg.bgColor} ${cfg.borderColor}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-2xl">{cfg.icon}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${cfg.badgeClass}`}>
+                        {cfg.label}
+                      </span>
+                    </div>
+                    <h5 className="font-bold text-sm text-foreground">
+                      {tier.maxAmount
+                        ? `${formatCurrency(tier.minAmount)} até ${formatCurrency(tier.maxAmount)}`
+                        : `Acima de ${formatCurrency(tier.minAmount)}`}
+                    </h5>
+                    <p className="text-xs text-muted-foreground mt-1 min-h-[36px]">
+                      {tier.description}
+                    </p>
+                    <div className="mt-3 pt-2.5 border-t border-border/40 flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground">Premiação:</span>
+                      <span className="text-xs font-extrabold text-emerald-500">
+                        {tier.bonusReais > 0 ? `+${formatCurrency(tier.bonusReais)} Bônus` : "Meta Base"}
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Gráfico Comparativo ─────────────────────────────────────────────────── */}
+      {ranking.length > 0 && track !== "rules" && (
         <Card className="border-border/50">
           <CardHeader className="pb-2">
-            <CardTitle className="font-display text-sm">Comparativo de Vendas</CardTitle>
+            <CardTitle className="font-display text-sm">Volume Comparativo por Colaborador</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>

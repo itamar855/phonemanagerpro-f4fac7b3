@@ -51,6 +51,13 @@ import { OsTab } from "@/components/features/relatorios/OsTab";
 import { CaixaTab } from "@/components/features/relatorios/CaixaTab";
 import { RankingTab } from "@/components/features/relatorios/RankingTab";
 import { FinanceiroTab } from "@/components/features/relatorios/FinanceiroTab";
+import {
+  aggregatePhoneRanking,
+  aggregateAccessoryRanking,
+  type RankSellerPhone,
+  type RankSellerAccessory,
+  type StoreAccessoryMetrics,
+} from "@/utils/rankingGamification";
 
 const Relatorios = () => {
   const { user, userRole, userPermissions, activeStoreId } = useAuth();
@@ -84,6 +91,9 @@ const Relatorios = () => {
   const [caixaData, setCaixaData] = useState<any[]>([]);
   const [caixaStats, setCaixaStats] = useState<any>({});
   const [ranking, setRanking] = useState<any[]>([]);
+  const [rankingPhones, setRankingPhones] = useState<RankSellerPhone[]>([]);
+  const [rankingAccessories, setRankingAccessories] = useState<RankSellerAccessory[]>([]);
+  const [storeAccessoryMetrics, setStoreAccessoryMetrics] = useState<Record<string, StoreAccessoryMetrics>>({});
   const [comissoes, setComissoes] = useState<any[]>([]);
   const [leadsData, setLeadsData] = useState<any>({ total: 0, bySource: [], conversion: 0 });
   const [customerMap, setCustomerMap] = useState<Map<string, any>>(new Map());
@@ -349,24 +359,49 @@ const Relatorios = () => {
   const fetchRanking = useCallback(async () => {
     const { start, end } = getPeriodDates(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const [salesRes, productsRes, osRes, rolesRes, settledIdsRes, historyRes] = await Promise.all([
+    const [salesRes, productsRes, osRes, rolesRes, settledIdsRes, historyRes, accTxRes] = await Promise.all([
       supabase.from("sales").select("*, products(*)").gte("created_at", start).lte("created_at", end),
       supabase.from("products").select("*"),
       supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
       supabase.from("user_roles").select("*"),
       fetchSettledItemIds(),
       fetchSettlementsHistory(effectiveStoreId),
+      supabase.from("transactions").select("*").eq("type", "income").eq("category", "acessorio").gte("created_at", start).lte("created_at", end),
     ]);
-    const sales = ((salesRes.data ?? []) as any[]).filter(s => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
+    const allSales = ((salesRes.data ?? []) as any[]);
+    const sales = allSales.filter(s => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
     const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p]));
     const os = ((osRes.data ?? []) as any[]).filter(o => effectiveStoreId === "all" || o.store_id === effectiveStoreId);
     const roles = (rolesRes.data ?? []) as any[];
     const roleMap = new Map(roles.map((r: any) => [r.user_id, r]));
+    const allAccTx = (accTxRes.data ?? []) as any[];
 
     const { settledSaleIds: sSaleIds, settledOsIds: sOsIds } = settledIdsRes;
     setSettledSaleIds(sSaleIds);
     setSettledOsIds(sOsIds);
     setSettlementsHistory(historyRes);
+
+    // Gamification: Ranking Geral de Celulares (Vendedoras + Técnicos)
+    const phoneRanking = aggregatePhoneRanking({
+      sales: allSales,
+      profiles,
+      stores,
+      userRoles: roles,
+      productMap,
+    });
+    setRankingPhones(phoneRanking);
+
+    // Gamification: Ranking de Acessórios (Por Loja / Metas Locais)
+    const { ranking: accRanking, storeMetrics: accMetrics } = aggregateAccessoryRanking({
+      transactions: allAccTx,
+      sales: allSales,
+      profiles,
+      stores,
+      userRoles: roles,
+      filterStoreId: effectiveStoreId,
+    });
+    setRankingAccessories(accRanking);
+    setStoreAccessoryMetrics(accMetrics);
 
     // Fetch peças usadas para apurar margem líquida dos reparos
     let osItems: any[] = [];
@@ -452,7 +487,7 @@ const Relatorios = () => {
     const sorted = Object.values(stats).sort((a, b) => b.totalVendas - a.totalVendas);
     setRanking(sorted);
     setComissoes(sorted.filter(s => s.comissoes > 0).sort((a, b) => b.comissoes - a.comissoes));
-  }, [rankPeriod, storeId, rankCustomStart, rankCustomEnd, rankSpecificDay, profileMap, isAdmin, activeStoreId]);
+  }, [rankPeriod, storeId, rankCustomStart, rankCustomEnd, rankSpecificDay, profileMap, isAdmin, activeStoreId, profiles, stores]);
 
   const fetchLeads = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
@@ -823,8 +858,13 @@ const Relatorios = () => {
             setStoreId={setStoreId}
             stores={stores}
             ranking={ranking}
+            rankingPhones={rankingPhones}
+            rankingAccessories={rankingAccessories}
+            storeAccessoryMetrics={storeAccessoryMetrics}
             currentRankPeriodLabel={currentRankPeriodLabel}
             currentStoreName={currentStoreName}
+            activeStoreId={activeStoreId}
+            currentUserId={user?.id}
           />
         </TabsContent>
 
