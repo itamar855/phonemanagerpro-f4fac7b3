@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,11 +7,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, User, Phone, Wrench } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Plus, User, Phone, Wrench, Search, CheckCircle2 } from "lucide-react";
 import SignatureCanvas from "@/components/SignatureCanvas";
 import { AndroidPatternLock } from "@/components/AndroidPatternLock";
 import { OsChecklist } from "@/components/OsChecklist";
 import { DeviceScreenScanner } from "@/components/features/ai/DeviceScreenScanner";
+import { supabase } from "@/integrations/supabase/client";
 
 const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condições descritas nesta OS.
 2. A loja não se responsabiliza por dados contidos no aparelho. Recomenda-se backup prévio.
@@ -64,6 +66,76 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
   loading,
   isSubmitting
 }) => {
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+
+  // Se o modal fechar ou resetar, limpa estado de busca
+  useEffect(() => {
+    if (!dialogOpen) {
+      setCustomerSearch("");
+      setCustomerResults([]);
+      setSelectedCustomer(null);
+    }
+  }, [dialogOpen]);
+
+  // Se o form tiver customer_name zerado, limpa cliente selecionado
+  useEffect(() => {
+    if (!form.customer_name && selectedCustomer) {
+      setSelectedCustomer(null);
+    }
+  }, [form.customer_name]);
+
+  // Busca reativa com debounce de 250ms
+  useEffect(() => {
+    if (!customerSearch || customerSearch.trim().length < 2) {
+      setCustomerResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingCustomer(true);
+      const term = customerSearch.trim();
+      const { data } = await supabase
+        .from("customers" as any)
+        .select("id, name, phone, cpf, address, email")
+        .or(`name.ilike.%${term}%,phone.ilike.%${term}%,cpf.ilike.%${term}%`)
+        .limit(6);
+
+      setCustomerResults((data as any[]) ?? []);
+      setIsSearchingCustomer(false);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [customerSearch]);
+
+  const handleSelectCustomer = (c: any) => {
+    setSelectedCustomer(c);
+    setForm((prev: any) => ({
+      ...prev,
+      customer_id: c.id,
+      customer_name: c.name || prev.customer_name,
+      customer_phone: c.phone || prev.customer_phone,
+      customer_cpf: c.cpf || prev.customer_cpf,
+    }));
+    setCustomerSearch("");
+    setCustomerResults([]);
+  };
+
+  const handleClearCustomer = () => {
+    setSelectedCustomer(null);
+    setForm((prev: any) => ({
+      ...prev,
+      customer_id: null,
+      customer_name: "",
+      customer_phone: "",
+      customer_cpf: "",
+    }));
+    setCustomerSearch("");
+    setCustomerResults([]);
+  };
+
   return (
     <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
       <DialogTrigger asChild>
@@ -76,9 +148,88 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Cliente */}
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-              <User className="h-3 w-3" /> Dados do Cliente
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <User className="h-3 w-3" /> Dados do Cliente
+              </p>
+              {selectedCustomer && (
+                <Badge variant="outline" className="text-[10px] h-5 bg-primary/10 text-primary border-primary/20 gap-1 font-semibold">
+                  <CheckCircle2 className="h-3 w-3" /> Cliente Vinculado
+                </Badge>
+              )}
+            </div>
+
+            {selectedCustomer ? (
+              <div className="p-2.5 rounded-lg border border-primary/30 bg-primary/5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-8 w-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                    {selectedCustomer.name?.charAt(0).toUpperCase() || "C"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground truncate">
+                      {selectedCustomer.name}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+                      {selectedCustomer.phone && <span>Tel: {selectedCustomer.phone}</span>}
+                      {selectedCustomer.cpf && <span>CPF: {selectedCustomer.cpf}</span>}
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[11px] px-2.5 shrink-0 hover:bg-muted"
+                  onClick={handleClearCustomer}
+                >
+                  Trocar Cliente
+                </Button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    placeholder="🔍 Buscar cliente já cadastrado por Nome, Telefone ou CPF..."
+                    className="pl-9 h-9 text-xs bg-muted/20 border-dashed hover:border-solid focus:border-solid transition-colors"
+                  />
+                  {isSearchingCustomer && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground animate-pulse">
+                      Buscando...
+                    </span>
+                  )}
+                </div>
+
+                {customerResults.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 rounded-lg border border-border bg-popover shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+                    {customerResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => handleSelectCustomer(c)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/70 transition-colors border-b border-border/40 last:border-0 cursor-pointer"
+                      >
+                        <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
+                          {c.name?.charAt(0).toUpperCase() || "C"}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-foreground truncate">{c.name}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {[c.phone, c.cpf ? `CPF: ${c.cpf}` : null].filter(Boolean).join(" · ") || "Sem telefone/CPF"}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-[9px] py-0 h-4 shrink-0 bg-primary/5 text-primary border-primary/20">
+                          Selecionar
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Nome *</Label>

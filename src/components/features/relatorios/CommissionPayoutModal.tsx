@@ -42,6 +42,7 @@ interface PendingCommissionItem {
   profitAmount: number | null;
   commissionPercent: number;
   commissionAmount: number;
+  hasZeroOrNegativeProfit?: boolean;
 }
 
 interface CommissionPayoutModalProps {
@@ -91,6 +92,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   const [loadingOpenRegister, setLoadingOpenRegister] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [directOsParts, setDirectOsParts] = useState<any[]>([]);
+  const [loadingParts, setLoadingParts] = useState(false);
 
   // Sincroniza usuário inicial quando o modal abre
   useEffect(() => {
@@ -158,6 +161,61 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       });
   }, [selectedStoreId]);
 
+  // Busca em tempo real as peças das OSs entregues do técnico selecionado para precisão contábil
+  useEffect(() => {
+    if (!open || !selectedUserId || !selectedStoreId) {
+      setDirectOsParts([]);
+      return;
+    }
+
+    const targetOsIds = allServiceOrders
+      .filter((o) => o.technician_id === selectedUserId && o.store_id === selectedStoreId && o.status === "delivered")
+      .map((o) => o.id);
+
+    if (targetOsIds.length === 0) {
+      setDirectOsParts([]);
+      return;
+    }
+
+    setLoadingParts(true);
+    const chunkSize = 50;
+    const chunks: string[][] = [];
+    for (let i = 0; i < targetOsIds.length; i += chunkSize) {
+      chunks.push(targetOsIds.slice(i, i + chunkSize));
+    }
+
+    Promise.all(
+      chunks.map((chunk) =>
+        supabase
+          .from("service_order_items" as any)
+          .select("service_order_id, unit_cost, quantity")
+          .in("service_order_id", chunk)
+      )
+    )
+      .then((results) => {
+        const allParts: any[] = [];
+        results.forEach((res) => {
+          if (res.data) allParts.push(...res.data);
+        });
+        setDirectOsParts(allParts);
+      })
+      .catch((err) => {
+        console.error("Erro ao sincronizar peças das OSs do técnico:", err);
+      })
+      .finally(() => {
+        setLoadingParts(false);
+      });
+  }, [open, selectedUserId, selectedStoreId, allServiceOrders]);
+
+  const effectiveOsItems = useMemo(() => {
+    if (directOsParts.length > 0) {
+      const directMap = new Set(directOsParts.map((p) => p.service_order_id));
+      const fallbackRemaining = (osItems || []).filter((p) => !directMap.has(p.service_order_id));
+      return [...directOsParts, ...fallbackRemaining];
+    }
+    return osItems || [];
+  }, [directOsParts, osItems]);
+
   // Apura as comissões pendentes (NÃO liquidadas) do colaborador selecionado
   const pendingItems = useMemo<PendingCommissionItem[]>(() => {
     if (!selectedUserId || !selectedStoreId) return [];
@@ -186,6 +244,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
               profitAmount: null,
               commissionPercent: Number(s.commission_percent || 0),
               commissionAmount: commVal,
+              hasZeroOrNegativeProfit: false,
             });
           }
         }
@@ -209,46 +268,66 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
           if (endDate && osDate > endDate) return;
 
           const gross = Number(o.final_price || o.estimated_price || 0);
-          const partsForOs = osItems.filter((i) => i.service_order_id === o.id);
+          const partsForOs = effectiveOsItems.filter((i) => i.service_order_id === o.id);
           const partsCost = partsForOs.reduce(
             (sum, p) => sum + Number(p.unit_cost || 0) * Number(p.quantity || 1),
             0
           );
           const profit = gross - partsCost;
-          if (profit <= 0) return; // Elegibilidade individual: margem estritamente positiva
+          const isZeroOrNegative = profit <= 0;
+          const commAmount = isZeroOrNegative ? 0 : (profit * commPct) / 100;
 
-          const commAmount = (profit * commPct) / 100;
+          const sName = o.requested_service || "Serviço";
+          const dName = [o.device_brand, o.device_model].filter(Boolean).join(" ");
+          const labelPrefix = `OS #${o.order_number}`;
+          const label = dName ? `${labelPrefix}: ${dName} - ${sName}` : `${labelPrefix}: ${sName}`;
 
-          if (commAmount > 0) {
-            items.push({
-              id: o.id,
-              type: "service_order",
-              date: formatBrasiliaDate(o.delivered_at),
-              label: `OS #${o.order_number}: ${o.device_brand || ""} ${o.device_model || ""} - ${o.requested_service || "Serviço"}`,
-              grossAmount: gross,
-              costAmount: partsCost,
-              profitAmount: profit,
-              commissionPercent: commPct,
-              commissionAmount: commAmount,
-            });
-          }
+          items.push({
+            id: o.id,
+            type: "service_order",
+            date: formatBrasiliaDate(o.delivered_at),
+            label,
+            grossAmount: gross,
+            costAmount: partsCost,
+            profitAmount: profit,
+            commissionPercent: commPct,
+            commissionAmount: commAmount,
+            hasZeroOrNegativeProfit: isZeroOrNegative,
+          });
         }
       }
     });
 
     return items;
-  }, [selectedUserId, selectedStoreId, allSales, allServiceOrders, osItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate]);
+  }, [selectedUserId, selectedStoreId, allSales, allServiceOrders, effectiveOsItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate]);
 
-  // Por padrão, ao selecionar um colaborador, seleciona todos os itens pendentes
+  const eligibleItems = useMemo(
+    () => pendingItems.filter((i) => !i.hasZeroOrNegativeProfit && i.commissionAmount > 0),
+    [pendingItems]
+  );
+
+  const ineligibleItems = useMemo(
+    () => pendingItems.filter((i) => i.hasZeroOrNegativeProfit || i.commissionAmount <= 0),
+    [pendingItems]
+  );
+
+  // Por padrão, seleciona apenas os itens ELEGÍVEIS (ignora OS com margem zero/negativa)
   useEffect(() => {
-    if (pendingItems.length > 0) {
-      setSelectedItemIds(new Set(pendingItems.map((i) => i.id)));
+    if (eligibleItems.length > 0) {
+      setSelectedItemIds(new Set(eligibleItems.map((i) => i.id)));
     } else {
       setSelectedItemIds(new Set());
     }
-  }, [pendingItems]);
+  }, [eligibleItems]);
 
   const toggleItem = (id: string) => {
+    const item = pendingItems.find((i) => i.id === id);
+    if (item?.hasZeroOrNegativeProfit) {
+      toast.warning(
+        `A ${item.label} possui margem zero ou prejuízo (${item.profitAmount !== null ? formatCurrency(item.profitAmount) : "R$ 0,00"}) após custo de peças e não gera comissão.`
+      );
+      return;
+    }
     setSelectedItemIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -258,10 +337,10 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   };
 
   const toggleSelectAll = () => {
-    if (selectedItemIds.size === pendingItems.length) {
+    if (selectedItemIds.size === eligibleItems.length) {
       setSelectedItemIds(new Set());
     } else {
-      setSelectedItemIds(new Set(pendingItems.map((i) => i.id)));
+      setSelectedItemIds(new Set(eligibleItems.map((i) => i.id)));
     }
   };
 
@@ -301,6 +380,22 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      // Salvaguarda prévia no frontend: nunca envia itens com margem zero ou prejuízo
+      const invalidSelected = selectedItems.filter((it) => it.hasZeroOrNegativeProfit || it.commissionAmount <= 0);
+      if (invalidSelected.length > 0) {
+        toast.error(
+          `A ${invalidSelected[0].label} possui margem zero ou negativa e não pode ser liquidada. Ela foi desmarcada automaticamente da seleção.`,
+          { duration: 6000 }
+        );
+        setSelectedItemIds((prev) => {
+          const next = new Set(prev);
+          invalidSelected.forEach((inv) => next.delete(inv.id));
+          return next;
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!selectedStoreId || !UUID_REGEX.test(selectedStoreId)) {
         toast.error("Loja da liquidação não identificada ou inválida. Não é possível prosseguir.");
@@ -386,7 +481,35 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       setReceiptFile(null);
     } catch (err: any) {
       console.error("Erro ao liquidar comissões:", err);
-      toast.error(`Falha na liquidação: ${err.message || "Erro desconhecido"}`);
+      const rawMsg = err?.message || String(err) || "Erro desconhecido";
+
+      // Interceptação e tradução amigável do erro SERVICE_ORDER_ZERO_PROFIT
+      if (rawMsg.includes("SERVICE_ORDER_ZERO_PROFIT")) {
+        const uuidMatch = rawMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        const failedId = uuidMatch ? uuidMatch[0] : "";
+        const targetOs = allServiceOrders.find((o) => o.id === failedId);
+        const osLabel = targetOs
+          ? `OS #${targetOs.order_number} (${[targetOs.device_brand, targetOs.device_model].filter(Boolean).join(" ") || "Aparelho"})`
+          : failedId
+          ? `OS (${failedId.slice(0, 8)})`
+          : "Uma das ordens de serviço selecionadas";
+
+        if (failedId) {
+          setSelectedItemIds((prev) => {
+            const next = new Set(prev);
+            next.delete(failedId);
+            return next;
+          });
+        }
+
+        toast.error(
+          `Não é possível pagar comissão sobre a ${osLabel}: o custo das peças superou ou igualou o valor faturado (margem zero ou negativa). Ela foi desmarcada automaticamente da lista para você prosseguir com a liquidação dos demais serviços.`,
+          { duration: 9000 }
+        );
+        return;
+      }
+
+      toast.error(`Falha na liquidação: ${rawMsg}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -488,18 +611,31 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
           {/* 3. Lista de Vendas e OSs Pendentes */}
           {selectedUserId ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-bold text-foreground">
                     Operações Pendentes ({pendingItems.length})
                   </span>
                   {pendingItems.length > 0 && (
                     <Badge variant="outline" className="text-[10px] h-5">
-                      {selectedItemIds.size} selecionadas
+                      {selectedItemIds.size} de {eligibleItems.length} selecionadas
                     </Badge>
                   )}
+                  {ineligibleItems.length > 0 && (
+                    <Badge variant="destructive" className="text-[10px] h-5 gap-1 font-semibold">
+                      <AlertTriangle className="h-3 w-3" />
+                      {ineligibleItems.length === 1
+                        ? "1 com margem zero/negativa (desmarcada)"
+                        : `${ineligibleItems.length} com margem zero/negativa (desmarcadas)`}
+                    </Badge>
+                  )}
+                  {loadingParts && (
+                    <span className="text-[10px] text-muted-foreground animate-pulse">
+                      Sincronizando peças...
+                    </span>
+                  )}
                 </div>
-                {pendingItems.length > 0 && (
+                {eligibleItems.length > 0 && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -507,12 +643,29 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                     className="h-7 text-xs text-primary"
                     onClick={toggleSelectAll}
                   >
-                    {selectedItemIds.size === pendingItems.length
+                    {selectedItemIds.size === eligibleItems.length
                       ? "Desmarcar Todos"
-                      : "Selecionar Todos"}
+                      : "Selecionar Elegíveis"}
                   </Button>
                 )}
               </div>
+
+              {/* Banner de Alerta Visual quando houver OS com margem zero ou prejuízo */}
+              {ineligibleItems.length > 0 && (
+                <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+                  <div className="space-y-0.5">
+                    <span className="font-semibold block text-amber-700 dark:text-amber-300">
+                      {ineligibleItems.length === 1
+                        ? "Atenção: 1 Ordem de Serviço não elegível para comissão (Margem Zero ou Negativa)"
+                        : `Atenção: ${ineligibleItems.length} Ordens de Serviço não elegíveis para comissão (Margem Zero ou Negativa)`}
+                    </span>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      O custo das peças atingiu ou superou o valor cobrado do cliente. Pela regra de negócio, essas OSs não geram comissão e foram desmarcadas automaticamente para permitir a liquidação dos demais serviços sem erros.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {pendingItems.length === 0 ? (
                 <div className="py-8 text-center bg-muted/10 rounded-lg border border-dashed border-border text-muted-foreground text-xs">
@@ -522,19 +675,24 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                 <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-2 bg-background">
                   {pendingItems.map((item) => {
                     const isChecked = selectedItemIds.has(item.id);
+                    const isNegative = Boolean(item.hasZeroOrNegativeProfit);
+
                     return (
                       <div
                         key={item.id}
                         onClick={() => toggleItem(item.id)}
-                        className={`flex items-center justify-between p-2 rounded-md border text-xs cursor-pointer transition-colors ${
-                          isChecked
-                            ? "bg-primary/5 border-primary/30"
-                            : "bg-muted/10 border-border/40 hover:bg-muted/20"
+                        className={`flex items-center justify-between p-2 rounded-md border text-xs transition-colors ${
+                          isNegative
+                            ? "bg-destructive/5 border-destructive/30 opacity-80 cursor-not-allowed"
+                            : isChecked
+                            ? "bg-primary/5 border-primary/30 cursor-pointer"
+                            : "bg-muted/10 border-border/40 hover:bg-muted/20 cursor-pointer"
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <Checkbox
                             checked={isChecked}
+                            disabled={isNegative}
                             onCheckedChange={() => toggleItem(item.id)}
                             onClick={(e) => e.stopPropagation()}
                           />
@@ -550,22 +708,45 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                               >
                                 {item.type === "sale" ? "VENDA" : "OS"}
                               </Badge>
-                              <span className="font-semibold text-foreground truncate">
+
+                              {isNegative && (
+                                <Badge variant="destructive" className="text-[9px] py-0 h-4 gap-1 font-semibold">
+                                  <AlertTriangle className="h-2.5 w-2.5" /> Margem Negativa / Sem Lucro
+                                </Badge>
+                              )}
+
+                              <span className={`font-semibold truncate ${isNegative ? "text-muted-foreground" : "text-foreground"}`}>
                                 {item.label}
                               </span>
                             </div>
                             <p className="text-[10px] text-muted-foreground mt-0.5">
                               {item.date} · Faturado: {formatCurrency(item.grossAmount)}
-                              {item.profitAmount !== null && ` · Lucro: ${formatCurrency(item.profitAmount)}`}
-                              {` (${item.commissionPercent}%)`}
+                              {item.costAmount !== null && item.costAmount > 0 && ` · Peças: ${formatCurrency(item.costAmount)}`}
+                              {item.profitAmount !== null && (
+                                <span className={item.profitAmount <= 0 ? " text-destructive font-semibold" : ""}>
+                                  {` · Margem/Lucro: ${formatCurrency(item.profitAmount)}`}
+                                </span>
+                              )}
+                              {!isNegative && ` (${item.commissionPercent}%)`}
+                              {isNegative && (
+                                <span className="text-destructive font-medium ml-1">
+                                  — Custo de peças superou o faturamento
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>
 
                         <div className="text-right shrink-0 pl-2">
-                          <span className="font-mono font-bold text-primary text-xs">
-                            {formatCurrency(item.commissionAmount)}
-                          </span>
+                          {isNegative ? (
+                            <span className="text-[10px] font-semibold text-muted-foreground font-mono bg-muted/40 px-1.5 py-0.5 rounded">
+                              R$ 0,00 (Nula)
+                            </span>
+                          ) : (
+                            <span className="font-mono font-bold text-primary text-xs">
+                              {formatCurrency(item.commissionAmount)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

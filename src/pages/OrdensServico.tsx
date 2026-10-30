@@ -92,6 +92,7 @@ const OrdensServico = () => {
   const [deviceOffAgreed, setDeviceOffAgreed] = useState(false);
 
   const [form, setForm] = useState({
+    customer_id: null as string | null,
     customer_name: "", customer_phone: "", customer_cpf: "",
     device_brand: "iPhone", device_model: "", device_imei: "", device_color: "",
     device_condition: "", device_password: "", device_accessories: "",
@@ -349,6 +350,7 @@ const OrdensServico = () => {
 
   const resetForm = () => {
     setForm({
+      customer_id: null,
       customer_name: "", customer_phone: "", customer_cpf: "",
       device_brand: "iPhone", device_model: "", device_imei: "", device_color: "",
       device_condition: "", device_password: "", device_accessories: "",
@@ -397,6 +399,8 @@ const OrdensServico = () => {
         return;
       }
 
+      let resolvedCustomerId = form.customer_id || null;
+
       if (form.customer_name) {
         let query = supabase.from("customers" as any).select("id").eq("name", form.customer_name);
         if (form.customer_phone) query = query.eq("phone", form.customer_phone);
@@ -404,18 +408,22 @@ const OrdensServico = () => {
         
         const { data: extCust } = await query.limit(1).maybeSingle();
         
-        if (!extCust) {
-          await supabase.from("customers" as any).insert({
+        if (extCust) {
+          resolvedCustomerId = extCust.id;
+        } else if (!resolvedCustomerId) {
+          const { data: newCust } = await supabase.from("customers" as any).insert({
             name: form.customer_name,
             phone: form.customer_phone || null,
             cpf: form.customer_cpf || null,
             created_by: user.id,
             store_id: storeIdToUse,
-          });
+          }).select("id").maybeSingle();
+          if (newCust) resolvedCustomerId = newCust.id;
         }
       }
 
       const { error, data } = await supabase.from("service_orders").insert({
+        customer_id: resolvedCustomerId,
         customer_name: form.customer_name,
         customer_phone: form.customer_phone || null,
         customer_cpf: form.customer_cpf || null,
