@@ -101,6 +101,14 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     label: string;
     profitText: string;
   } | null>(null);
+  const [errorPopupData, setErrorPopupData] = useState<{
+    osId: string;
+    orderNumber?: number;
+    osLabel: string;
+    deviceModel?: string;
+    requestedService?: string;
+    profitText: string;
+  } | null>(null);
 
   const handleOpenOS = (osId: string) => {
     if (!osId) return;
@@ -110,6 +118,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   // Limpa erro de OS ao trocar usuário, loja ou fechar modal
   useEffect(() => {
     setFailedOsInfo(null);
+    setErrorPopupData(null);
   }, [selectedUserId, selectedStoreId, open]);
 
   // Sincroniza usuário inicial quando o modal abre
@@ -501,18 +510,20 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       const rawMsg = err?.message || String(err) || "Erro desconhecido";
 
       // Interceptação e tradução amigável do erro SERVICE_ORDER_ZERO_PROFIT
-      if (rawMsg.includes("SERVICE_ORDER_ZERO_PROFIT")) {
+      if (rawMsg.includes("SERVICE_ORDER_ZERO_PROFIT") || rawMsg.includes("margem/lucro zero") || rawMsg.includes("comissão nula")) {
         const uuidMatch = rawMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
         const failedId = uuidMatch ? uuidMatch[0] : "";
-        const targetOs = allServiceOrders.find((o) => o.id === failedId);
+        const ordersList = Array.isArray(allServiceOrders) ? allServiceOrders : [];
+        const targetOs = ordersList.find((o) => o.id === failedId);
         const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
         const profitText = profitMatch ? profitMatch[1] : "-130,00";
 
+        const devModel = [targetOs?.device_brand, targetOs?.device_model].filter(Boolean).join(" ");
         const osLabel = targetOs
-          ? `OS #${targetOs.order_number} (${[targetOs.device_brand, targetOs.device_model].filter(Boolean).join(" ") || "Aparelho"})`
+          ? `OS #${targetOs.order_number} (${devModel || "Aparelho"})`
           : failedId
           ? `OS (${failedId.slice(0, 8)})`
-          : "Uma das ordens de serviço selecionadas";
+          : "Ordem de Serviço com Margem Negativa";
 
         if (failedId) {
           setFailedOsInfo({
@@ -528,6 +539,16 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
             return next;
           });
         }
+
+        // Abre o POPUP dedicado na tela
+        setErrorPopupData({
+          osId: failedId,
+          orderNumber: targetOs?.order_number,
+          osLabel,
+          deviceModel: devModel,
+          requestedService: targetOs?.requested_service,
+          profitText,
+        });
 
         toast.error(
           `Não é possível pagar comissão sobre a ${osLabel}: o custo das peças superou o faturamento (Prejuízo apurado de R$ ${profitText}). Ela foi desmarcada automaticamente da lista para você prosseguir com a liquidação.`,
@@ -1016,6 +1037,77 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
             </Button>
           </div>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Popup Modal dedicado para exibição da OS com Margem Negativa e Ação Direta */}
+    <Dialog open={Boolean(errorPopupData)} onOpenChange={(open) => !open && setErrorPopupData(null)}>
+      <DialogContent className="max-w-md p-6 border-destructive/40 shadow-2xl z-[100]">
+        <DialogHeader className="space-y-2">
+          <div className="h-12 w-12 rounded-full bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive mx-auto">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <DialogTitle className="text-center text-lg font-bold text-foreground">
+            Ordem de Serviço com Margem Negativa
+          </DialogTitle>
+        </DialogHeader>
+
+        {errorPopupData && (
+          <div className="space-y-4 pt-1">
+            <div className="p-3.5 bg-destructive/10 border border-destructive/20 rounded-lg space-y-2 text-xs">
+              <div className="flex items-center justify-between font-semibold text-destructive">
+                <span className="font-bold text-sm">{errorPopupData.osLabel}</span>
+                <Badge variant="destructive" className="text-[10px] uppercase font-bold px-2 py-0.5">
+                  Prejuízo: R$ {errorPopupData.profitText}
+                </Badge>
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                O custo das peças lançadas nesta OS superou o valor cobrado do cliente, gerando prejuízo contábil e impedindo o pagamento da comissão.
+              </p>
+            </div>
+
+            <div className="bg-muted/30 p-3.5 rounded-lg border border-border/50 text-xs space-y-2">
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Número da OS:</span>
+                <span className="font-bold text-foreground">
+                  {errorPopupData.orderNumber ? `OS #${errorPopupData.orderNumber}` : errorPopupData.osId.slice(0, 8)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Aparelho / Modelo:</span>
+                <span className="font-semibold text-foreground">{errorPopupData.deviceModel || "Não especificado"}</span>
+              </div>
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Serviço Realizado:</span>
+                <span className="font-semibold text-foreground">{errorPopupData.requestedService || "Serviço"}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <Button
+                type="button"
+                className="w-full h-10 gap-2 bg-primary text-primary-foreground font-semibold shadow-md text-xs hover:bg-primary/90"
+                onClick={() => {
+                  handleOpenOS(errorPopupData.osId);
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Abrir Ordem de Serviço {errorPopupData.orderNumber ? `#${errorPopupData.orderNumber}` : ""} para Analisar
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-9 text-xs"
+                onClick={() => {
+                  setErrorPopupData(null);
+                }}
+              >
+                Continuar Liquidação sem esta OS
+              </Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
