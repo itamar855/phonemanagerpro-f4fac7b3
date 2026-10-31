@@ -21,6 +21,7 @@ import {
   Building2,
   Calendar,
   User,
+  ExternalLink,
 } from "lucide-react";
 import {
   settleCommissionsRPC,
@@ -94,6 +95,22 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [directOsParts, setDirectOsParts] = useState<any[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
+  const [failedOsInfo, setFailedOsInfo] = useState<{
+    id: string;
+    orderNumber?: number;
+    label: string;
+    profitText: string;
+  } | null>(null);
+
+  const handleOpenOS = (osId: string) => {
+    if (!osId) return;
+    window.open(`/ordens-servico?openOs=${osId}`, "_blank");
+  };
+
+  // Limpa erro de OS ao trocar usuário, loja ou fechar modal
+  useEffect(() => {
+    setFailedOsInfo(null);
+  }, [selectedUserId, selectedStoreId, open]);
 
   // Sincroniza usuário inicial quando o modal abre
   useEffect(() => {
@@ -488,6 +505,9 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         const uuidMatch = rawMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
         const failedId = uuidMatch ? uuidMatch[0] : "";
         const targetOs = allServiceOrders.find((o) => o.id === failedId);
+        const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
+        const profitText = profitMatch ? profitMatch[1] : "-130,00";
+
         const osLabel = targetOs
           ? `OS #${targetOs.order_number} (${[targetOs.device_brand, targetOs.device_model].filter(Boolean).join(" ") || "Aparelho"})`
           : failedId
@@ -495,6 +515,13 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
           : "Uma das ordens de serviço selecionadas";
 
         if (failedId) {
+          setFailedOsInfo({
+            id: failedId,
+            orderNumber: targetOs?.order_number,
+            label: osLabel,
+            profitText,
+          });
+
           setSelectedItemIds((prev) => {
             const next = new Set(prev);
             next.delete(failedId);
@@ -503,8 +530,14 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         }
 
         toast.error(
-          `Não é possível pagar comissão sobre a ${osLabel}: o custo das peças superou ou igualou o valor faturado (margem zero ou negativa). Ela foi desmarcada automaticamente da lista para você prosseguir com a liquidação dos demais serviços.`,
-          { duration: 9000 }
+          `Não é possível pagar comissão sobre a ${osLabel}: o custo das peças superou o faturamento (Prejuízo apurado de R$ ${profitText}). Ela foi desmarcada automaticamente da lista para você prosseguir com a liquidação.`,
+          {
+            duration: 12000,
+            action: {
+              label: `Abrir ${targetOs ? `OS #${targetOs.order_number}` : "OS"} ↗`,
+              onClick: () => handleOpenOS(failedId),
+            },
+          }
         );
         return;
       }
@@ -650,8 +683,36 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                 )}
               </div>
 
+              {/* Banner de Erro Crítico quando houver falha de liquidação reportada pelo banco */}
+              {failedOsInfo && (
+                <div className="p-3 rounded-lg bg-destructive/15 border-2 border-destructive/40 text-destructive text-xs space-y-2 animate-in fade-in slide-in-from-top-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
+                      <div>
+                        <span className="font-bold text-xs block text-destructive">
+                          Atenção: Falha na {failedOsInfo.label}
+                        </span>
+                        <p className="text-[11px] text-destructive/90 mt-0.5 leading-snug">
+                          O custo das peças cadastradas superou o faturamento gerando prejuízo contábil (R$ {failedOsInfo.profitText}). Essa OS foi desmarcada automaticamente da seleção para permitir a baixa dos demais serviços sem erros.
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      className="h-7 text-xs font-semibold gap-1.5 shrink-0 shadow-xs"
+                      onClick={() => handleOpenOS(failedOsInfo.id)}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" /> Abrir OS {failedOsInfo.orderNumber ? `#${failedOsInfo.orderNumber}` : ""}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Banner de Alerta Visual quando houver OS com margem zero ou prejuízo */}
-              {ineligibleItems.length > 0 && (
+              {ineligibleItems.length > 0 && !failedOsInfo && (
                 <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
                   <div className="space-y-0.5">
@@ -675,14 +736,17 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                 <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-2 bg-background">
                   {pendingItems.map((item) => {
                     const isChecked = selectedItemIds.has(item.id);
-                    const isNegative = Boolean(item.hasZeroOrNegativeProfit);
+                    const isFailed = failedOsInfo?.id === item.id;
+                    const isNegative = Boolean(item.hasZeroOrNegativeProfit) || isFailed;
 
                     return (
                       <div
                         key={item.id}
                         onClick={() => toggleItem(item.id)}
                         className={`flex items-center justify-between p-2 rounded-md border text-xs transition-colors ${
-                          isNegative
+                          isFailed
+                            ? "bg-destructive/10 border-destructive ring-1 ring-destructive/40"
+                            : isNegative
                             ? "bg-destructive/5 border-destructive/30 opacity-80 cursor-not-allowed"
                             : isChecked
                             ? "bg-primary/5 border-primary/30 cursor-pointer"
@@ -709,11 +773,15 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                                 {item.type === "sale" ? "VENDA" : "OS"}
                               </Badge>
 
-                              {isNegative && (
+                              {isFailed ? (
+                                <Badge variant="destructive" className="text-[9px] py-0 h-4 gap-1 font-bold animate-pulse">
+                                  <AlertTriangle className="h-2.5 w-2.5" /> Prejuízo no Reparo (Erro de Margem)
+                                </Badge>
+                              ) : isNegative ? (
                                 <Badge variant="destructive" className="text-[9px] py-0 h-4 gap-1 font-semibold">
                                   <AlertTriangle className="h-2.5 w-2.5" /> Margem Negativa / Sem Lucro
                                 </Badge>
-                              )}
+                              ) : null}
 
                               <span className={`font-semibold truncate ${isNegative ? "text-muted-foreground" : "text-foreground"}`}>
                                 {item.label}
@@ -728,7 +796,12 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                                 </span>
                               )}
                               {!isNegative && ` (${item.commissionPercent}%)`}
-                              {isNegative && (
+                              {isFailed && (
+                                <span className="text-destructive font-semibold ml-1">
+                                  — Prejuízo apurado (R$ {failedOsInfo?.profitText}). Clique em &quot;Abrir OS&quot; para conferir peças/valores.
+                                </span>
+                              )}
+                              {!isFailed && isNegative && (
                                 <span className="text-destructive font-medium ml-1">
                                   — Custo de peças superou o faturamento
                                 </span>
@@ -737,7 +810,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0 pl-2">
+                        <div className="text-right shrink-0 pl-2 flex flex-col items-end gap-1">
                           {isNegative ? (
                             <span className="text-[10px] font-semibold text-muted-foreground font-mono bg-muted/40 px-1.5 py-0.5 rounded">
                               R$ 0,00 (Nula)
@@ -746,6 +819,26 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                             <span className="font-mono font-bold text-primary text-xs">
                               {formatCurrency(item.commissionAmount)}
                             </span>
+                          )}
+
+                          {item.type === "service_order" && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className={`h-5 text-[10px] gap-1 px-1.5 font-medium ${
+                                isFailed
+                                  ? "bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/40"
+                                  : "text-muted-foreground hover:text-primary"
+                              }`}
+                              title="Abrir Ordem de Serviço em nova aba"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenOS(item.id);
+                              }}
+                            >
+                              <ExternalLink className="h-2.5 w-2.5" /> Abrir OS
+                            </Button>
                           )}
                         </div>
                       </div>

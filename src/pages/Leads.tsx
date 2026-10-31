@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,15 +17,15 @@ import { toast } from "sonner";
 import { convertToWebP } from "@/utils/imageOptimizer";
 import {
   Trash2, MoreVertical, MessageSquare, ChevronRight, Download,
-  MessageCircle, Phone, Plus, Users, Mail, Search, Shield, Store,
+  MessageCircle, Phone, Plus, Users, User, Mail, Search, Shield, Store,
   Image as ImageIcon, Mic, Send, Paperclip, UserPlus, Filter,
   Play, Pause, X, CheckCheck, Clock, RefreshCw
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { LeadList } from "@/components/LeadList";
-import ConversaSync from "@/components/ConversaSync";
 import ChatCenter from "@/components/ChatCenter";
+import { WhatsAppConnectModal, WhatsAppConnectionState } from "@/components/features/crm/WhatsAppConnectModal";
 
 import { logAction } from "@/utils/auditLogger";
 
@@ -66,10 +66,45 @@ const Leads = () => {
   const [chatModalOpen, setChatModalOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const CHAT_PAGE_SIZE = 25;
   const [searchTerm, setSearchTerm] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [lastIGSync, setLastIGSync] = useState<{ date: Date; status: string; error_message?: string } | null>(null);
   const [syncErrors, setSyncErrors] = useState<any[]>([]);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppConnectionState>("unknown");
+
+  const checkInitialWaStatus = useCallback(async () => {
+    try {
+      let query = supabase.from("whatsapp_config").select("api_url, instance_name, api_key");
+      if (activeStoreId) query = query.eq("store_id", activeStoreId);
+      const { data } = await query.maybeSingle();
+      if (data?.api_url && data?.instance_name && data?.api_key) {
+        const endpoint = `${data.api_url.replace(/\/+$/, "")}/instance/connectionState/${data.instance_name}`;
+        const res = await fetch(endpoint, { headers: { apikey: data.api_key } });
+        if (res.ok) {
+          const json = await res.json();
+          const state = json?.instance?.state || json?.state || json?.status;
+          if (state === "open" || state === "connected") setWhatsappStatus("open");
+          else if (state === "connecting") setWhatsappStatus("connecting");
+          else setWhatsappStatus("close");
+        } else {
+          setWhatsappStatus("close");
+        }
+      }
+    } catch {
+      // Silencioso em caso de erro de rede inicial
+    }
+  }, [activeStoreId]);
+
+  useEffect(() => {
+    if (!authLoading) {
+      checkInitialWaStatus();
+    }
+  }, [authLoading, checkInitialWaStatus]);
 
   const fetchLastSync = useCallback(async () => {
     const { data } = await supabase
@@ -229,6 +264,32 @@ const Leads = () => {
      }
    };
 
+  const handleSyncWhatsAppHistory = async (lead: any) => {
+    if (!lead?.phone) {
+      toast.error("Lead sem telefone para sincronização.");
+      return;
+    }
+    const toastId = toast.loading("Sincronizando histórico do WhatsApp...");
+    try {
+      const { data, error } = await supabase.functions.invoke('whatsapp-send', {
+        body: {
+          action: 'sync-history',
+          phone: lead.phone,
+          leadId: lead.id,
+          storeId: lead.store_id || (activeStoreId !== "all" ? activeStoreId : null)
+        }
+      });
+
+      if (error) throw error;
+      const count = data?.syncedCount ?? 0;
+      toast.success(`Histórico sincronizado! ${count > 0 ? `(${count} mensagens atualizadas/novas)` : '(Nenhuma nova mensagem)'}`, { id: toastId });
+      await fetchMessages(lead.id);
+    } catch (err: any) {
+      console.error("Erro na sincronização de histórico WhatsApp:", err);
+      toast.error("Erro ao sincronizar: " + (err.message || "Falha na conexão"), { id: toastId });
+    }
+  };
+
   const handleAIQualify = async (leadId: string) => {
     setQualifying(true);
     const toastId = toast.loading("IA analisando histórico do lead...");
@@ -296,23 +357,92 @@ const Leads = () => {
 
   const fetchMessages = useCallback(async (leadId: string) => {
     setMessagesLoading(true);
+    setHasMoreMessages(true);
     const { data, error } = await supabase
       .from("lead_messages")
       .select("*")
       .eq("lead_id", leadId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: false })
+      .limit(CHAT_PAGE_SIZE);
 
     if (error) {
       console.error("Error fetching messages:", error);
       toast.error("Erro ao carregar mensagens");
     } else {
-      setChatMessages(data ?? []);
+      const msgs = data ?? [];
+      if (msgs.length < CHAT_PAGE_SIZE) {
+        setHasMoreMessages(false);
+      }
+      const sorted = [...msgs].sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      setChatMessages(sorted);
+
+      requestAnimationFrame(() => {
+        if (chatScrollRef.current) {
+          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }
+      });
     }
     setMessagesLoading(false);
 
     // Mark as read when opening chat
     await supabase.from("leads").update({ has_unread: false }).eq("id", leadId);
   }, []);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!selectedLead?.id || loadingOlder || !hasMoreMessages || chatMessages.length === 0) return;
+
+    const oldestMessage = chatMessages[0];
+    if (!oldestMessage?.created_at) return;
+
+    setLoadingOlder(true);
+    const container = chatScrollRef.current;
+    const prevScrollHeight = container ? container.scrollHeight : 0;
+    const prevScrollTop = container ? container.scrollTop : 0;
+
+    try {
+      const { data, error } = await supabase
+        .from("lead_messages")
+        .select("*")
+        .eq("lead_id", selectedLead.id)
+        .lt("created_at", oldestMessage.created_at)
+        .order("created_at", { ascending: false })
+        .limit(CHAT_PAGE_SIZE);
+
+      if (error) throw error;
+
+      const olderMsgs = data ?? [];
+      if (olderMsgs.length < CHAT_PAGE_SIZE) {
+        setHasMoreMessages(false);
+      }
+
+      if (olderMsgs.length > 0) {
+        const olderSorted = [...olderMsgs].sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        setChatMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newUniqueOlder = olderSorted.filter(m => !existingIds.has(m.id));
+          return [...newUniqueOlder, ...prev];
+        });
+
+        requestAnimationFrame(() => {
+          if (container) {
+            const heightDiff = container.scrollHeight - prevScrollHeight;
+            container.scrollTop = prevScrollTop + heightDiff;
+          }
+        });
+      }
+    } catch (err: any) {
+      console.error("Erro ao carregar mensagens anteriores:", err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [selectedLead?.id, loadingOlder, hasMoreMessages, chatMessages]);
+
+  const handleChatScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop } = e.currentTarget;
+    if (scrollTop <= 60 && hasMoreMessages && !loadingOlder && !messagesLoading) {
+      loadOlderMessages();
+    }
+  };
 
   useEffect(() => {
     if (!authLoading) {
@@ -333,8 +463,18 @@ const Leads = () => {
           if (payload.eventType === 'INSERT') toast.info("Novo lead recebido!");
         })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_messages' }, (payload) => {
-          if (selectedLead?.id === payload.new.lead_id) fetchMessages(selectedLead.id);
-          if (payload.new.sender_type !== 'vendedor') toast.info("Nova mensagem recebida!");
+          if (selectedLead?.id === payload.new.lead_id) {
+            setChatMessages(prev => {
+              if (prev.some(m => m.id === payload.new.id)) return prev;
+              return [...prev, payload.new].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            });
+            requestAnimationFrame(() => {
+              if (chatScrollRef.current) {
+                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+              }
+            });
+          }
+          if (payload.new.sender_type !== 'vendedor' && payload.new.sender !== 'vendedor') toast.info("Nova mensagem recebida!");
         })
         .subscribe((status) => {
           if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
@@ -361,16 +501,14 @@ const Leads = () => {
   }, [selectedLead?.id, fetchData, fetchMessages]);
 
   useEffect(() => {
-    const scrollContainer = document.querySelector('[data-radix-scroll-area-viewport]');
-    if (scrollContainer) {
-      const isAtBottom = scrollContainer.scrollHeight - scrollContainer.scrollTop <= scrollContainer.clientHeight + 100;
-      const isOpening = chatModalOpen && (!chatMessages || chatMessages.length <= 1);
-
-      if (isAtBottom || isOpening) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    if (chatModalOpen && chatScrollRef.current && !loadingOlder) {
+      const container = chatScrollRef.current;
+      const isNearBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 150;
+      if (isNearBottom || chatMessages.length <= CHAT_PAGE_SIZE) {
+        container.scrollTop = container.scrollHeight;
       }
     }
-  }, [chatMessages, chatModalOpen]);
+  }, [chatMessages, chatModalOpen, loadingOlder]);
 
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -637,6 +775,29 @@ const Leads = () => {
               <Button
                 variant="outline"
                 size="sm"
+                className={`gap-2 h-9 text-xs font-medium border transition-all ${
+                  whatsappStatus === "open"
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                    : "border-yellow-500/40 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20"
+                }`}
+                onClick={() => setWhatsappModalOpen(true)}
+              >
+                <MessageCircle className="h-4 w-4" />
+                {whatsappStatus === "open" ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    WhatsApp Conectado
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-yellow-400" />
+                    Conectar WhatsApp
+                  </span>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 className="gap-2 h-9 border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
                 onClick={handleSyncLeads}
                 disabled={syncing}
@@ -811,24 +972,6 @@ const Leads = () => {
         />
       )}
 
-      <ConversaSync
-        selectedLeadId={selectedLead?.id}
-        onLeadSync={(leadInfo) => {
-          if (selectedLead && (selectedLead.name !== leadInfo.name)) {
-            setSelectedLead(prev => prev ? { ...prev, ...leadInfo } : null);
-          }
-        }}
-        onSyncComplete={(msgs) => {
-          setChatMessages(msgs);
-        }}
-        onNewMessage={(msg) => {
-          // fetchMessages already handles the full list, but we can append locally
-          // since syncHistory already updated setChatMessages if it was a full sync
-          // or we can just call fetchMessages to be safe
-          if (selectedLead?.id) fetchMessages(selectedLead.id);
-        }}
-      />
-
       {/* Response Integrated Modal */}
       <Dialog open={responseModalOpen} onOpenChange={setResponseModalOpen}>
         <DialogContent className="max-w-md">
@@ -929,109 +1072,198 @@ const Leads = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Chat History Modal (Restored) */}
+      {/* Chat History Modal (WhatsApp Web Style) */}
       <Dialog open={chatModalOpen} onOpenChange={setChatModalOpen}>
-        <DialogContent className="max-w-md h-[600px] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="p-4 border-b bg-muted/30">
-            <DialogTitle className="flex items-center justify-between w-full pr-6">
-              <div className="flex items-center gap-2">
-                {selectedLead?.source === 'whatsapp' ? <MessageCircle className="h-5 w-5 text-green-500" /> : <Instagram className="h-5 w-5 text-pink-500" />}
-                Conversa com {selectedLead?.name || "Lead"}
+        <DialogContent className="max-w-3xl w-[95vw] h-[85vh] max-h-[760px] flex flex-col p-0 overflow-hidden bg-[#0c1317] border-[#222d34] text-zinc-100 shadow-2xl rounded-2xl">
+          {/* WhatsApp Header */}
+          <div className="p-3.5 px-4 border-b border-[#222d34] bg-[#202c33] flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <div className="h-10 w-10 rounded-full bg-[#128c7e]/20 text-[#25d366] font-bold flex items-center justify-center border border-[#128c7e]/40">
+                  {selectedLead?.name ? selectedLead.name.substring(0, 2).toUpperCase() : <User className="h-5 w-5" />}
+                </div>
+                <div className="absolute -bottom-0.5 -right-0.5 bg-[#25d366] rounded-full p-0.5 border-2 border-[#202c33]">
+                  {selectedLead?.source === 'whatsapp' ? (
+                    <MessageCircle className="h-2.5 w-2.5 text-white" />
+                  ) : (
+                    <Instagram className="h-2.5 w-2.5 text-white" />
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {selectedLead?.source === 'instagram' && (
-                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={() => handleRefreshProfile(selectedLead)}>
-                    <RefreshCw className="h-3 w-3" /> Sincronizar Perfil
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1 border-purple-500/30 text-purple-400 bg-purple-500/5 hover:bg-purple-500/10" onClick={() => handleAIQualify(selectedLead?.id)}>
-                  <Shield className="h-3 w-3" /> Qualificar IA
-                </Button>
-                <Badge variant="outline" className="animate-pulse bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">
-                  LIVE SYNC
-                </Badge>
+              <div>
+                <h3 className="font-semibold text-sm text-zinc-100 flex items-center gap-1.5 leading-tight">
+                  {selectedLead?.name || "Lead"}
+                </h3>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-zinc-400 font-mono">
+                    {selectedLead?.phone || selectedLead?.instagram_username || "Sem contato"}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Online
+                  </span>
+                </div>
               </div>
-            </DialogTitle>
-          </DialogHeader>
+            </div>
 
-          <ScrollArea className="flex-1 p-4 bg-muted/10">
-            <div className="space-y-3 pb-4">
+            <div className="flex items-center gap-2 pr-6">
+              {selectedLead?.source === 'instagram' && (
+                <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5 border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200" onClick={() => handleRefreshProfile(selectedLead)}>
+                  <RefreshCw className="h-3 w-3" /> Sincronizar Perfil
+                </Button>
+              )}
+              {selectedLead?.phone && (
+                <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5 border-emerald-500/40 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20" onClick={() => handleSyncWhatsAppHistory(selectedLead)}>
+                  <RefreshCw className="h-3 w-3" /> Sincronizar Conversa
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5 border-purple-500/40 text-purple-300 bg-purple-500/10 hover:bg-purple-500/20" onClick={() => handleAIQualify(selectedLead?.id)}>
+                <Shield className="h-3 w-3" /> Qualificar IA
+              </Button>
+              <Badge variant="outline" className="h-6 gap-1 bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px] font-mono tracking-wider">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
+                LIVE SYNC
+              </Badge>
+            </div>
+          </div>
+
+          {/* Chat Messages */}
+          <div
+            ref={chatScrollRef}
+            onScroll={handleChatScroll}
+            className="flex-1 overflow-y-auto p-4 bg-[#0b141a] select-text"
+          >
+            <div className="space-y-3 pb-4 max-w-2xl mx-auto">
+              {loadingOlder && (
+                <div className="flex items-center justify-center py-2 gap-2 text-xs text-emerald-400 bg-zinc-900/60 rounded-full w-fit mx-auto px-4 border border-emerald-500/20 shadow-sm animate-pulse">
+                  <Clock className="h-3.5 w-3.5 animate-spin" />
+                  <span>Carregando mensagens anteriores...</span>
+                </div>
+              )}
+
+              {!hasMoreMessages && chatMessages.length > 0 && !messagesLoading && (
+                <div className="flex justify-center py-2">
+                  <span className="text-[10px] text-zinc-500 bg-zinc-900/80 px-3 py-1 rounded-full border border-zinc-800 select-none">
+                    Início do histórico da conversa
+                  </span>
+                </div>
+              )}
+
               {messagesLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 space-y-3">
-                  <Clock className="h-6 w-6 animate-spin text-primary" />
-                  <p className="text-sm text-muted-foreground">Carregando histórico...</p>
+                  <Clock className="h-6 w-6 animate-spin text-emerald-400" />
+                  <p className="text-sm text-zinc-400">Carregando histórico...</p>
                 </div>
               ) : chatMessages.length === 0 ? (
-                <div className="text-center py-10 text-muted-foreground text-sm">
-                  Nenhuma mensagem capturada ainda. <br /> Use o botão "Enviar p/ CRM" na extensão para sincronizar ou o Instagram Webhook.
+                <div className="text-center py-16 text-zinc-400 text-sm max-w-sm mx-auto">
+                  <MessageCircle className="h-10 w-10 text-zinc-600 mx-auto mb-2 opacity-50" />
+                  Nenhuma mensagem capturada ainda. <br /> Use o botão "Enviar p/ CRM" na extensão ou aguarde mensagens do WhatsApp.
                 </div>
               ) : (
-                chatMessages.map(msg => (
-                  <div key={msg.id} className={`flex ${msg.sender_type === 'vendedor' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm shadow-sm relative group ${msg.sender_type === 'vendedor'
-                        ? 'bg-primary/20 text-foreground rounded-tr-none border border-primary/20'
-                        : 'bg-muted border text-slate-700 rounded-tl-none'
-                      }`}>
-                      {msg.message_type === 'image' ? (
-                        <div className="space-y-1">
-                          <img src={msg.media_url} className="rounded-lg max-h-60 object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(msg.media_url, '_blank')} />
-                          {msg.content && <p>{msg.content}</p>}
-                        </div>
-                      ) : msg.message_type === 'audio' ? (
-                        <div className="flex items-center gap-2 bg-black/5 p-2 rounded-lg min-w-[200px]">
-                          <Mic className="h-4 w-4 text-primary" />
-                          <audio controls src={msg.media_url} className="h-8 max-w-full" />
-                        </div>
-                      ) : (
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      )}
+                chatMessages
+                  .slice()
+                  .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                  .map(msg => {
+                    const isFromMe = msg.sender_type === 'vendedor' || msg.sender === 'vendedor';
+                    return (
+                      <div key={msg.id} className={`flex ${isFromMe ? 'justify-end' : 'justify-start'} w-full animate-in fade-in-50 duration-200`}>
+                        <div
+                          className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-sm shadow-md relative group ${
+                            isFromMe
+                              ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-xs border border-[#005c4b]/60'
+                              : 'bg-[#202c33] text-[#e9edef] rounded-tl-xs border border-zinc-700/60'
+                          }`}
+                        >
+                          {msg.message_type === 'image' ? (
+                            <div className="space-y-1">
+                              {msg.media_url ? (
+                                <img
+                                  src={msg.media_url}
+                                  className="rounded-lg max-h-64 object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                  onClick={() => window.open(msg.media_url, '_blank')}
+                                  onError={(e) => {
+                                    // Hide broken img tag if URL expired or failed
+                                    e.currentTarget.style.display = 'none';
+                                    const fallback = e.currentTarget.parentElement?.querySelector('.img-fallback');
+                                    if (fallback) (fallback as HTMLElement).style.display = 'flex';
+                                  }}
+                                  alt="Mídia"
+                                />
+                              ) : null}
+                              <div
+                                className={`img-fallback items-center gap-2.5 p-3 bg-black/30 rounded-xl text-xs text-zinc-300 border border-zinc-700/60 cursor-pointer hover:bg-black/50 transition-colors ${msg.media_url ? 'hidden' : 'flex'}`}
+                                onClick={() => handleSyncWhatsAppHistory(selectedLead)}
+                                title="Clique para sincronizar e baixar a foto do WhatsApp"
+                              >
+                                <div className="h-8 w-8 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                                  <ImageIcon className="h-4 w-4 text-emerald-400" />
+                                </div>
+                                <div className="flex flex-col text-left">
+                                  <span className="font-semibold text-emerald-300">Foto recebida</span>
+                                  <span className="text-[10px] text-zinc-400">Clique para sincronizar mídia</span>
+                                </div>
+                              </div>
+                              {msg.content && msg.content !== '[Imagem]' && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                            </div>
+                          ) : msg.message_type === 'audio' ? (
+                            <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg min-w-[220px]">
+                              <Mic className="h-4 w-4 text-emerald-400" />
+                              <audio controls src={msg.media_url} className="h-8 max-w-full" />
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap leading-relaxed select-text font-normal">{msg.content}</p>
+                          )}
 
-                      <div className={`text-[8px] mt-1 opacity-60 flex items-center gap-1 ${msg.sender_type === 'vendedor' ? 'justify-end' : ''}`}>
-                        {new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
-                        {msg.sender_type === 'vendedor' && <CheckCheck className="h-2.5 w-2.5 text-blue-500" />}
+                          <div className={`text-[10px] mt-1 flex items-center gap-1 select-none ${isFromMe ? 'justify-end text-emerald-200/70' : 'justify-end text-zinc-400'}`}>
+                            <span>
+                              {new Date(msg.created_at).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {isFromMe && <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))
+                    );
+                  })
               )}
             </div>
-          </ScrollArea>
+          </div>
 
-          <footer className="p-3 border-t bg-muted/20">
-            <div className="flex flex-col gap-2">
+          {/* WhatsApp Footer */}
+          <footer className="p-3 border-t border-[#222d34] bg-[#202c33]">
+            <div className="flex flex-col gap-2 max-w-2xl mx-auto">
               {imageFile && (
-                <div className="flex items-center gap-2 bg-primary/10 p-2 rounded-lg text-xs">
+                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg text-xs text-emerald-300">
                   <ImageIcon className="h-4 w-4" />
                   <span className="truncate">{imageFile.name}</span>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={() => setImageFile(null)}><X className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto text-zinc-400 hover:text-white" onClick={() => setImageFile(null)}><X className="h-3 w-3" /></Button>
                 </div>
               )}
               {audioBlob && (
-                <div className="flex items-center gap-2 bg-primary/10 p-2 rounded-lg text-xs">
+                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg text-xs text-emerald-300">
                   <Mic className="h-4 w-4" />
                   <span>Áudio gravado pronto p/ envio</span>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto" onClick={() => setAudioBlob(null)}><X className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto text-zinc-400 hover:text-white" onClick={() => setAudioBlob(null)}><X className="h-3 w-3" /></Button>
                 </div>
               )}
 
               <div className="flex items-center gap-2">
                 <input type="file" id="chat-img" className="hidden" accept="image/*" onChange={e => setImageFile(e.target.files?.[0] || null)} />
-                <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" onClick={() => document.getElementById('chat-img')?.click()}>
+                <Button variant="ghost" size="icon" className="h-10 w-10 text-zinc-400 hover:text-white hover:bg-zinc-700/50 rounded-xl" onClick={() => document.getElementById('chat-img')?.click()}>
                   <Paperclip className="h-5 w-5" />
                 </Button>
 
                 <Input
-                  placeholder="Escrava uma mensagem..."
+                  placeholder="Digite uma mensagem..."
                   value={responseText}
                   onChange={e => setResponseText(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendResponse()}
-                  className="flex-1"
+                  className="flex-1 bg-[#2a3942] border-0 text-white placeholder:text-zinc-400 rounded-xl h-10 focus-visible:ring-1 focus-visible:ring-emerald-500"
                 />
 
                 <Button
                   variant={recording ? "destructive" : "ghost"}
                   size="icon"
-                  className={`h-9 w-9 ${recording ? 'animate-pulse' : 'text-muted-foreground'}`}
+                  className={`h-10 w-10 rounded-xl ${recording ? 'animate-pulse bg-red-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700/50'}`}
                   onClick={() => {
                     if (recording) {
                       mediaRecorder?.stop();
@@ -1057,7 +1289,7 @@ const Leads = () => {
 
                 <Button
                   size="icon"
-                  className="h-9 w-9"
+                  className="h-10 w-10 rounded-xl bg-[#00a884] hover:bg-[#02906f] text-white shadow-md active:scale-95 transition-transform"
                   disabled={loading || (!responseText.trim() && !imageFile && !audioBlob)}
                   onClick={sendResponse}
                 >
@@ -1068,6 +1300,13 @@ const Leads = () => {
           </footer>
         </DialogContent>
       </Dialog>
+
+      <WhatsAppConnectModal
+        open={whatsappModalOpen}
+        onOpenChange={setWhatsappModalOpen}
+        storeId={activeStoreId}
+        onStatusChange={(status) => setWhatsappStatus(status)}
+      />
     </div>
   );
 };

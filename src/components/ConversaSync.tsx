@@ -144,18 +144,20 @@ const ConversaSync = ({ selectedLeadId, onSyncComplete, onLeadSync, onNewMessage
                   Sem histórico de mensagens.
                 </div>
               )}
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.sender_type === 'vendedor' ? 'justify-end' : 'justify-start'}`}
-                >
+              {messages.map((msg) => {
+                const isFromMe = msg.sender_type === 'vendedor' || msg.sender === 'vendedor';
+                return (
                   <div
-                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                      msg.sender_type === 'vendedor'
-                        ? 'bg-primary text-primary-foreground rounded-tr-none'
-                        : 'bg-muted text-foreground rounded-tl-none border'
-                    }`}
+                    key={msg.id}
+                    className={`flex ${isFromMe ? 'justify-end' : 'justify-start'}`}
                   >
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                        isFromMe
+                          ? 'bg-primary text-primary-foreground rounded-tr-none'
+                          : 'bg-muted text-foreground rounded-tl-none border'
+                      }`}
+                    >
                     {msg.message_type === 'image' ? (
                       <div className="space-y-1">
                         <img 
@@ -180,7 +182,8 @@ const ConversaSync = ({ selectedLeadId, onSyncComplete, onLeadSync, onNewMessage
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+            })}
             </div>
           </ScrollArea>
         </CardContent>

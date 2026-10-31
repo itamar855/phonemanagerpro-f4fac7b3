@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Webhook, Trash2, Plus, Send, ExternalLink, Info, MessageSquare, ShieldCheck, Globe, Camera, Brain, Activity, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Webhook, Trash2, Plus, Send, ExternalLink, Info, MessageSquare, ShieldCheck, Globe, Camera, Brain, Activity, AlertCircle, CheckCircle2, Clock, QrCode } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { format } from "date-fns";
+import { WhatsAppConnectModal } from "@/components/features/crm/WhatsAppConnectModal";
 
 const eventLabels: Record<string, string> = {
   os_status_changed: "Mudança de Status na OS (WhatsApp / N8N)",
@@ -28,6 +29,7 @@ export default function Configuracoes() {
   const [whatsappConfig, setWhatsappConfig] = useState<Partial<Tables<"whatsapp_config">>>({
     api_url: "", api_key: "", instance_name: "", is_active: true
   });
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [instagramConfig, setInstagramConfig] = useState<any>({
     page_id: "", instagram_business_account_id: "", page_access_token: "", is_active: true, ai_active: false
   });
@@ -349,11 +351,21 @@ export default function Configuracoes() {
 
           <Card className="border-border/50 shadow-sm overflow-hidden">
             <div className="h-1 bg-gradient-to-r from-emerald-500 to-green-600" />
-            <CardHeader>
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3">
               <CardTitle className="font-display text-lg flex items-center gap-2">
                 <MessageSquare className="h-5 w-5 text-emerald-500" />
                 Configuração WhatsApp Profissional
               </CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setWhatsappModalOpen(true)}
+                className="h-8 text-xs gap-1.5 border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+              >
+                <QrCode className="h-3.5 w-3.5" />
+                Conectar via QR Code & Testar
+              </Button>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSaveWhatsappConfig} className="space-y-4">
@@ -387,6 +399,15 @@ export default function Configuracoes() {
               </form>
             </CardContent>
           </Card>
+
+          <WhatsAppConnectModal
+            open={whatsappModalOpen}
+            onOpenChange={(open) => {
+              setWhatsappModalOpen(open);
+              if (!open) fetchData();
+            }}
+            storeId={activeStoreId}
+          />
 
           <Card className="border-border/50 shadow-sm overflow-hidden">
             <div className="h-1 bg-gradient-to-r from-pink-500 to-purple-600" />

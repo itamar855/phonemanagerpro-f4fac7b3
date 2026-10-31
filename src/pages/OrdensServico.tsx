@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import SignatureCanvas from "@/components/SignatureCanvas";
 import { AndroidPatternLock } from "@/components/AndroidPatternLock";
 import { supabase } from "@/integrations/supabase/client";
@@ -1015,6 +1016,38 @@ const OrdensServico = () => {
       justification: "",
     });
   };
+
+  // Suporte a abertura automática de OS via link direto (?openOs=ID ou ?id=ID)
+  const [searchParams] = useSearchParams();
+  const openOsParam = searchParams.get("openOs") || searchParams.get("id");
+
+  useEffect(() => {
+    if (!openOsParam) return;
+
+    // 1. Tenta encontrar na lista já carregada
+    const localMatch = orders.find(
+      (o) => o.id === openOsParam || String(o.order_number) === openOsParam
+    );
+    if (localMatch) {
+      openDetail(localMatch);
+      return;
+    }
+
+    // 2. Se não estiver na lista local (filtro de loja/status), busca direto no banco
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(openOsParam);
+    let q = supabase.from("service_orders").select("*");
+    if (isUuid) {
+      q = q.eq("id", openOsParam);
+    } else {
+      q = q.eq("order_number", Number(openOsParam));
+    }
+
+    q.single().then(({ data, error }) => {
+      if (data && !error) {
+        openDetail(data);
+      }
+    });
+  }, [openOsParam, orders]);
 
   const totalPaid = (o: any) =>
     (Number(o?.payment_cash) || 0) + (Number(o?.payment_card) || 0) +

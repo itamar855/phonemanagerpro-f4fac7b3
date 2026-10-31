@@ -315,31 +315,34 @@ export default function ChatCenter({ leads, onRefreshProfile, onAIQualify, user,
           {/* Messages */}
           <ScrollArea className="flex-1 p-6" ref={scrollRef}>
             <div className="space-y-4 max-w-4xl mx-auto">
-              {messages.map((msg, idx) => (
-                <div key={msg.id} className={`flex ${msg.sender_type === 'vendedor' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`flex flex-col ${msg.sender_type === 'vendedor' ? 'items-end' : 'items-start'}`}>
-                    <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 text-sm shadow-sm relative ${
-                      msg.sender_type === 'vendedor'
-                        ? 'bg-primary text-primary-foreground rounded-tr-none'
-                        : 'bg-muted border border-border/40 text-foreground rounded-tl-none'
-                    }`}>
-                      {msg.message_type === 'image' ? (
-                        <img src={msg.media_url} className="rounded-lg max-h-72 object-cover cursor-pointer" onClick={() => window.open(msg.media_url, '_blank')} />
-                      ) : msg.message_type === 'audio' ? (
-                        <audio controls src={msg.media_url} className="h-8 w-full max-w-[240px]" />
-                      ) : (
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 mt-1 px-1">
-                      <span className="text-[9px] text-muted-foreground opacity-70">
-                        {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </span>
-                      {msg.sender_type === 'vendedor' && <CheckCheck className="h-3 w-3 text-primary" />}
+              {messages.map((msg, idx) => {
+                const isFromMe = msg.sender_type === 'vendedor' || msg.sender === 'vendedor';
+                return (
+                  <div key={msg.id} className={`flex ${isFromMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`flex flex-col ${isFromMe ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 text-sm shadow-sm relative ${
+                        isFromMe
+                          ? 'bg-primary text-primary-foreground rounded-tr-none'
+                          : 'bg-muted border border-border/40 text-foreground rounded-tl-none'
+                      }`}>
+                        {msg.message_type === 'image' ? (
+                          <img src={msg.media_url} className="rounded-lg max-h-72 object-cover cursor-pointer" onClick={() => window.open(msg.media_url, '_blank')} />
+                        ) : msg.message_type === 'audio' ? (
+                          <audio controls src={msg.media_url} className="h-8 w-full max-w-[240px]" />
+                        ) : (
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 mt-1 px-1">
+                        <span className="text-[9px] text-muted-foreground opacity-70">
+                          {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </span>
+                        {isFromMe && <CheckCheck className="h-3 w-3 text-primary" />}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </ScrollArea>
 
