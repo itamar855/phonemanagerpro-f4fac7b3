@@ -407,19 +407,19 @@ const OrdensServico = () => {
         if (form.customer_phone) query = query.eq("phone", form.customer_phone);
         if (form.customer_cpf) query = query.eq("cpf", form.customer_cpf);
         
-        const { data: extCust } = await query.limit(1).maybeSingle();
+        const { data: extCust } = await (query as any).limit(1).maybeSingle();
         
         if (extCust) {
-          resolvedCustomerId = extCust.id;
+          resolvedCustomerId = (extCust as any).id;
         } else if (!resolvedCustomerId) {
-          const { data: newCust } = await supabase.from("customers" as any).insert({
+          const { data: newCust } = await (supabase.from("customers" as any).insert({
             name: form.customer_name,
             phone: form.customer_phone || null,
             cpf: form.customer_cpf || null,
             created_by: user.id,
             store_id: storeIdToUse,
-          }).select("id").maybeSingle();
-          if (newCust) resolvedCustomerId = newCust.id;
+          }).select("id") as any).maybeSingle();
+          if (newCust) resolvedCustomerId = (newCust as any).id;
         }
       }
 
@@ -925,6 +925,7 @@ const OrdensServico = () => {
         : "";
 
     setForm({
+      customer_id: order.customer_id || null,
       customer_name: order.customer_name || "",
       customer_phone: order.customer_phone || "",
       customer_cpf: order.customer_cpf || "",

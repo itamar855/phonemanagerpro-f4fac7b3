@@ -573,7 +573,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         <DialogHeader className="p-5 pb-3 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5">
@@ -1110,5 +1111,6 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         )}
       </DialogContent>
     </Dialog>
+    </>
   );
 };
