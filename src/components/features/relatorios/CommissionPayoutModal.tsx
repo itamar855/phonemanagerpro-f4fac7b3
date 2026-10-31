@@ -99,7 +99,10 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     id: string;
     orderNumber?: number;
     label: string;
-    profitText: string;
+    title: string;
+    description: string;
+    badgeText: string;
+    profitText?: string;
   } | null>(null);
   const [errorPopupData, setErrorPopupData] = useState<{
     osId: string;
@@ -107,7 +110,9 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     osLabel: string;
     deviceModel?: string;
     requestedService?: string;
-    profitText: string;
+    title: string;
+    description: string;
+    badgeText: string;
   } | null>(null);
 
   const handleOpenOS = (osId: string) => {
@@ -509,34 +514,76 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       console.error("Erro ao liquidar comissões:", err);
       const rawMsg = err?.message || String(err) || "Erro desconhecido";
 
-      // Interceptação e tradução amigável do erro SERVICE_ORDER_ZERO_PROFIT
-      if (rawMsg.includes("SERVICE_ORDER_ZERO_PROFIT") || rawMsg.includes("margem/lucro zero") || rawMsg.includes("comissão nula")) {
-        const uuidMatch = rawMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-        const failedId = uuidMatch ? uuidMatch[0] : "";
-        const ordersList = Array.isArray(allServiceOrders) ? allServiceOrders : [];
-        const targetOs = ordersList.find((o) => o.id === failedId);
-        const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
-        const profitText = profitMatch ? profitMatch[1] : "-130,00";
+      // Interceptação e tradução amigável de qualquer erro relacionado a OS/Venda na liquidação
+      const uuidMatch = rawMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      const failedId = uuidMatch ? uuidMatch[0] : "";
+      const ordersList = Array.isArray(allServiceOrders) ? allServiceOrders : [];
+      const targetOs = ordersList.find((o) => o.id === failedId);
+      const pendingMatch = pendingItems.find((p) => p.id === failedId);
 
-        const devModel = [targetOs?.device_brand, targetOs?.device_model].filter(Boolean).join(" ");
-        const osLabel = targetOs
-          ? `OS #${targetOs.order_number} (${devModel || "Aparelho"})`
-          : failedId
-          ? `OS (${failedId.slice(0, 8)})`
-          : "Ordem de Serviço com Margem Negativa";
+      const devModel = [targetOs?.device_brand, targetOs?.device_model].filter(Boolean).join(" ");
+      const osLabel = targetOs
+        ? `OS #${targetOs.order_number}${devModel ? ` (${devModel})` : ""}`
+        : pendingMatch
+        ? pendingMatch.label
+        : failedId
+        ? `OS (${failedId.slice(0, 8)})`
+        : "Ordem de Serviço";
 
+      const isZeroProfit = rawMsg.includes("SERVICE_ORDER_ZERO_PROFIT") || rawMsg.includes("margem/lucro zero") || rawMsg.includes("comissão nula");
+      const isOwnerMismatch = rawMsg.includes("OWNER_MISMATCH");
+      const isAlreadySettled = rawMsg.includes("ALREADY_SETTLED") || rawMsg.includes("já foi liquidada");
+      const isStoreMismatch = rawMsg.includes("STORE_MISMATCH") || rawMsg.includes("outra loja");
+      const isNotDelivered = rawMsg.includes("NOT_DELIVERED") || rawMsg.includes("delivered");
+
+      const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
+      const profitText = profitMatch ? profitMatch[1] : "";
+
+      let errorTitle = "Divergência na Ordem de Serviço";
+      let errorBadge = "Atenção na OS";
+      let errorDesc = `Houve uma inconsistência com a ${osLabel}: ${rawMsg}. Ela foi desmarcada automaticamente da seleção para que você possa concluir a baixa das demais.`;
+
+      if (isZeroProfit) {
+        errorTitle = "Ordem de Serviço com Margem Negativa";
+        errorBadge = profitText ? `Prejuízo: R$ ${profitText}` : "Margem Zero";
+        errorDesc = `O custo das peças lançadas nesta OS superou o valor cobrado do cliente, gerando prejuízo contábil${profitText ? ` (R$ ${profitText})` : ""} e impedindo o pagamento da comissão. Ela foi desmarcada automaticamente da lista para você prosseguir com a liquidação dos demais serviços.`;
+      } else if (isOwnerMismatch) {
+        errorTitle = "Técnico Não Atribuído a esta OS";
+        errorBadge = "Técnico Divergente";
+        errorDesc = `A ${osLabel} não está vinculada a este técnico no sistema (ou foi alterada recentemente). Ela foi desmarcada automaticamente da lista para que você possa prosseguir com a liquidação das demais comissões.`;
+      } else if (isAlreadySettled) {
+        errorTitle = "Ordem de Serviço Já Liquidada";
+        errorBadge = "Já Liquidada";
+        errorDesc = `A ${osLabel} já teve sua comissão quitada em outra liquidação formal. Ela foi desmarcada automaticamente da lista.`;
+      } else if (isStoreMismatch) {
+        errorTitle = "OS Pertencente a Outra Loja";
+        errorBadge = "Loja Divergente";
+        errorDesc = `A ${osLabel} pertence a outra filial cadastrada no sistema. Ela foi desmarcada automaticamente da lista.`;
+      } else if (isNotDelivered) {
+        errorTitle = "OS Não Entregue";
+        errorBadge = "Status Inválido";
+        errorDesc = `A ${osLabel} não consta com status Entregue (delivered). Apenas serviços finalizados e entregues geram direito a comissão. Ela foi desmarcada automaticamente.`;
+      }
+
+      const hasOsError = failedId || isZeroProfit || isOwnerMismatch || isAlreadySettled || isStoreMismatch || isNotDelivered;
+
+      if (hasOsError) {
         if (failedId) {
-          setFailedOsInfo({
-            id: failedId,
-            orderNumber: targetOs?.order_number,
-            label: osLabel,
-            profitText,
-          });
-
+          // Desmarca a OS do conjunto de selecionados para permitir a liquidação direta dos outros itens
           setSelectedItemIds((prev) => {
             const next = new Set(prev);
             next.delete(failedId);
             return next;
+          });
+
+          setFailedOsInfo({
+            id: failedId,
+            orderNumber: targetOs?.order_number,
+            label: osLabel,
+            title: errorTitle,
+            description: errorDesc,
+            badgeText: errorBadge,
+            profitText,
           });
         }
 
@@ -545,19 +592,23 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
           osId: failedId,
           orderNumber: targetOs?.order_number,
           osLabel,
-          deviceModel: devModel,
+          deviceModel: devModel || targetOs?.device_model,
           requestedService: targetOs?.requested_service,
-          profitText,
+          title: errorTitle,
+          description: errorDesc,
+          badgeText: errorBadge,
         });
 
         toast.error(
-          `Não é possível pagar comissão sobre a ${osLabel}: o custo das peças superou o faturamento (Prejuízo apurado de R$ ${profitText}). Ela foi desmarcada automaticamente da lista para você prosseguir com a liquidação.`,
+          `${errorTitle}: ${osLabel}. Ela foi desmarcada automaticamente para você prosseguir com a liquidação.`,
           {
             duration: 12000,
-            action: {
-              label: `Abrir ${targetOs ? `OS #${targetOs.order_number}` : "OS"} ↗`,
-              onClick: () => handleOpenOS(failedId),
-            },
+            action: failedId
+              ? {
+                  label: `Abrir ${targetOs ? `OS #${targetOs.order_number}` : "OS"} ↗`,
+                  onClick: () => handleOpenOS(failedId),
+                }
+              : undefined,
           }
         );
         return;
@@ -713,10 +764,10 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                       <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
                       <div>
                         <span className="font-bold text-xs block text-destructive">
-                          Atenção: Falha na {failedOsInfo.label}
+                          Atenção: {failedOsInfo.title} ({failedOsInfo.label})
                         </span>
                         <p className="text-[11px] text-destructive/90 mt-0.5 leading-snug">
-                          O custo das peças cadastradas superou o faturamento gerando prejuízo contábil (R$ {failedOsInfo.profitText}). Essa OS foi desmarcada automaticamente da seleção para permitir a baixa dos demais serviços sem erros.
+                          {failedOsInfo.description}
                         </p>
                       </div>
                     </div>
@@ -820,7 +871,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                               {!isNegative && ` (${item.commissionPercent}%)`}
                               {isFailed && (
                                 <span className="text-destructive font-semibold ml-1">
-                                  — Prejuízo apurado (R$ {failedOsInfo?.profitText}). Clique em &quot;Abrir OS&quot; para conferir peças/valores.
+                                  — {failedOsInfo?.title || "Divergência na OS"}{failedOsInfo?.profitText ? ` (R$ ${failedOsInfo.profitText})` : ""}. Clique em &quot;Abrir OS&quot; para conferir.
                                 </span>
                               )}
                               {!isFailed && isNegative && (
@@ -1049,7 +1100,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
             <AlertTriangle className="h-6 w-6" />
           </div>
           <DialogTitle className="text-center text-lg font-bold text-foreground">
-            Ordem de Serviço com Margem Negativa
+            {errorPopupData?.title || "Divergência na Ordem de Serviço"}
           </DialogTitle>
         </DialogHeader>
 
@@ -1059,11 +1110,11 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
               <div className="flex items-center justify-between font-semibold text-destructive">
                 <span className="font-bold text-sm">{errorPopupData.osLabel}</span>
                 <Badge variant="destructive" className="text-[10px] uppercase font-bold px-2 py-0.5">
-                  Prejuízo: R$ {errorPopupData.profitText}
+                  {errorPopupData.badgeText}
                 </Badge>
               </div>
               <p className="text-muted-foreground leading-relaxed">
-                O custo das peças lançadas nesta OS superou o valor cobrado do cliente, gerando prejuízo contábil e impedindo o pagamento da comissão.
+                {errorPopupData.description}
               </p>
             </div>
 
