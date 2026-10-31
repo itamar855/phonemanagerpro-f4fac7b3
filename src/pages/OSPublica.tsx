@@ -3,20 +3,43 @@ import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { 
   Wrench, Clock, CheckCircle2, AlertCircle, Package, 
-  Smartphone, Calendar, Store, FileText
+  Smartphone, Calendar, Store, FileText, Download,
+  Camera, Eye, Loader2, DollarSign
 } from "lucide-react";
+import { toast } from "sonner";
+import { generateOSPdf, saveAndOpenPdf } from "@/components/features/os/osPdf";
 
 interface PublicOrder {
+  id?: string;
   order_number: number;
   status: string;
   device_brand: string;
   device_model: string;
+  device_color?: string;
+  reported_defect?: string;
   requested_service: string;
   estimated_completion: string | null;
   created_at: string;
+  final_price?: number;
+  estimated_price?: number;
+  warranty_end_date?: string;
+  customer_name?: string;
+  customer_phone?: string;
   store_name: string;
+  store_phone?: string;
+  store_address?: string;
+  store_cnpj?: string;
+}
+
+interface OrderPhoto {
+  id: string;
+  photo_url: string;
+  stage: string;
+  created_at: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: any; iconColor: string; desc: string }> = {
@@ -36,26 +59,112 @@ const timelineSteps = ["open", "analyzing", "waiting_approval", "repairing", "re
 export default function OSPublica() {
   const { id } = useParams<{ id: string }>();
   const [order, setOrder] = useState<PublicOrder | null>(null);
+  const [photos, setPhotos] = useState<OrderPhoto[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState<OrderPhoto | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    const fetch = async () => {
-      const { data, error: rpcError } = await supabase.rpc("get_public_service_order" as any, {
-        p_order_id: id,
-      });
+    const fetchOrderData = async () => {
+      if (!id) return;
+      try {
+        // Tenta buscar dados completos (RPC nova)
+        let orderData: PublicOrder | null = null;
+        const { data: fullData, error: fullErr } = await supabase.rpc("get_public_os_full_data" as any, {
+          p_order_id: id,
+        });
 
-      if (rpcError || !data || data.length === 0) {
+        if (!fullErr && fullData && (fullData as any[]).length > 0) {
+          orderData = (fullData as any[])[0] as PublicOrder;
+        } else {
+          // Fallback para RPC padrão
+          const { data: standardData, error: stdErr } = await supabase.rpc("get_public_service_order" as any, {
+            p_order_id: id,
+          });
+          if (!stdErr && standardData && (standardData as any[]).length > 0) {
+            orderData = (standardData as any[])[0] as PublicOrder;
+          }
+        }
+
+        if (!orderData) {
+          setError(true);
+          setLoading(false);
+          return;
+        }
+
+        setOrder(orderData);
+
+        // Busca fotos anexadas à OS via RPC segura ou query
+        try {
+          const { data: photosRpcData, error: photosRpcErr } = await supabase.rpc("get_public_service_order_photos" as any, {
+            p_order_id: id,
+          });
+
+          if (!photosRpcErr && photosRpcData) {
+            setPhotos((photosRpcData as any[]) as OrderPhoto[]);
+          } else {
+            // Tentativa via tabela direta caso autenticado ou policy ativa
+            const { data: directPhotos } = await supabase
+              .from("service_order_photos" as any)
+              .select("id, photo_url, stage, created_at")
+              .eq("service_order_id", id)
+              .order("created_at", { ascending: true });
+            if (directPhotos) {
+              setPhotos(directPhotos as unknown as OrderPhoto[]);
+            }
+          }
+        } catch (photosErr) {
+          console.warn("Aviso ao carregar fotos da OS:", photosErr);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar OS pública:", err);
         setError(true);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      setOrder(data[0] as PublicOrder);
-      setLoading(false);
     };
-    if (id) fetch();
+
+    fetchOrderData();
   }, [id]);
+
+  const handleDownloadPdf = async () => {
+    if (!order) return;
+    setDownloadingPdf(true);
+    try {
+      const storeObj = {
+        name: order.store_name,
+        phone: order.store_phone || "",
+        address: order.store_address || "",
+        cnpj: order.store_cnpj || "",
+      };
+
+      const orderObj = {
+        ...order,
+        order_number: order.order_number,
+        status: order.status,
+        device_brand: order.device_brand,
+        device_model: order.device_model,
+        device_color: order.device_color || "",
+        requested_service: order.requested_service,
+        reported_defect: order.reported_defect || "",
+        estimated_price: order.estimated_price,
+        final_price: order.final_price,
+        created_at: order.created_at,
+        customer_name: order.customer_name || "Cliente",
+        customer_phone: order.customer_phone || "",
+      };
+
+      const doc = await generateOSPdf(orderObj, storeObj, "Técnico Especializado", window.location.href);
+      saveAndOpenPdf(doc, `OS_${order.order_number}_${order.device_model || 'aparelho'}`, true);
+      toast.success("Download da Ordem de Serviço concluído!");
+    } catch (err: any) {
+      console.error("Erro ao gerar PDF da OS:", err);
+      toast.error("Erro ao gerar PDF: " + (err?.message || "Tente novamente"));
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   if (loading) return (
     <div className="flex min-h-screen items-center justify-center bg-background">
@@ -79,18 +188,14 @@ export default function OSPublica() {
   
   // Tenta encontrar em que passo da linha do tempo normal a OS está
   let currentStepIndex = timelineSteps.indexOf(order.status);
-  
-  // Se for "waiting_part", a gente o posiciona no meio da análise pro reparo
   if (order.status === "waiting_part") {
-      currentStepIndex = 1; // Fica rodando entre análise e aguardando peça 
+    currentStepIndex = 1;
   }
 
-  // Header Hero - Fundo gradiente forte
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/20">
       {/* ── 1. HEADER HERO PREMIUM ────────────────────────────────────────── */}
       <div className="relative w-full overflow-hidden bg-zinc-950 px-6 pt-12 pb-24 shadow-2xl">
-        {/* Background Effects */}
         <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-primary/20 blur-3xl opacity-50" />
         <div className="absolute bottom-0 left-0 -ml-16 mb-8 h-48 w-48 rounded-full bg-blue-500/20 blur-3xl opacity-30" />
         
@@ -134,6 +239,27 @@ export default function OSPublica() {
                   <div>
                     <h2 className="text-xl font-black font-display tracking-tight text-foreground">{sc.label}</h2>
                     <p className="text-sm text-muted-foreground mt-1 px-4">{sc.desc}</p>
+                  </div>
+
+                  {/* Botão de Download do PDF da OS */}
+                  <div className="w-full pt-2">
+                    <Button
+                      onClick={handleDownloadPdf}
+                      disabled={downloadingPdf}
+                      className="w-full h-11 bg-primary text-primary-foreground font-semibold rounded-xl gap-2 shadow-lg hover:shadow-primary/20 transition-all"
+                    >
+                      {downloadingPdf ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Gerando Ordem de Serviço...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          Baixar Ordem de Serviço (PDF)
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -202,6 +328,12 @@ export default function OSPublica() {
                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Aparelho</h3>
                </div>
                <p className="font-display font-bold text-xl">{order.device_brand} {order.device_model}</p>
+               {order.reported_defect && (
+                 <div className="mt-3 pt-3 border-t border-border/40">
+                   <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Defeito Informado</p>
+                   <p className="text-xs text-foreground/90 mt-0.5 italic">"{order.reported_defect}"</p>
+                 </div>
+               )}
             </CardContent>
           </Card>
 
@@ -226,13 +358,79 @@ export default function OSPublica() {
           </Card>
         </div>
 
+        {/* ── 5. GALERIA DE FOTOS DO APARELHO (DEFEITO / REPARO / SAÍDA) ─────── */}
+        {photos.length > 0 && (
+          <Card className="border-border shadow-md bg-card rounded-2xl overflow-hidden mt-6">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20">
+                    <Camera className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-display font-bold text-foreground">
+                      Fotos do Aparelho ({photos.length})
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Registro visual de entrada, defeito e reparo realizado
+                    </p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                  Garantia Visual
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
+                {photos.map((p) => {
+                  const stageLabels: Record<string, string> = {
+                    entrada: "Entrada / Defeito",
+                    reparo: "Em Reparo",
+                    saida: "Pronto / Saída",
+                  };
+                  const stageBadgeColors: Record<string, string> = {
+                    entrada: "bg-blue-500/80 text-white border-blue-400/30",
+                    reparo: "bg-amber-500/80 text-white border-amber-400/30",
+                    saida: "bg-emerald-500/80 text-white border-emerald-400/30",
+                  };
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedPhoto(p)}
+                      className="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-muted/40 aspect-square transition-all hover:scale-[1.02] hover:shadow-lg"
+                    >
+                      <img
+                        src={p.photo_url}
+                        alt="Foto do aparelho"
+                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <div className="absolute top-2 left-2">
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border backdrop-blur-md shadow-sm ${stageBadgeColors[p.stage] || "bg-black/60 text-white border-white/20"}`}>
+                          {stageLabels[p.stage] || p.stage}
+                        </span>
+                      </div>
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-[11px] font-semibold text-white bg-black/60 px-2.5 py-1 rounded-full backdrop-blur-sm flex items-center gap-1">
+                          <Eye className="h-3.5 w-3.5" /> Ampliar
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* ── FOOTER DA ASSISTÊNCIA ───────────────────────────────────────── */}
         <div className="mt-8 pt-6 border-t border-border/50 text-center space-y-2">
            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold flex items-center justify-center gap-1">
              Garantido por {order.store_name} <CheckCircle2 className="h-3 w-3 text-primary" />
            </p>
            <p className="text-[10px] text-muted-foreground/60 max-w-sm mx-auto leading-relaxed">
-             Dúvidas? Entre em contato com a assistência onde você deixou o aparelho. Mantenha seu canhoto (papel) em segurança para realizar a retirada.
+             Dúvidas? Entre em contato com a assistência onde você deixou o aparelho. Mantenha seu canhoto ou PDF em segurança para realizar a retirada.
+             {order.store_phone && ` • Telefone: ${order.store_phone}`}
            </p>
            <p className="text-[9px] text-muted-foreground/30 font-mono mt-4 pt-2">
              Powered by Cell Manager PRO v2
@@ -240,6 +438,36 @@ export default function OSPublica() {
         </div>
 
       </div>
+
+      {/* ── LIGHTBOX / MODAL DE FOTO AMPLIADA ───────────────────────────── */}
+      <Dialog open={!!selectedPhoto} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
+        <DialogContent className="max-w-2xl p-4 bg-zinc-950/95 border-zinc-800 text-white rounded-2xl">
+          {selectedPhoto && (
+            <div className="space-y-3">
+              <div className="relative max-h-[72vh] flex items-center justify-center overflow-hidden rounded-xl bg-black">
+                <img
+                  src={selectedPhoto.photo_url}
+                  alt="Foto do aparelho"
+                  className="max-h-[70vh] w-auto max-w-full object-contain"
+                />
+              </div>
+              <div className="flex items-center justify-between px-2 pt-1 border-t border-zinc-800/60">
+                <span className="text-xs font-semibold text-zinc-300">
+                  {selectedPhoto.stage === "entrada"
+                    ? "Foto de Entrada / Defeito"
+                    : selectedPhoto.stage === "reparo"
+                    ? "Foto do Reparo em Andamento"
+                    : "Foto do Aparelho Pronto / Saída"}
+                </span>
+                <span className="text-[11px] text-zinc-400">
+                  {new Date(selectedPhoto.created_at).toLocaleString("pt-BR")}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

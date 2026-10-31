@@ -78,10 +78,10 @@ const Dashboard = () => {
 
   // Re-fetch quando os contextos essenciais carregam ou a loja ativa muda
   useEffect(() => { 
-    if (userPermissions !== null && userStoreIds !== undefined) {
+    if (user && (userRole === "tecnico" || (userPermissions !== null && userStoreIds !== undefined))) {
       fetchData(); 
     }
-  }, [activeStoreId, userPermissions, userStoreIds, userRole, period, customStart, customEnd]);
+  }, [user, activeStoreId, userPermissions, userStoreIds, userRole, period, customStart, customEnd]);
 
   const [stats, setStats] = useState({
     totalStock: 0, totalInvested: 0, totalInvestedAcc: 0,
@@ -137,17 +137,17 @@ const Dashboard = () => {
   const fetchTechnicianData = async () => {
     if (!user) return;
     const { start, end } = getPeriodDates(period, customStart, customEnd);
-    const effectiveStoreId = !isAdmin && (!activeStoreId || activeStoreId === "all") 
-      ? (userStoreIds.length > 0 ? userStoreIds[0] : null) 
-      : activeStoreId;
+    
+    // Para técnico: só filtra loja se houver uma loja específica explicitamente selecionada
+    const filterByStore = activeStoreId && activeStoreId !== "all";
 
     let q = supabase
       .from("service_orders")
-      .select("id, order_number, customer_name, customer_phone, device_brand, device_model, requested_service, reported_defect, status, priority, estimated_completion, created_at, delivered_at, final_price, estimated_price, store_id, technician_id")
+      .select("id, order_number, customer_name, customer_phone, device_brand, device_model, requested_service, reported_defect, status, estimated_completion, created_at, delivered_at, final_price, estimated_price, store_id, technician_id")
       .eq("technician_id", user.id);
 
-    if (effectiveStoreId && effectiveStoreId !== "all") {
-      q = q.eq("store_id", effectiveStoreId);
+    if (filterByStore) {
+      q = q.eq("store_id", activeStoreId);
     }
 
     let shopOrdersQuery = supabase
@@ -156,22 +156,27 @@ const Dashboard = () => {
       .eq("status", "delivered")
       .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`);
 
-    if (effectiveStoreId && effectiveStoreId !== "all") {
-      shopOrdersQuery = shopOrdersQuery.eq("store_id", effectiveStoreId);
+    if (filterByStore) {
+      shopOrdersQuery = shopOrdersQuery.eq("store_id", activeStoreId);
     }
 
-    const [ordersRes, roleRes, shopOrdersRes, profilesRes, settledIds] = await Promise.all([
-      q.order("created_at", { ascending: false }),
-      supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle(),
-      shopOrdersQuery,
-      supabase.from("profiles").select("user_id, display_name"),
+    const [ordersRes, roleRes, shopOrdersRes, profilesRes, storesRes, settledIds] = await Promise.all([
+      Promise.resolve(q.order("created_at", { ascending: false })).catch(err => ({ data: [], error: err })),
+      Promise.resolve(supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle()).catch(err => ({ data: null, error: err })),
+      Promise.resolve(shopOrdersQuery).catch(err => ({ data: [], error: err })),
+      Promise.resolve(supabase.from("profiles").select("user_id, display_name")).catch(err => ({ data: [], error: err })),
+      Promise.resolve(supabase.from("stores").select("id, name")).catch(err => ({ data: [], error: err })),
       fetchSettledItemIds().catch(() => ({ settledSaleIds: new Set<string>(), settledOsIds: new Set<string>() })),
     ]);
+
+    if (storesRes.data && (storesRes.data as any[]).length > 0) {
+      setStores(storesRes.data as any[]);
+    }
 
     const allMyOrders = (ordersRes.data ?? []) as any[];
     const roleData = roleRes.data;
     const shopDelivered = (shopOrdersRes.data ?? []) as any[];
-    const profiles = profilesRes.data ?? [];
+    const profiles = (profilesRes.data ?? []) as any[];
 
     const profileMap = new Map<string, string>();
     profiles.forEach((p: any) => {
@@ -187,11 +192,15 @@ const Dashboard = () => {
 
     let parts: any[] = [];
     if (relevantIds.length > 0) {
-      const { data: partsData } = await supabase
-        .from("service_order_items" as any)
-        .select("service_order_id, unit_cost, quantity")
-        .in("service_order_id", relevantIds);
-      parts = partsData ?? [];
+      try {
+        const { data: partsData } = await supabase
+          .from("service_order_items" as any)
+          .select("service_order_id, unit_cost, quantity")
+          .in("service_order_id", relevantIds);
+        parts = partsData ?? [];
+      } catch (err) {
+        console.warn("Aviso ao carregar peças para dashboard do técnico:", err);
+      }
     }
 
     const prodMetrics = calculateTechProductivity(allMyOrders, parts, roleData, user.id, start, end, settledIds?.settledOsIds);
@@ -214,13 +223,15 @@ const Dashboard = () => {
   };
 
   const fetchData = async () => {
-    // Só prossegue quando AuthContext estiver 100% carregado
-    if (!userPermissions) return;
+    if (!user) return;
 
     if (userRole === "tecnico") {
       await fetchTechnicianData();
       return;
     }
+
+    // Só prossegue para visão administrativa quando AuthContext estiver 100% carregado
+    if (!userPermissions) return;
 
     const effectiveStoreId = !isAdmin && (!activeStoreId || activeStoreId === "all") 
       ? (userStoreIds.length > 0 ? userStoreIds[0] : null) 

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -177,6 +177,54 @@ const OrdensServico = () => {
   const [financialConfirmOrder, setFinancialConfirmOrder] = useState<any | null>(null);
   const [financialMissingItems, setFinancialMissingItems] = useState<string[]>([]);
   const [financialConfirmLoading, setFinancialConfirmLoading] = useState(false);
+
+  // Trava e Popup para Valor Final Obrigatório antes do Fechamento da OS
+  const [finalPriceRequiredOpen, setFinalPriceRequiredOpen] = useState(false);
+  const [finalPriceRequiredOrder, setFinalPriceRequiredOrder] = useState<any | null>(null);
+  const [finalPriceInputValue, setFinalPriceInputValue] = useState("");
+  const [finalPriceSaving, setFinalPriceSaving] = useState(false);
+  const [finalPricePendingStatus, setFinalPricePendingStatus] = useState<{ orderId: string; newStatus: string; oldStatus: string; reason?: string } | null>(null);
+
+  const handleSaveFinalPriceAndProceed = async () => {
+    if (!finalPriceRequiredOrder || !user) return;
+    const priceNum = parseFloat(finalPriceInputValue);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      toast.error("Por favor, digite um valor final válido maior que zero (R$).");
+      return;
+    }
+
+    setFinalPriceSaving(true);
+    try {
+      const { error } = await supabase
+        .from("service_orders")
+        .update({ final_price: priceNum })
+        .eq("id", finalPriceRequiredOrder.id);
+
+      if (error) throw error;
+
+      toast.success(`Valor Final ajustado para ${formatCurrency(priceNum)} com sucesso!`);
+      
+      setOrders(prev => prev.map(o => o.id === finalPriceRequiredOrder.id ? { ...o, final_price: priceNum } : o));
+      if (detailOrder?.id === finalPriceRequiredOrder.id) {
+        setDetailOrder(prev => prev ? { ...prev, final_price: priceNum } : null);
+        setUpdateForm((prev: any) => ({ ...prev, final_price: String(priceNum) }));
+      }
+
+      const pending = finalPricePendingStatus;
+      setFinalPriceRequiredOpen(false);
+      setFinalPriceRequiredOrder(null);
+      setFinalPricePendingStatus(null);
+
+      if (pending) {
+        isSubmitting.current = false;
+        await updateStatus(pending.orderId, pending.newStatus, pending.oldStatus, pending.reason);
+      }
+    } catch (err: any) {
+      toast.error("Erro ao salvar valor final: " + err.message);
+    } finally {
+      setFinalPriceSaving(false);
+    }
+  };
 
   const executeFinancialConfirmation = async (order: any, isBypass = false) => {
     if (!user || !order) return;
@@ -474,6 +522,18 @@ const OrdensServico = () => {
 
     if (newStatus === "delivered") {
       const { targetOrder, missing } = await checkMissingReceipts(orderId);
+
+      // Trava de Valor Final obrigatório antes de fechar/entregar a OS
+      const currentFinalPrice = Number(targetOrder?.final_price || 0);
+      if (!currentFinalPrice || currentFinalPrice <= 0) {
+        setFinalPriceRequiredOrder(targetOrder);
+        setFinalPriceInputValue(targetOrder?.estimated_price ? String(targetOrder.estimated_price) : "");
+        setFinalPricePendingStatus({ orderId, newStatus, oldStatus, reason });
+        setFinalPriceRequiredOpen(true);
+        isSubmitting.current = false;
+        return;
+      }
+
       if (missing.length > 0 && !isAdmin) {
         // Bloqueio rigoroso: técnico/vendedor/gerente não pode entregar OS sem comprovantes
         setFinancialConfirmOrder(targetOrder);
@@ -1345,6 +1405,105 @@ const OrdensServico = () => {
         onConfirmAdminBypass={() => financialConfirmOrder && executeFinancialConfirmation(financialConfirmOrder, true)}
         loading={financialConfirmLoading}
       />
+
+      {/* Modal: Valor Final Obrigatório antes do Fechamento */}
+      <Dialog open={finalPriceRequiredOpen} onOpenChange={(open) => {
+        if (!open) {
+          setFinalPriceRequiredOpen(false);
+          setFinalPriceRequiredOrder(null);
+          setFinalPricePendingStatus(null);
+        }
+      }}>
+        <DialogContent className="max-w-md p-6 bg-card border border-border shadow-2xl rounded-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                <DollarSign className="h-6 w-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-display font-bold">
+                  Valor Final (R$) Obrigatório
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Ajuste o valor antes do fechamento desta OS
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-3.5 text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
+              <p className="font-semibold flex items-center gap-1.5 mb-1">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                Atenção necessária antes de fechar:
+              </p>
+              Toda Ordem de Serviço precisa ter seu <strong>Valor Final (R$)</strong> definido antes de ser entregue/concluída. Isso garante o faturamento correto no Caixa e o cálculo correto das comissões.
+            </div>
+
+            {finalPriceRequiredOrder && (
+              <div className="p-3 bg-muted/40 rounded-lg text-xs space-y-1">
+                <p className="font-semibold text-foreground">
+                  OS #{finalPriceRequiredOrder.order_number} — {finalPriceRequiredOrder.customer_name || "Cliente"}
+                </p>
+                <p className="text-muted-foreground">
+                  Aparelho: {finalPriceRequiredOrder.device_brand} {finalPriceRequiredOrder.device_model}
+                </p>
+                {finalPriceRequiredOrder.estimated_price && (
+                  <p className="text-muted-foreground">
+                    Valor Estimado na entrada: <strong>{formatCurrency(Number(finalPriceRequiredOrder.estimated_price))}</strong>
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Valor Final Cobrado do Cliente (R$) *</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">R$</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  autoFocus
+                  placeholder="0,00"
+                  value={finalPriceInputValue}
+                  onChange={(e) => setFinalPriceInputValue(e.target.value)}
+                  className="pl-10 text-base font-bold text-foreground h-11"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSaveFinalPriceAndProceed();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setFinalPriceRequiredOpen(false);
+                setFinalPriceRequiredOrder(null);
+                setFinalPricePendingStatus(null);
+              }}
+              disabled={finalPriceSaving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="bg-primary text-primary-foreground font-semibold gap-1.5"
+              onClick={handleSaveFinalPriceAndProceed}
+              disabled={finalPriceSaving || !finalPriceInputValue || parseFloat(finalPriceInputValue) <= 0}
+            >
+              {finalPriceSaving ? "Salvando..." : "Salvar e Continuar Fechamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
