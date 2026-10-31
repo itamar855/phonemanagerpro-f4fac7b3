@@ -6,8 +6,10 @@ import { getPeriodDates, getPeriodLabel } from "@/components/features/relatorios
 import {
   aggregatePhoneRanking,
   aggregateAccessoryRanking,
+  aggregateTechRanking,
   type RankSellerPhone,
   type RankSellerAccessory,
+  type RankTechnician,
   type StoreAccessoryMetrics,
 } from "@/utils/rankingGamification";
 import { Trophy, Sparkles } from "lucide-react";
@@ -29,6 +31,7 @@ const Ranking = () => {
   const [ranking, setRanking] = useState<any[]>([]);
   const [rankingPhones, setRankingPhones] = useState<RankSellerPhone[]>([]);
   const [rankingAccessories, setRankingAccessories] = useState<RankSellerAccessory[]>([]);
+  const [rankingTechs, setRankingTechs] = useState<RankTechnician[]>([]);
   const [storeAccessoryMetrics, setStoreAccessoryMetrics] = useState<Record<string, StoreAccessoryMetrics>>({});
 
   useEffect(() => {
@@ -68,7 +71,7 @@ const Ranking = () => {
     );
     const effectiveStoreId = isAdmin ? storeId : activeStoreId || "all";
 
-    const [salesRes, productsRes, rolesRes, accTxRes] = await Promise.all([
+    const [salesRes, productsRes, rolesRes, accTxRes, osRes, partsRes] = await Promise.all([
       supabase
         .from("sales")
         .select("*, products(*)")
@@ -83,6 +86,12 @@ const Ranking = () => {
         .eq("category", "acessorio")
         .gte("created_at", start)
         .lte("created_at", end),
+      supabase
+        .from("service_orders")
+        .select("*")
+        .eq("status", "delivered")
+        .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
+      supabase.from("service_order_items").select("*"),
     ]);
 
     const allSales = (salesRes.data ?? []) as any[];
@@ -112,6 +121,17 @@ const Ranking = () => {
     });
     setRankingAccessories(accRanking);
     setStoreAccessoryMetrics(accMetrics);
+
+    // 3. Trilha Técnica de Bancada (Volume de OSs + Top 1 Extra)
+    const { ranking: techRanking } = aggregateTechRanking({
+      serviceOrders: (osRes.data ?? []) as any[],
+      parts: (partsRes.data ?? []) as any[],
+      profiles,
+      stores,
+      userRoles: roles,
+      filterStoreId: effectiveStoreId,
+    });
+    setRankingTechs(techRanking);
 
     // 3. Formato compatível com o gráfico
     const legacyStats: any[] = phoneRanking.map((p) => ({
@@ -198,6 +218,7 @@ const Ranking = () => {
         ranking={ranking}
         rankingPhones={rankingPhones}
         rankingAccessories={rankingAccessories}
+        rankingTechs={rankingTechs}
         storeAccessoryMetrics={storeAccessoryMetrics}
         currentRankPeriodLabel={currentRankPeriodLabel}
         currentStoreName={currentStoreName}

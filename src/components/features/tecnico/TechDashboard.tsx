@@ -51,6 +51,7 @@ import {
   generateSettlementReceiptPDF,
   type CommissionSettlement,
 } from "@/utils/commissionSettlement";
+import { getPatentSettings } from "@/utils/rankingGamification";
 import type {
   TechProductivityResult,
   TimelineDataPoint,
@@ -183,8 +184,91 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
     return true;
   });
 
+  // Premiação do Técnico Top 1 do Mês (+% extra de comissão)
+  const techAwardPct = useMemo(() => {
+    try {
+      const s = getPatentSettings();
+      return s.techAward?.top1ExtraCommissionPct ?? 2.0;
+    } catch {
+      return 2.0;
+    }
+  }, []);
+
+  const isTop1 = shopRanking.myRank === 1 && (shopRanking.items[0]?.deliveredOrders || 0) > 0;
+  const secondPlace = shopRanking.items[1];
+  const leadOrders = secondPlace ? (shopRanking.items[0]?.deliveredOrders - secondPlace.deliveredOrders) : (shopRanking.items[0]?.deliveredOrders || 0);
+  const top1Tech = shopRanking.items[0];
+  const myItem = shopRanking.items.find((i) => i.isMe);
+  const neededOrders = top1Tech ? Math.max(1, top1Tech.deliveredOrders - (myItem?.deliveredOrders || 0) + 1) : 1;
+
   return (
     <div className="space-y-6">
+      {/* ── CARD DE LIDERANÇA / PRÊMIO TÉCNICO TOP 1 ── */}
+      {isTop1 ? (
+        <Card className="border-amber-500/40 bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-amber-500/5 p-4 shadow-sm relative overflow-hidden animate-in fade-in duration-300">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                🥇
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-bold text-sm md:text-base text-foreground">
+                    Você é o Técnico Top 1 do Mês!
+                  </h3>
+                  <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40 text-[10px] font-bold uppercase tracking-wider">
+                    Líder da Bancada
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                  Parabéns! Você lidera o ranking com <strong>{shopRanking.items[0]?.deliveredOrders} OSs entregues</strong>
+                  {secondPlace ? ` (${leadOrders} à frente do 2º colocado)` : ""}.
+                  O bônus de <strong>+{techAwardPct}% de comissão extra</strong> sobre todos os reparos está ativo para você!
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge className="bg-emerald-500/15 text-emerald-500 border-emerald-500/30 font-bold text-xs py-1 px-3">
+                ✨ +{techAwardPct}% Comissão Extra Ativa
+              </Badge>
+            </div>
+          </div>
+        </Card>
+      ) : shopRanking.items.length > 0 && (
+        <Card className="border-indigo-500/30 bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-transparent p-4 shadow-sm relative overflow-hidden animate-in fade-in duration-300">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                🎯
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-bold text-sm md:text-base text-foreground">
+                    Corrida da Bancada — Prêmio Top 1
+                  </h3>
+                  <Badge variant="outline" className="text-[10px] border-indigo-500/30 text-indigo-400 font-semibold">
+                    Sua Posição: {shopRanking.myRank}º Lugar
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                  O técnico que fechar o mês no topo ganha <strong>+{techAwardPct}% de comissão extra</strong> sobre todos os serviços!
+                  {top1Tech ? (
+                    <> Faltam <strong>{neededOrders} {neededOrders === 1 ? "OS" : "OSs"}</strong> para você alcançar a liderança de {top1Tech.name}.</>
+                  ) : (
+                    <> Conclua suas ordens de serviço e conquiste o primeiro lugar!</>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="secondary" className="bg-indigo-500/10 text-indigo-400 border-indigo-500/20 text-xs font-semibold py-1 px-2.5">
+                🏆 Top 1 Ganha +{techAwardPct}% Extra
+              </Badge>
+            </div>
+          </div>
+        </Card>
+      )}
       {/* ─────────────────────────────────────────────────────────────
           1. METAS DO TÉCNICO & GAMIFICAÇÃO (DESTAQUE PREMIUM)
           ───────────────────────────────────────────────────────────── */}
@@ -511,6 +595,11 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
                       <span className="truncate max-w-[120px]">
                         {tech.name} {tech.isMe ? "(Você)" : ""}
                       </span>
+                      {tech.rank === 1 && (
+                        <Badge className="bg-amber-500/15 text-amber-500 border-amber-500/30 text-[9px] py-0 px-1 font-bold">
+                          Top 1 (+{techAwardPct}%)
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-right">
                       <span className="font-bold">{tech.deliveredOrders} OS</span>

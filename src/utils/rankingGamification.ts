@@ -145,15 +145,27 @@ export const ACCESSORY_TIERS: AccessoryRuleTier[] = [
   },
 ];
 
+export interface TechAwardConfig {
+  top1ExtraCommissionPct: number;
+  minOrdersToQualify: number;
+}
+
+export const DEFAULT_TECH_AWARD_CONFIG: TechAwardConfig = {
+  top1ExtraCommissionPct: 2.0,
+  minOrdersToQualify: 1,
+};
+
 // ── Configurações Customizáveis pelo Administrador ───────────────────────────
 export interface PatentSettings {
   phoneTiers: PhoneRuleTier[];
   accessoryTiers: AccessoryRuleTier[];
+  techAward?: TechAwardConfig;
 }
 
 export const DEFAULT_PATENT_SETTINGS: PatentSettings = {
   phoneTiers: PHONE_TIERS,
   accessoryTiers: ACCESSORY_TIERS,
+  techAward: DEFAULT_TECH_AWARD_CONFIG,
 };
 
 const PATENT_SETTINGS_STORAGE_KEY = "ranking_patent_settings_v1";
@@ -163,6 +175,7 @@ export function getPatentSettings(): PatentSettings {
     return {
       phoneTiers: [...PHONE_TIERS],
       accessoryTiers: [...ACCESSORY_TIERS],
+      techAward: { ...DEFAULT_TECH_AWARD_CONFIG },
     };
   }
   try {
@@ -170,7 +183,11 @@ export function getPatentSettings(): PatentSettings {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.phoneTiers) && Array.isArray(parsed.accessoryTiers)) {
-        return parsed;
+        return {
+          phoneTiers: parsed.phoneTiers,
+          accessoryTiers: parsed.accessoryTiers,
+          techAward: parsed.techAward || { ...DEFAULT_TECH_AWARD_CONFIG },
+        };
       }
     }
   } catch (err) {
@@ -179,6 +196,7 @@ export function getPatentSettings(): PatentSettings {
   return {
     phoneTiers: [...PHONE_TIERS],
     accessoryTiers: [...ACCESSORY_TIERS],
+    techAward: { ...DEFAULT_TECH_AWARD_CONFIG },
   };
 }
 
@@ -200,6 +218,7 @@ export function resetPatentSettings(): PatentSettings {
   return {
     phoneTiers: [...PHONE_TIERS],
     accessoryTiers: [...ACCESSORY_TIERS],
+    techAward: { ...DEFAULT_TECH_AWARD_CONFIG },
   };
 }
 
@@ -670,4 +689,137 @@ export function aggregateAccessoryRanking(params: {
   ranking.sort((a, b) => b.totalFaturado - a.totalFaturado);
 
   return { ranking, storeMetrics };
+}
+
+// ── Trilha Técnica: Bancada & Reparos (Volume de OSs + Top 1 Extra) ─────────────
+export interface RankTechnician {
+  uid: string;
+  nome: string;
+  role: "tecnico" | "admin" | "vendedor";
+  storeId: string;
+  storeName: string;
+  deliveredOrders: number;
+  totalLaborRevenue: number;
+  ticketMedioLabor: number;
+  baseCommission: number;
+  isTop1: boolean;
+  extraCommissionPct: number;
+  extraCommissionValue: number;
+  totalCommission: number;
+  rank: number;
+}
+
+export function aggregateTechRanking(params: {
+  serviceOrders: any[];
+  parts?: any[];
+  profiles: any[];
+  stores: any[];
+  userRoles: any[];
+  filterStoreId?: string | null;
+  awardConfig?: TechAwardConfig;
+}): {
+  ranking: RankTechnician[];
+  top1Tech: RankTechnician | null;
+} {
+  const { serviceOrders, parts = [], profiles, stores, userRoles, filterStoreId, awardConfig } = params;
+  const cfg = awardConfig || (typeof window !== "undefined" ? getPatentSettings().techAward || DEFAULT_TECH_AWARD_CONFIG : DEFAULT_TECH_AWARD_CONFIG);
+
+  const profileMap = new Map<string, any>(profiles.map((p) => [p.user_id || p.id, p]));
+  const storeMap = new Map<string, any>(stores.map((s) => [s.id, s]));
+  const roleMap = new Map<string, any>(userRoles.map((r) => [r.user_id, r]));
+
+  // Agrupar peças por OS
+  const partsByOs = new Map<string, any[]>();
+  for (const part of parts) {
+    if (part.service_order_id) {
+      const list = partsByOs.get(part.service_order_id) || [];
+      list.push(part);
+      partsByOs.set(part.service_order_id, list);
+    }
+  }
+
+  const techMap = new Map<string, {
+    uid: string;
+    nome: string;
+    role: "tecnico" | "admin" | "vendedor";
+    storeId: string;
+    storeName: string;
+    deliveredOrders: number;
+    totalLaborRevenue: number;
+    baseCommission: number;
+  }>();
+
+  for (const os of serviceOrders) {
+    // Apenas OS entregue com técnico atribuído
+    if (os.status !== "delivered" || !os.technician_id) continue;
+    if (filterStoreId && filterStoreId !== "all" && os.store_id !== filterStoreId) continue;
+
+    const techUid = os.technician_id;
+    const profile = profileMap.get(techUid);
+    const userRoleData = roleMap.get(techUid);
+    const role = (userRoleData?.role || profile?.role || "tecnico") as "tecnico" | "admin" | "vendedor";
+
+    const store = storeMap.get(os.store_id);
+    const storeName = store?.name || "Loja";
+
+    const current = techMap.get(techUid) || {
+      uid: techUid,
+      nome: profile?.display_name || profile?.name || "Técnico",
+      role,
+      storeId: os.store_id || "",
+      storeName,
+      deliveredOrders: 0,
+      totalLaborRevenue: 0,
+      baseCommission: 0,
+    };
+
+    const gross = Number(os.final_price || os.estimated_price || 0);
+    const osParts = partsByOs.get(os.id) || [];
+    const partsCost = osParts.reduce(
+      (sum, p) => sum + Number(p.unit_cost || 0) * Number(p.quantity || 1),
+      0
+    );
+    const profit = Math.max(0, gross - partsCost);
+
+    const commPct = userRoleData?.commission_on_services ? Number(userRoleData?.commission_services_percent || 0) : 0;
+    const commAmt = profit > 0 && commPct > 0 ? (profit * commPct) / 100 : 0;
+
+    current.deliveredOrders += 1;
+    current.totalLaborRevenue += profit;
+    current.baseCommission += commAmt;
+
+    techMap.set(techUid, current);
+  }
+
+  // Ordenar: 1º volume de OSs entregues (critério principal), desempate por lucro gerado
+  const sorted = Array.from(techMap.values()).sort((a, b) => {
+    if (b.deliveredOrders !== a.deliveredOrders) {
+      return b.deliveredOrders - a.deliveredOrders;
+    }
+    return b.totalLaborRevenue - a.totalLaborRevenue;
+  });
+
+  const ranking: RankTechnician[] = sorted.map((item, index) => {
+    const rank = index + 1;
+    const isTop1 = rank === 1 && item.deliveredOrders >= (cfg.minOrdersToQualify || 1);
+    const extraCommissionPct = isTop1 ? (cfg.top1ExtraCommissionPct || 0) : 0;
+    const extraCommissionValue = isTop1 ? (item.totalLaborRevenue * extraCommissionPct) / 100 : 0;
+    const totalCommission = item.baseCommission + extraCommissionValue;
+    const ticketMedioLabor = item.deliveredOrders > 0 ? item.totalLaborRevenue / item.deliveredOrders : 0;
+
+    return {
+      ...item,
+      ticketMedioLabor: Math.round(ticketMedioLabor * 100) / 100,
+      baseCommission: Math.round(item.baseCommission * 100) / 100,
+      isTop1,
+      extraCommissionPct,
+      extraCommissionValue: Math.round(extraCommissionValue * 100) / 100,
+      totalCommission: Math.round(totalCommission * 100) / 100,
+      rank,
+    };
+  });
+
+  const top1Tech = ranking.find((r) => r.isTop1) || null;
+
+  return { ranking, top1Tech };
 }

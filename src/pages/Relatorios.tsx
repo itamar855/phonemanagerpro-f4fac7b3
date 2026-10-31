@@ -54,8 +54,10 @@ import { FinanceiroTab } from "@/components/features/relatorios/FinanceiroTab";
 import {
   aggregatePhoneRanking,
   aggregateAccessoryRanking,
+  aggregateTechRanking,
   type RankSellerPhone,
   type RankSellerAccessory,
+  type RankTechnician,
   type StoreAccessoryMetrics,
 } from "@/utils/rankingGamification";
 
@@ -93,6 +95,7 @@ const Relatorios = () => {
   const [ranking, setRanking] = useState<any[]>([]);
   const [rankingPhones, setRankingPhones] = useState<RankSellerPhone[]>([]);
   const [rankingAccessories, setRankingAccessories] = useState<RankSellerAccessory[]>([]);
+  const [rankingTechs, setRankingTechs] = useState<RankTechnician[]>([]);
   const [storeAccessoryMetrics, setStoreAccessoryMetrics] = useState<Record<string, StoreAccessoryMetrics>>({});
   const [comissoes, setComissoes] = useState<any[]>([]);
   const [leadsData, setLeadsData] = useState<any>({ total: 0, bySource: [], conversion: 0 });
@@ -417,6 +420,17 @@ const Relatorios = () => {
     setRawOsForPayout(os);
     setOsItemsForPayout(osItems);
     setRoleMapForPayout(roleMap);
+
+    // Trilha Técnica de Bancada (Top 1 Extra)
+    const { ranking: techRanking } = aggregateTechRanking({
+      serviceOrders: os,
+      parts: osItems,
+      profiles,
+      stores,
+      userRoles: roles,
+      filterStoreId: effectiveStoreId,
+    });
+    setRankingTechs(techRanking);
 
     const stats: Record<string, any> = {};
     const ensure = (uid: string) => {
@@ -867,6 +881,7 @@ const Relatorios = () => {
             ranking={ranking}
             rankingPhones={rankingPhones}
             rankingAccessories={rankingAccessories}
+            rankingTechs={rankingTechs}
             storeAccessoryMetrics={storeAccessoryMetrics}
             currentRankPeriodLabel={currentRankPeriodLabel}
             currentStoreName={currentStoreName}

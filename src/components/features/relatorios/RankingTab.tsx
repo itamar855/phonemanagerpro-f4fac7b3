@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -50,6 +51,7 @@ import {
   type AccessoryRuleTier,
   type RankSellerPhone,
   type RankSellerAccessory,
+  type RankTechnician,
   type StoreAccessoryMetrics,
   type PatentTier,
 } from "@/utils/rankingGamification";
@@ -141,6 +143,7 @@ export interface RankingTabProps {
   ranking: any[];
   rankingPhones?: RankSellerPhone[];
   rankingAccessories?: RankSellerAccessory[];
+  rankingTechs?: RankTechnician[];
   storeAccessoryMetrics?: Record<string, StoreAccessoryMetrics>;
   currentRankPeriodLabel: string;
   currentStoreName: string;
@@ -160,13 +163,14 @@ export const RankingTab: React.FC<RankingTabProps> = ({
   ranking,
   rankingPhones = [],
   rankingAccessories = [],
+  rankingTechs = [],
   storeAccessoryMetrics = {},
   currentRankPeriodLabel,
   currentStoreName,
   activeStoreId,
   currentUserId,
 }) => {
-  const [track, setTrack] = useState<"phones" | "accessories" | "rules">("phones");
+  const [track, setTrack] = useState<"phones" | "accessories" | "techs" | "rules">("phones");
   const [dictOpen, setDictOpen] = useState(false);
   const [adminConfigOpen, setAdminConfigOpen] = useState(false);
 
@@ -174,6 +178,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
   const [patentSettings, setPatentSettings] = useState<PatentSettings>(() => getPatentSettings());
   const [editPhoneTiers, setEditPhoneTiers] = useState<PhoneRuleTier[]>(() => getPatentSettings().phoneTiers);
   const [editAccessoryTiers, setEditAccessoryTiers] = useState<AccessoryRuleTier[]>(() => getPatentSettings().accessoryTiers);
+  const [editTechAwardPct, setEditTechAwardPct] = useState<number>(() => getPatentSettings().techAward?.top1ExtraCommissionPct ?? 2.0);
 
   React.useEffect(() => {
     const handleChanged = () => {
@@ -181,6 +186,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
       setPatentSettings(s);
       setEditPhoneTiers(s.phoneTiers);
       setEditAccessoryTiers(s.accessoryTiers);
+      setEditTechAwardPct(s.techAward?.top1ExtraCommissionPct ?? 2.0);
     };
     window.addEventListener("ranking_patent_settings_changed", handleChanged);
     return () => window.removeEventListener("ranking_patent_settings_changed", handleChanged);
@@ -190,6 +196,7 @@ export const RankingTab: React.FC<RankingTabProps> = ({
     const s = getPatentSettings();
     setEditPhoneTiers(JSON.parse(JSON.stringify(s.phoneTiers)));
     setEditAccessoryTiers(JSON.parse(JSON.stringify(s.accessoryTiers)));
+    setEditTechAwardPct(s.techAward?.top1ExtraCommissionPct ?? 2.0);
     setAdminConfigOpen(true);
   };
 
@@ -283,6 +290,10 @@ export const RankingTab: React.FC<RankingTabProps> = ({
     savePatentSettings({
       phoneTiers: sanitizedPhoneTiers,
       accessoryTiers: sanitizedAccessoryTiers,
+      techAward: {
+        top1ExtraCommissionPct: Number(editTechAwardPct) || 2.0,
+        minOrdersToQualify: 1,
+      },
     });
     toast.success("Metas e patentes salvas com sucesso!");
     setAdminConfigOpen(false);
@@ -293,11 +304,14 @@ export const RankingTab: React.FC<RankingTabProps> = ({
     const defaults = getPatentSettings();
     setEditPhoneTiers(defaults.phoneTiers);
     setEditAccessoryTiers(defaults.accessoryTiers);
+    setEditTechAwardPct(defaults.techAward?.top1ExtraCommissionPct ?? 2.0);
     toast.info("Configurações restauradas para o padrão do sistema.");
   };
 
   // Vendedor ativo para exibir barra de evolução pessoal
   const myPhoneStats = rankingPhones.find((p) => p.uid === currentUserId);
+  const myTechStats = rankingTechs.find((p) => p.uid === currentUserId);
+  const top1Tech = rankingTechs.find((r) => r.isTop1) || rankingTechs[0] || null;
   const myAccessoryStats = rankingAccessories.find((a) => a.uid === currentUserId);
 
   // Métrica da loja ativa para acessórios
@@ -529,6 +543,22 @@ export const RankingTab: React.FC<RankingTabProps> = ({
           <span>Acessórios (Por Loja)</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 font-mono">
             {rankingAccessories.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTrack("techs")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+            track === "techs"
+              ? "bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          <Wrench className="h-4 w-4" />
+          <span>Bancada & Técnicos (Top 1)</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 font-mono">
+            {rankingTechs.length}
           </span>
         </button>
 
@@ -923,7 +953,247 @@ export const RankingTab: React.FC<RankingTabProps> = ({
         </div>
       )}
 
-      {/* ── TRILHA 3: PATENTES, METAS & REGRAS DE BONIFICAÇÃO ─────────────────────── */}
+      {/* ── TRILHA 3: BANCADA & TÉCNICOS (PREMIAÇÃO TOP 1) ────────────────────── */}
+      {track === "techs" && (
+        <div className="space-y-5">
+          {/* Banner da Premiação Top 1 */}
+          <Card className="border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-transparent p-4 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-11 w-11 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                  👑
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-bold text-sm md:text-base text-foreground flex items-center gap-1.5">
+                      Trilha Técnica — Premiação Top 1 da Bancada
+                    </h3>
+                    <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/30 text-[10px]">
+                      +{patentSettings.techAward?.top1ExtraCommissionPct ?? 2}% Comissão Extra
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    O técnico que fechar o mês em 1º lugar no volume de reparos entregues conquista a comissão extra sobre todos os serviços realizados no período.
+                  </p>
+                </div>
+              </div>
+              {top1Tech && (
+                <div className="flex items-center gap-2.5 bg-background/80 border border-amber-500/30 px-3.5 py-2 rounded-xl text-xs shadow-sm">
+                  <span className="text-xl">🥇</span>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold">Líder Atual da Bancada</div>
+                    <div className="font-bold text-foreground">
+                      {top1Tech.nome}{" "}
+                      <span className="text-amber-500 font-mono font-extrabold">({top1Tech.deliveredOrders} OS)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Pódio dos Técnicos (Top 3) */}
+          {rankingTechs.length >= 3 && (
+            <Card className="border-border/60 bg-gradient-to-b from-card to-muted/20 overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-display flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-yellow-500 animate-pulse" />
+                    Pódio do Mês — Equipe Técnica
+                  </span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Critério: Volume de OSs entregues (desempate por lucro)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 items-end pt-4 pb-2">
+                  {/* 2º Lugar */}
+                  <div className="flex flex-col items-center p-3 rounded-xl border border-slate-400/30 bg-slate-500/5 text-center">
+                    <span className="text-2xl sm:text-3xl mb-1">🥈</span>
+                    <span className="text-xs font-semibold text-slate-400">2º Lugar</span>
+                    <p className="font-bold text-xs sm:text-sm text-foreground truncate max-w-full mt-1">
+                      {rankingTechs[1].nome}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {rankingTechs[1].storeName}
+                    </span>
+                    <div className="mt-2 text-xs font-extrabold text-foreground">
+                      {rankingTechs[1].deliveredOrders} <span className="font-normal text-[10px] text-muted-foreground">OS entregues</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-500 font-semibold">
+                      Lucro: {formatCurrency(rankingTechs[1].totalLaborRevenue)}
+                    </span>
+                  </div>
+
+                  {/* 1º Lugar (Destaque Ouro com Coroa e Bônus) */}
+                  <div className="flex flex-col items-center p-3.5 sm:p-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/10 text-center shadow-lg shadow-yellow-500/10 -mt-2">
+                    <span className="text-3xl sm:text-4xl mb-1">🥇</span>
+                    <span className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Top 1 Bancada</span>
+                    <p className="font-extrabold text-sm sm:text-base text-foreground truncate max-w-full mt-1">
+                      {rankingTechs[0].nome}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {rankingTechs[0].storeName}
+                    </span>
+                    <div className="mt-2 text-sm sm:text-base font-extrabold text-yellow-500">
+                      {rankingTechs[0].deliveredOrders} <span className="font-normal text-[10px] text-muted-foreground">OS entregues</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-500 font-bold">
+                      Lucro: {formatCurrency(rankingTechs[0].totalLaborRevenue)}
+                    </span>
+                    <Badge className="mt-2 text-[10px] bg-amber-500/25 text-amber-600 dark:text-amber-400 border-amber-500/40 font-bold">
+                      +{rankingTechs[0].extraCommissionPct}% Extra (+{formatCurrency(rankingTechs[0].extraCommissionValue)})
+                    </Badge>
+                  </div>
+
+                  {/* 3º Lugar */}
+                  <div className="flex flex-col items-center p-3 rounded-xl border border-amber-700/30 bg-amber-700/5 text-center">
+                    <span className="text-2xl sm:text-3xl mb-1">🥉</span>
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-500">3º Lugar</span>
+                    <p className="font-bold text-xs sm:text-sm text-foreground truncate max-w-full mt-1">
+                      {rankingTechs[2].nome}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      {rankingTechs[2].storeName}
+                    </span>
+                    <div className="mt-2 text-xs font-extrabold text-foreground">
+                      {rankingTechs[2].deliveredOrders} <span className="font-normal text-[10px] text-muted-foreground">OS entregues</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-500 font-semibold">
+                      Lucro: {formatCurrency(rankingTechs[2].totalLaborRevenue)}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Card de Desempenho do Técnico Logado */}
+          {myTechStats && (
+            <Card className="border border-primary/30 bg-primary/5">
+              <CardContent className="p-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs uppercase font-bold tracking-wider text-primary">Seu Desempenho de Bancada</span>
+                      <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20 font-bold">
+                        {myTechStats.rank}º Lugar
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Você concluiu <strong className="text-foreground">{myTechStats.deliveredOrders} reparos</strong> gerando <strong className="text-emerald-500">{formatCurrency(myTechStats.totalLaborRevenue)}</strong> de mão de obra.
+                      {myTechStats.isTop1 ? (
+                        <span className="text-amber-500 font-bold ml-1">
+                          Parabéns! Você é o Top 1 e tem direito a +{myTechStats.extraCommissionPct}% de comissão extra (+{formatCurrency(myTechStats.extraCommissionValue)})!
+                        </span>
+                      ) : top1Tech ? (
+                        <> Faltam <strong className="text-primary">{Math.max(1, top1Tech.deliveredOrders - myTechStats.deliveredOrders + 1)} OSs</strong> para você alcançar o 1º lugar de {top1Tech.nome} e conquistar o bônus de comissão extra!</>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold block">Comissão Apurada</span>
+                    <span className="text-base font-extrabold text-foreground font-mono">
+                      {formatCurrency(myTechStats.totalCommission)}
+                    </span>
+                    {myTechStats.isTop1 && myTechStats.extraCommissionValue > 0 && (
+                      <span className="text-[10px] text-amber-500 font-bold block">
+                        (Inclui +{formatCurrency(myTechStats.extraCommissionValue)} de Top 1)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Tabela de Classificação da Equipe Técnica */}
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3 border-b border-border/40">
+              <CardTitle className="text-sm font-display flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-primary" /> Classificação Geral da Bancada
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {currentRankPeriodLabel} • {currentStoreName}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {rankingTechs.length > 0 ? (
+                <div className="space-y-2">
+                  {rankingTechs.map((t) => (
+                    <div
+                      key={t.uid}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all gap-2 ${
+                        t.isTop1
+                          ? "border-amber-500/40 bg-amber-500/10 shadow-sm"
+                          : t.uid === currentUserId
+                          ? "border-primary/40 bg-primary/5"
+                          : "border-border/50 bg-card hover:bg-muted/30"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 shrink-0 flex justify-center">
+                          <RankBadge pos={t.rank} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-foreground">{t.nome}</span>
+                            {t.uid === currentUserId && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold">
+                                Você
+                              </span>
+                            )}
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                              {t.storeName}
+                            </span>
+                            {t.isTop1 && (
+                              <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] font-bold">
+                                👑 Top 1 (+{t.extraCommissionPct}% Extra)
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                            <span><strong>{t.deliveredOrders}</strong> OS entregues</span>
+                            <span>•</span>
+                            <span>Mão de Obra Líquida: <strong className="text-emerald-500">{formatCurrency(t.totalLaborRevenue)}</strong></span>
+                            <span>•</span>
+                            <span>Ticket Médio: <strong className="text-foreground">{formatCurrency(t.ticketMedioLabor)}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-border/40">
+                        <div className="text-left sm:text-right">
+                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground block">
+                            Comissão Total
+                          </span>
+                          <span className="text-sm sm:text-base font-extrabold text-foreground font-mono">
+                            {formatCurrency(t.totalCommission)}
+                          </span>
+                          {t.isTop1 && t.extraCommissionValue > 0 && (
+                            <span className="text-[10px] text-amber-500 font-bold block">
+                              +{formatCurrency(t.extraCommissionValue)} de Top 1
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground text-xs">
+                  Nenhum reparo entregue registrado no período para a equipe técnica.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── TRILHA 4: PATENTES, METAS & REGRAS DE BONIFICAÇÃO ─────────────────────── */}
       {track === "rules" && (
         <div className="space-y-5">
           {/* Explicação da Filosofia de Crescimento */}
@@ -1345,6 +1615,36 @@ export const RankingTab: React.FC<RankingTabProps> = ({
                         className="h-8 text-xs bg-background"
                       />
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Premiação do Técnico Top 1 (Bancada) */}
+              <div className="space-y-3 pt-2 border-t border-border/40">
+                <div className="flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-amber-500" />
+                  <h4 className="text-xs font-bold text-foreground">
+                    Premiação do Técnico Top 1 do Mês (Bancada & Reparos)
+                  </h4>
+                </div>
+                <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-2">
+                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    Porcentagem Extra de Comissão para o 1º Lugar
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    O técnico que entregar o maior volume de OSs no mês ganha esta porcentagem adicional sobre todo o lucro de mão de obra gerado no período.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="20"
+                      value={editTechAwardPct}
+                      onChange={(e) => setEditTechAwardPct(Number(e.target.value))}
+                      className="h-8 w-28 text-xs font-bold bg-background"
+                    />
+                    <span className="text-xs font-bold text-amber-500">% extra de comissão sobre todos os reparos</span>
                   </div>
                 </div>
               </div>
