@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
 interface CacheEntry {
@@ -14,13 +15,19 @@ const signedUrlCache = new Map<string, CacheEntry>();
  */
 export function extractStoragePath(urlOrPath: string): string {
   if (!urlOrPath) return "";
-  if (urlOrPath.includes("/comprovantes/")) {
-    return urlOrPath.split("/comprovantes/")[1].split("?")[0];
+  let clean = urlOrPath;
+  if (clean.includes("/comprovantes/")) {
+    clean = clean.split("/comprovantes/")[1].split("?")[0];
+  } else if (clean.startsWith("comprovantes/")) {
+    clean = clean.substring(13).split("?")[0];
+  } else {
+    clean = clean.split("?")[0];
   }
-  if (urlOrPath.startsWith("comprovantes/")) {
-    return urlOrPath.substring(13).split("?")[0];
+  try {
+    return decodeURIComponent(clean);
+  } catch {
+    return clean;
   }
-  return urlOrPath.split("?")[0];
 }
 
 /**
@@ -118,16 +125,54 @@ export async function openComprovante(urlOrPath: string | null | undefined, e?: 
 }
 
 async function openSingleComprovante(urlOrPath: string) {
-  const isFullUrl =
-    urlOrPath.startsWith("http://") ||
-    urlOrPath.startsWith("https://") ||
-    urlOrPath.startsWith("blob:") ||
-    urlOrPath.startsWith("data:");
+  if (!urlOrPath) return;
 
-  // Abre imediatamente no gesto síncrono do clique para evitar bloqueio de popups pelos navegadores
+  // 1. Abre a nova aba síncrona no contexto direto do clique
+  // CRÍTICO: NÃO passar "noopener" no 3º parâmetro do window.open(), pois por especificação HTML
+  // window.open() com "noopener" retorna null, impedindo qualquer redirecionamento posterior.
   let newTab: Window | null = null;
   try {
-    newTab = window.open(isFullUrl ? urlOrPath : "about:blank", "_blank", "noopener,noreferrer");
+    newTab = window.open("", "_blank");
+    if (newTab) {
+      newTab.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Carregando Comprovante...</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body {
+                margin: 0;
+                background: #090d16;
+                color: #e2e8f0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              }
+              .spinner {
+                width: 38px;
+                height: 38px;
+                border: 3px solid rgba(255,255,255,0.1);
+                border-top-color: #10b981;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+              }
+              @keyframes spin { to { transform: rotate(360deg); } }
+              p { margin-top: 16px; font-size: 14px; font-weight: 500; color: #94a3b8; }
+            </style>
+          </head>
+          <body>
+            <div class="spinner"></div>
+            <p>Carregando comprovante seguro...</p>
+          </body>
+        </html>
+      `);
+      newTab.document.close();
+    }
   } catch (err) {
     console.warn("Popup bloqueado pelo navegador:", err);
   }
@@ -137,21 +182,28 @@ async function openSingleComprovante(urlOrPath: string) {
     const targetUrl = signedUrl || urlOrPath;
 
     if (newTab && !newTab.closed) {
-      if (targetUrl !== urlOrPath || !isFullUrl) {
-        newTab.location.href = targetUrl;
-      }
-    } else if (!newTab) {
-      // Fallback síncrono com elemento de âncora caso window.open tenha sido bloqueado
-      const link = document.createElement("a");
-      link.href = targetUrl;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Redireciona a aba aberta para a URL assinada real
+      newTab.location.replace(targetUrl);
+      // Desconecta o opener para máxima segurança agora que a navegação foi disparada
+      try {
+        newTab.opener = null;
+      } catch {}
+    } else {
+      // Se o popup foi impedido pelas políticas rígidas do navegador, oferece feedback imediato e ação com 1 clique
+      toast.info("Comprovante pronto para visualização", {
+        description: "Seu navegador impediu a abertura automática da aba.",
+        action: {
+          label: "Abrir Comprovante",
+          onClick: () => window.open(targetUrl, "_blank", "noopener,noreferrer"),
+        },
+      });
     }
   } catch (err) {
     console.error("Erro ao resolver URL do comprovante:", err);
+    if (newTab && !newTab.closed) {
+      newTab.close();
+    }
+    toast.error("Não foi possível carregar o comprovante.");
   }
 }
 
