@@ -300,6 +300,120 @@ const Caixa = () => {
       }
       if (reconciledAny) fetchRegister(activeStoreId);
     };
+    const reconcileMissingOS = async () => {
+      if (!user || !activeStoreId || activeStoreId === "all") return;
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: deliveredOrders } = await supabase
+        .from("service_orders")
+        .select("*")
+        .eq("store_id", activeStoreId)
+        .eq("status", "delivered")
+        .gte("delivered_at", sevenDaysAgo);
+
+      if (!deliveredOrders || deliveredOrders.length === 0) return;
+
+      const { data: openRegs } = await supabase
+        .from("cash_registers" as any)
+        .select("id, store_id")
+        .eq("store_id", activeStoreId)
+        .eq("status", "open")
+        .limit(1);
+
+      if (!openRegs || openRegs.length === 0) return;
+      const regId = (openRegs[0] as any).id;
+
+      let reconciledAny = false;
+      for (const o of deliveredOrders as any[]) {
+        const { data: existingEntries } = await supabase
+          .from("cash_entries" as any)
+          .select("id")
+          .eq("reference_id", o.id)
+          .limit(1);
+
+        if (existingEntries && existingEntries.length > 0) continue;
+
+        const { data: existingByDesc } = await supabase
+          .from("cash_entries" as any)
+          .select("id")
+          .like("description", `OS #${o.order_number} %`)
+          .limit(1);
+
+        if (existingByDesc && existingByDesc.length > 0) continue;
+
+        const cash = Number(o.payment_cash || 0);
+        const card = Number(o.payment_card || 0);
+        const pix = Number(o.payment_pix || 0);
+        const other = Number(o.payment_other || 0);
+        const amount = Number(o.final_price || o.estimated_price || 0);
+
+        if (amount <= 0 && cash === 0 && card === 0 && pix === 0 && other === 0) continue;
+
+        const serviceName = o.requested_service || [o.device_brand, o.device_model].filter(Boolean).join(" ") || "Serviço";
+        const clientName = o.customer_name || "Cliente";
+        const desc = `OS #${o.order_number} — ${serviceName} (${clientName})`;
+        const hasReceipt = Boolean(o.receipt_url);
+        const isCashOnly = cash > 0 && card === 0 && pix === 0 && other === 0;
+        const confirmed = hasReceipt || isCashOnly;
+
+        const basePayload = {
+          cash_register_id: regId,
+          store_id: o.store_id,
+          type: "entrada",
+          receipt_url: o.receipt_url || null,
+          confirmed,
+          created_by: user.id,
+          reference_id: o.id,
+        };
+
+        if (cash === 0 && card === 0 && pix === 0 && other === 0) {
+          const method = o.payment_method || "dinheiro";
+          await supabase.from("cash_entries" as any).insert({
+            ...basePayload,
+            payment_method: method,
+            amount,
+            description: desc,
+            confirmed: confirmed || method === "dinheiro",
+          });
+        } else {
+          if (cash > 0) {
+            await supabase.from("cash_entries" as any).insert({
+              ...basePayload,
+              payment_method: "dinheiro",
+              amount: cash,
+              description: desc,
+              confirmed: true,
+            });
+          }
+          if (card > 0) {
+            await supabase.from("cash_entries" as any).insert({
+              ...basePayload,
+              payment_method: "cartao_credito",
+              amount: card,
+              description: desc,
+            });
+          }
+          if (pix > 0) {
+            await supabase.from("cash_entries" as any).insert({
+              ...basePayload,
+              payment_method: "pix",
+              amount: pix,
+              description: desc,
+            });
+          }
+          if (other > 0) {
+            await supabase.from("cash_entries" as any).insert({
+              ...basePayload,
+              payment_method: "outro",
+              amount: other,
+              description: desc,
+            });
+          }
+        }
+        reconciledAny = true;
+      }
+      if (reconciledAny) fetchRegister(activeStoreId);
+    };
+    reconcileMissingOS();
     reconcileMissing();
   }, [user]);
 

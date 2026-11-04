@@ -47,7 +47,7 @@ import {
 // Mapeamento de caixa da OS: utiliza a coluna oficial "cash_register_id" via helper modularizado
 import { createPendingCashEntry } from "@/components/features/os/osCashHelper";
 import { OS_STATUS_CONFIG as statusConfig, ALL_OS_STATUSES as allStatuses } from "@/utils/osStatus";
-import { resolveTechnicianIdOnUpdate, resolveTechnicianIdOnCreate } from "@/utils/osCalculations";
+import { resolveTechnicianIdOnUpdate, resolveTechnicianIdOnCreate, isOSCommissionWaived } from "@/utils/osCalculations";
 
 const OrdensServico = () => {
   const { user, userRole, activeStoreId, setActiveStoreId } = useAuth();
@@ -230,17 +230,17 @@ const OrdensServico = () => {
     if (!user || !order) return;
     setFinancialConfirmLoading(true);
     try {
-      const { error: cashErr } = await supabase
-        .from("cash_entries" as any)
-        .update({ confirmed: true, receipt_url: order.receipt_url || null })
-        .or(`reference_id.eq.${order.id},description.like.OS #${order.order_number} —%`);
+      const confirmPayload = { confirmed: true, receipt_url: order.receipt_url || null };
+      await supabase.from("cash_entries" as any).update(confirmPayload).eq("reference_id", order.id);
+      await supabase.from("cash_entries" as any).update(confirmPayload).like("description", `OS #${order.order_number} %`);
+      await supabase.from("transactions").update({ reconciled: true }).like("description", `OS #${order.order_number} %`);
 
-      if (cashErr) throw cashErr;
 
-      await supabase
-        .from("transactions")
-        .update({ reconciled: true })
-        .like("description", `OS #${order.order_number} —%`);
+
+
+
+
+
 
       setPendingFinancialOSIds(prev => {
         const next = new Set(prev);
@@ -816,30 +816,65 @@ const OrdensServico = () => {
     }
 
     toast.success("Serviço atualizado!");
-      if (updates.receipt_url) {
-        await supabase
-          .from("cash_entries" as any)
-          .update({ receipt_url: updates.receipt_url })
-          .or(`reference_id.eq.${detailOrder.id},description.like.OS #${detailOrder.order_number} —%`);
+      if (detailOrder.status === "delivered") {
+        const finalReceiptUrl = updates.receipt_url || detailOrder.receipt_url || null;
+        const finalCash = updates.payment_cash !== undefined ? updates.payment_cash : Number(detailOrder.payment_cash || 0);
+        const finalCard = updates.payment_card !== undefined ? updates.payment_card : Number(detailOrder.payment_card || 0);
+        const finalPix = updates.payment_pix !== undefined ? updates.payment_pix : Number(detailOrder.payment_pix || 0);
+        const finalOther = updates.payment_other !== undefined ? updates.payment_other : Number(detailOrder.payment_other || 0);
+        const finalPriceVal = updates.final_price !== undefined ? updates.final_price : Number(detailOrder.final_price || detailOrder.estimated_price || 0);
 
-        if (detailOrder.status === "delivered") {
-          const { data: parts } = await supabase
-            .from("service_order_items" as any)
-            .select("id, receipt_url")
-            .eq("service_order_id", detailOrder.id);
-          const partsList = (parts as any[]) || [];
-          const missingParts = partsList.some((p: any) => !p.receipt_url);
-          if (!missingParts) {
-            await supabase
-              .from("cash_entries" as any)
-              .update({ confirmed: true })
-              .or(`reference_id.eq.${detailOrder.id},description.like.OS #${detailOrder.order_number} —%`);
-            await supabase
-              .from("transactions")
-              .update({ reconciled: true })
-              .like("description", `OS #${detailOrder.order_number} —%`);
-            toast.success("Comprovantes completos! Confirmado no Caixa e Financeiro.");
+        const hasReceipt = Boolean(finalReceiptUrl);
+        const isCashOnly = finalCash > 0 && finalCard === 0 && finalPix === 0 && finalOther === 0;
+        const canConfirmService = hasReceipt || isCashOnly;
+
+        const { data: existingEntries } = await supabase
+          .from("cash_entries" as any)
+          .select("id")
+          .eq("reference_id", detailOrder.id);
+
+        const serviceName = detailOrder.requested_service || [detailOrder.device_brand, detailOrder.device_model].filter(Boolean).join(" ") || "Serviço";
+        const clientName = detailOrder.customer_name || "Cliente";
+        const desc = `OS #${detailOrder.order_number} — ${serviceName} (${clientName})`;
+
+        if (!existingEntries || existingEntries.length === 0) {
+          if (finalCash === 0 && finalCard === 0 && finalPix === 0 && finalOther === 0) {
+            if (finalPriceVal > 0) {
+              const defMethod = detailOrder.payment_method || "dinheiro";
+              const isCash = defMethod === "dinheiro";
+              await createPendingCashEntry(detailOrder.store_id, user.id, finalPriceVal, desc, defMethod, finalReceiptUrl, detailOrder.id, canConfirmService || isCash);
+            }
+          } else {
+            if (finalCash > 0) {
+              await createPendingCashEntry(detailOrder.store_id, user.id, finalCash, desc, "dinheiro", finalReceiptUrl, detailOrder.id, true);
+            }
+            if (finalCard > 0) {
+              await createPendingCashEntry(detailOrder.store_id, user.id, finalCard, desc, "cartao_credito", finalReceiptUrl, detailOrder.id, canConfirmService);
+            }
+            if (finalPix > 0) {
+              await createPendingCashEntry(detailOrder.store_id, user.id, finalPix, desc, "pix", finalReceiptUrl, detailOrder.id, canConfirmService);
+            }
+            if (finalOther > 0) {
+              await createPendingCashEntry(detailOrder.store_id, user.id, finalOther, desc, "outro", finalReceiptUrl, detailOrder.id, canConfirmService);
+            }
           }
+        } else {
+          const entryUpdatePayload: any = {};
+          if (finalReceiptUrl) entryUpdatePayload.receipt_url = finalReceiptUrl;
+          if (canConfirmService) entryUpdatePayload.confirmed = true;
+
+          if (Object.keys(entryUpdatePayload).length > 0) {
+            await supabase.from("cash_entries" as any).update(entryUpdatePayload).eq("reference_id", detailOrder.id);
+            await supabase.from("cash_entries" as any).update(entryUpdatePayload).like("description", `OS #${detailOrder.order_number} %`);
+          }
+        }
+
+        if (canConfirmService) {
+          await supabase
+            .from("transactions")
+            .update({ reconciled: true })
+            .like("description", `OS #${detailOrder.order_number} %`);
+          toast.success("Comprovantes atualizados e confirmados no Caixa!");
         }
       }
       const updated = { ...detailOrder, ...updates };
@@ -885,6 +920,58 @@ const OrdensServico = () => {
       logAction("DELETE_RECORD", "service_orders", id, null, { reason }, activeStoreId);
     } catch (err: any) {
       toast.error("Erro ao excluir: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleWaiveCommission = async (order: any, reason?: string) => {
+    if (!user || !order) return;
+    const isCurrentlyWaived = isOSCommissionWaived(order);
+    const newWaived = !isCurrentlyWaived;
+    setLoading(true);
+
+    try {
+      const currentNotes = order.internal_notes || "";
+      let newNotes = currentNotes;
+      if (newWaived) {
+        const tag = `[COMISSAO_ANULADA: ${reason || "Cancelada pela gestão"}]`;
+        newNotes = currentNotes ? `${currentNotes}\n${tag}` : tag;
+      } else {
+        newNotes = currentNotes.replace(/\[COMISSAO_ANULADA:.*?\]\n?/g, "").trim();
+      }
+
+      const updates: any = { internal_notes: newNotes, updated_at: new Date().toISOString() };
+
+      const { error } = await supabase
+        .from("service_orders")
+        .update(updates)
+        .eq("id", order.id);
+
+      if (error) throw error;
+
+      await supabase.from("service_order_history").insert({
+        service_order_id: order.id,
+        old_status: order.status,
+        new_status: order.status,
+        created_by: user.id,
+        notes: newWaived ? `Comissão do técnico anulada. Motivo: ${reason || "Não informado"}` : "Comissão do técnico reativada",
+      } as any);
+
+      logAction("UPDATE_RECORD", "service_orders", order.id, null, {
+        action: newWaived ? "WAIVE_COMMISSION" : "RESTORE_COMMISSION",
+        order_number: order.order_number,
+        technician_id: order.technician_id,
+        reason,
+      }, order.store_id);
+
+      toast.success(newWaived ? `Comissão da OS #${order.order_number} anulada!` : `Comissão da OS #${order.order_number} reativada!`);
+      if (detailOrder?.id === order.id) {
+        setDetailOrder((prev: any) => ({ ...prev, ...updates }));
+      }
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro ao alterar comissão: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -1373,6 +1460,8 @@ const OrdensServico = () => {
         totalPaid={totalPaid}
         isFinancialPending={detailOrder ? isFinancialPending(detailOrder) : false}
         onConfirmFinancial={() => detailOrder && handleConfirmFinancial(detailOrder)}
+        onToggleWaiveCommission={(reason) => detailOrder && handleToggleWaiveCommission(detailOrder, reason)}
+        isCommissionWaived={detailOrder ? isOSCommissionWaived(detailOrder) : false}
       />
 
       {/* OS Action Justification Dialog (Status / Delete) */}

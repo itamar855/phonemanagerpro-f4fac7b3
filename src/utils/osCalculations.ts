@@ -21,6 +21,20 @@ export interface OSMetricsResult {
   custoPecas: number;
   lucroBrutoOS: number; // "Lucro Bruto da OS" ou "Margem da OS" (Salvaguarda 2)
   comissaoTecnico: number;
+  comissaoAnulada?: boolean;
+}
+
+/**
+ * Verifica se a comissão do técnico foi expressamente anulada/cancelada pelo gestor.
+ */
+export function isOSCommissionWaived(order?: {
+  internal_notes?: string | null;
+  commission_waived?: boolean | null;
+} | null): boolean {
+  if (!order) return false;
+  if ((order as any).commission_waived === true) return true;
+  if (order.internal_notes && order.internal_notes.includes("[COMISSAO_ANULADA")) return true;
+  return false;
 }
 
 /**
@@ -33,12 +47,15 @@ export function calculateOSItemMetrics(
     final_price?: number | string | null;
     estimated_price?: number | string | null;
     technician_id?: string | null;
+    internal_notes?: string | null;
+    commission_waived?: boolean | null;
   },
   parts: OSItemPart[] = [],
   userRoleData?: UserRoleData | null
 ): OSMetricsResult {
   const isDelivered = order.status === "delivered";
   const isCancelled = order.status === "cancelled";
+  const comissaoAnulada = isOSCommissionWaived(order);
 
   // OS canceladas têm receita zero e comissão zero
   if (isCancelled) {
@@ -48,6 +65,7 @@ export function calculateOSItemMetrics(
       custoPecas,
       lucroBrutoOS: 0,
       comissaoTecnico: 0,
+      comissaoAnulada,
     };
   }
 
@@ -63,8 +81,8 @@ export function calculateOSItemMetrics(
 
   let comissaoTecnico = 0;
 
-  // Apenas OS entregues com técnico explicitamente atribuído geram comissão (Salvaguarda 1 e 9)
-  if (isDelivered && order.technician_id && userRoleData) {
+  // Apenas OS entregues com técnico explicitamente atribuído e sem anulação geram comissão (Salvaguarda 1 e 9)
+  if (isDelivered && order.technician_id && userRoleData && !comissaoAnulada) {
     const receivesCommission = userRoleData.commission_on_services ?? true;
     const commPercent = Number(userRoleData.commission_services_percent || 0);
 
@@ -78,6 +96,7 @@ export function calculateOSItemMetrics(
     custoPecas,
     lucroBrutoOS,
     comissaoTecnico,
+    comissaoAnulada,
   };
 }
 

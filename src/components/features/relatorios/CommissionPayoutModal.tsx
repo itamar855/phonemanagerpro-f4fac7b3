@@ -32,6 +32,8 @@ import {
   type SettleCommissionsPayload,
 } from "@/utils/commissionSettlement";
 import { convertToWebP } from "@/utils/imageOptimizer";
+import { isOSCommissionWaived } from "@/utils/osCalculations";
+import { Ban } from "lucide-react";
 
 interface PendingCommissionItem {
   id: string;
@@ -44,6 +46,9 @@ interface PendingCommissionItem {
   commissionPercent: number;
   commissionAmount: number;
   hasZeroOrNegativeProfit?: boolean;
+  isFinancialPending?: boolean;
+  isCommissionWaived?: boolean;
+  orderNumber?: number;
 }
 
 interface CommissionPayoutModalProps {
@@ -95,6 +100,24 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [directOsParts, setDirectOsParts] = useState<any[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
+  const [pendingFinancialOsIds, setPendingFinancialOsIds] = useState<Set<string>>(new Set());
+
+  const handleWaiveCommissionFromModal = async (osId: string, orderNumber?: number) => {
+    const reason = prompt('Informe o motivo para anular a comissao do tecnico da OS:');
+    if (!reason || reason.trim() === '') return;
+    try {
+      const { data: os } = await supabase.from('service_orders').select('internal_notes, store_id, status').eq('id', osId).maybeSingle();
+      if (!os) return;
+      const currentNotes = (os as any).internal_notes || '';
+      const tag = '[COMISSAO_ANULADA: ' + reason.trim() + ']';
+      const newNotes = currentNotes ? currentNotes + '\n' + tag : tag;
+      await supabase.from('service_orders').update({ internal_notes: newNotes, updated_at: new Date().toISOString() }).eq('id', osId);
+      toast.success('Comissao da OS anulada com sucesso!');
+      onSuccess();
+    } catch (err: any) {
+      toast.error('Erro ao anular comissao: ' + err.message);
+    }
+  };
   const [failedOsInfo, setFailedOsInfo] = useState<{
     id: string;
     orderNumber?: number;
@@ -236,6 +259,28 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       .finally(() => {
         setLoadingParts(false);
       });
+
+    // Sincroniza status financeiro (Caixa): comissao so e liberada com financeiro confirmado
+    supabase
+      .from('cash_entries' as any)
+      .select('reference_id, confirmed')
+      .in('reference_id', targetOsIds)
+      .then(({ data }) => {
+        const entries = (data as any[]) || [];
+        const confirmedSet = new Set<string>();
+        const unconfirmedSet = new Set<string>();
+        entries.forEach((e: any) => {
+          if (e.confirmed) confirmedSet.add(e.reference_id);
+          else unconfirmedSet.add(e.reference_id);
+        });
+        const pendingFin = new Set<string>();
+        targetOsIds.forEach((id: string) => {
+          if (unconfirmedSet.has(id) || !confirmedSet.has(id)) {
+            pendingFin.add(id);
+          }
+        });
+        setPendingFinancialOsIds(pendingFin);
+      });
   }, [open, selectedUserId, selectedStoreId, allServiceOrders]);
 
   const effectiveOsItems = useMemo(() => {
@@ -305,8 +350,12 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
             0
           );
           const profit = gross - partsCost;
+          const isWaived = isOSCommissionWaived(o);
+          const isFinPending = pendingFinancialOsIds.has(o.id);
           const isZeroOrNegative = profit <= 0;
-          const commAmount = isZeroOrNegative ? 0 : (profit * commPct) / 100;
+          const commAmount = (isZeroOrNegative || isWaived || isFinPending) ? 0 : (profit * commPct) / 100;
+
+
 
           const sName = o.requested_service || "Serviço";
           const dName = [o.device_brand, o.device_model].filter(Boolean).join(" ");
@@ -324,21 +373,24 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
             commissionPercent: commPct,
             commissionAmount: commAmount,
             hasZeroOrNegativeProfit: isZeroOrNegative,
+            isFinancialPending: isFinPending,
+            isCommissionWaived: isWaived,
+            orderNumber: o.order_number,
           });
         }
       }
     });
 
     return items;
-  }, [selectedUserId, selectedStoreId, allSales, allServiceOrders, effectiveOsItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate]);
+  }, [selectedUserId, selectedStoreId, allSales, allServiceOrders, effectiveOsItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate, pendingFinancialOsIds]);
 
   const eligibleItems = useMemo(
-    () => pendingItems.filter((i) => !i.hasZeroOrNegativeProfit && i.commissionAmount > 0),
+    () => pendingItems.filter((i) => !i.hasZeroOrNegativeProfit && !i.isFinancialPending && !i.isCommissionWaived && i.commissionAmount > 0),
     [pendingItems]
   );
 
   const ineligibleItems = useMemo(
-    () => pendingItems.filter((i) => i.hasZeroOrNegativeProfit || i.commissionAmount <= 0),
+    () => pendingItems.filter((i) => i.hasZeroOrNegativeProfit || i.isFinancialPending || i.isCommissionWaived || i.commissionAmount <= 0),
     [pendingItems]
   );
 
@@ -353,6 +405,14 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
 
   const toggleItem = (id: string) => {
     const item = pendingItems.find((i) => i.id === id);
+    if (item?.isCommissionWaived) {
+      toast.warning('A comissao desta OS foi expressamente anulada pela gestao e nao gera comissao.');
+      return;
+    }
+    if (item?.isFinancialPending) {
+      toast.warning('Esta OS ainda nao foi confirmada no Financeiro (Caixa). Comissoes so sao liberadas apos a confirmacao no caixa.');
+      return;
+    }
     if (item?.hasZeroOrNegativeProfit) {
       toast.warning(
         `A ${item.label} possui margem zero ou prejuízo (${item.profitAmount !== null ? formatCurrency(item.profitAmount) : "R$ 0,00"}) após custo de peças e não gera comissão.`
@@ -846,6 +906,16 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                                 {item.type === "sale" ? "VENDA" : "OS"}
                               </Badge>
 
+                              {item.isCommissionWaived ? (
+                                <Badge variant="destructive" className="text-[9px] py-0 h-4 gap-1 font-semibold bg-red-500/10 text-red-500 border-red-500/30">
+                                  <Ban className="h-2.5 w-2.5" /> Comissão Anulada
+                                </Badge>
+                              ) : item.isFinancialPending ? (
+                                <Badge variant="outline" className="text-[9px] py-0 h-4 gap-1 font-semibold bg-amber-500/10 text-amber-500 border-amber-500/30">
+                                  <AlertTriangle className="h-2.5 w-2.5" /> Pendente no Caixa
+                                </Badge>
+                              ) : null}
+
                               {isFailed ? (
                                 <Badge variant="destructive" className="text-[9px] py-0 h-4 gap-1 font-bold animate-pulse">
                                   <AlertTriangle className="h-2.5 w-2.5" /> Prejuízo no Reparo (Erro de Margem)
@@ -911,6 +981,21 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                               }}
                             >
                               <ExternalLink className="h-2.5 w-2.5" /> Abrir OS
+                            </Button>
+                          )}
+                          {item.type === "service_order" && !item.isCommissionWaived && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 text-[10px] gap-1 px-1.5 font-medium text-destructive hover:bg-destructive/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleWaiveCommissionFromModal(item.id, item.orderNumber);
+                              }}
+                              title="Anular comissão deste serviço"
+                            >
+                              <Ban className="h-2.5 w-2.5" /> Anular
                             </Button>
                           )}
                         </div>

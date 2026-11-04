@@ -87,6 +87,8 @@ interface OSDetailModalProps {
   totalPaid: (order: any) => number;
   isFinancialPending?: boolean;
   onConfirmFinancial?: () => void | Promise<void>;
+  onToggleWaiveCommission?: (reason: string) => void | Promise<void>;
+  isCommissionWaived?: boolean;
 }
 
 export const OSDetailModal: React.FC<OSDetailModalProps> = ({
@@ -123,6 +125,8 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   totalPaid,
   isFinancialPending = false,
   onConfirmFinancial,
+  onToggleWaiveCommission,
+  isCommissionWaived = false,
 }) => {
   return (
     <Dialog open={!!detailOrder} onOpenChange={(open) => !open && onClose()}>
@@ -288,6 +292,11 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                   {detailOrder.technician_id
                     ? profileMap.get(detailOrder.technician_id) ?? "—"
                     : "Nenhum (Sem técnico)"}
+                  {detailOrder.technician_id && isCommissionWaived && (
+                    <Badge variant="outline" className="ml-1.5 text-[9px] py-0 h-4 bg-red-500/10 text-red-500 border-red-500/30">
+                      Comissão Anulada
+                    </Badge>
+                  )}
                 </p>
                 <p>
                   <span className="text-muted-foreground">Estimado:</span>{" "}
@@ -822,6 +831,37 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                       </Select>
                     </div>
                   </div>
+
+                  {onToggleWaiveCommission && detailOrder.technician_id && (
+                    <div className="pt-2 border-t border-destructive/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px] text-muted-foreground uppercase">
+                          Comissão do Técnico
+                        </Label>
+                        {isCommissionWaived ? (
+                          <Badge className="bg-red-500/20 text-red-500 border-red-500/40 text-[9px]">Anulada</Badge>
+                        ) : (
+                          <Badge className="bg-emerald-500/20 text-emerald-500 border-emerald-500/40 text-[9px]">Ativa</Badge>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant={isCommissionWaived ? "outline" : "secondary"}
+                        size="sm"
+                        className={`w-full h-8 text-xs font-semibold ${isCommissionWaived ? "border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10" : "border-red-500/40 text-red-600 hover:bg-red-500/10"}`}
+                        onClick={() => {
+                          const action = isCommissionWaived ? "reativar" : "anular";
+                          const reason = prompt(`Informe o motivo para ${action} a comissão do técnico desta OS:`);
+                          if (reason !== null && reason.trim() !== "") {
+                            onToggleWaiveCommission(reason.trim());
+                          }
+                        }}
+                        disabled={loading}
+                      >
+                        {isCommissionWaived ? "✓ Reativar Comissão do Técnico" : "✕ Anular / Cancelar Comissão do Técnico"}
+                      </Button>
+                    </div>
+                  )}
 
                   <div className="pt-2 border-t border-destructive/20">
                     <Button
