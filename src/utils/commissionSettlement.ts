@@ -16,12 +16,16 @@ export interface CommissionSettlement {
   transaction_id?: string | null;
   cash_entry_id?: string | null;
   source_account_id?: string | null;
-  status: "paid";
+  status: "paid" | "cancelled";
   paid_at: string;
   receipt_url?: string | null;
   notes?: string | null;
   created_by: string;
   created_at: string;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancel_reason?: string | null;
+  cancelled_items_snapshot?: CommissionSettlementItem[] | null;
   items_count?: number;
   user_name?: string;
   manager_name?: string;
@@ -41,6 +45,12 @@ export interface CommissionSettlementItem {
   commission_amount: number;
   created_at: string;
   description?: string;
+  order_number?: number | null;
+  customer_name?: string | null;
+  device_name?: string | null;
+  service_name?: string | null;
+  operation_date?: string | null;
+  parts_summary?: string | null;
 }
 
 /**
@@ -99,8 +109,25 @@ export interface SettleCommissionsResponse {
   payment_method: string;
 }
 
+export interface CancelCommissionSettlementResponse {
+  success: boolean;
+  settlement_id: string;
+  items_released: number;
+  cash_reversal_mode: string;
+}
+
 const formatCurrency = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
+const pdfSafe = (text?: string | null): string => {
+  if (!text) return "";
+  return String(text)
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "")
+    .trim();
+};
 
 /**
  * Busca todos os IDs de vendas e OSs já liquidadas para garantir
@@ -145,16 +172,45 @@ export async function settleCommissionsRPC(
 }
 
 /**
- * Busca o histórico de liquidações para a loja ou colaborador
+ * Anula atomicamente uma liquidação de comissão realizada por engano,
+ * estornando lançamentos financeiros e devolvendo os itens para Pendente.
+ */
+export async function cancelCommissionSettlementRPC(
+  settlementId: string,
+  reason: string,
+  refundToOpenRegister = false
+): Promise<CancelCommissionSettlementResponse> {
+  const { data, error } = await (supabase.rpc("cancel_commission_settlement" as any, {
+    p_settlement_id: settlementId,
+    p_reason: reason,
+    p_refund_to_open_register: refundToOpenRegister,
+  }) as any);
+
+  if (error) {
+    throw new Error(error.message || "Falha ao anular liquidação de comissão.");
+  }
+
+  return data as CancelCommissionSettlementResponse;
+}
+
+/**
+ * Busca o histórico de liquidações para a loja ou colaborador.
+ * Por padrão retorna apenas liquidações ativas ('paid') para proteger painéis de técnicos;
+ * a gestão pode solicitar includeCancelled = true para auditoria completa.
  */
 export async function fetchSettlementsHistory(
   storeId?: string,
-  userId?: string
+  userId?: string,
+  includeCancelled = false
 ): Promise<CommissionSettlement[]> {
   let query = supabase
     .from("commission_settlements" as any)
     .select("*")
     .order("paid_at", { ascending: false });
+
+  if (!includeCancelled) {
+    query = query.eq("status", "paid");
+  }
 
   if (storeId && storeId !== "all") {
     query = query.eq("store_id", storeId);
@@ -174,7 +230,9 @@ export async function fetchSettlementsHistory(
 }
 
 /**
- * Busca os itens de uma liquidação específica para geração de 2ª via ou detalhes
+ * Busca os itens de uma liquidação específica enriquecidos com dados completos
+ * das Ordens de Serviço (número real, cliente, aparelho, serviço, peças e data) e Vendas.
+ * Caso a liquidação tenha sido anulada, recupera o snapshot preservado para auditoria.
  */
 export async function fetchSettlementItems(
   settlementId: string
@@ -190,11 +248,101 @@ export async function fetchSettlementItems(
     return [];
   }
 
-  return (data as CommissionSettlementItem[]) || [];
+  const rawItems = (data as CommissionSettlementItem[]) || [];
+
+  if (rawItems.length === 0) {
+    const { data: settlementRow } = await (supabase
+      .from("commission_settlements" as any)
+      .select("cancelled_items_snapshot")
+      .eq("id", settlementId)
+      .maybeSingle() as any);
+
+    if (Array.isArray(settlementRow?.cancelled_items_snapshot)) {
+      return settlementRow.cancelled_items_snapshot as CommissionSettlementItem[];
+    }
+    return [];
+  }
+
+  const osIds = Array.from(
+    new Set(rawItems.map((i) => i.service_order_id).filter((id): id is string => Boolean(id)))
+  );
+  const saleIds = Array.from(
+    new Set(rawItems.map((i) => i.sale_id).filter((id): id is string => Boolean(id)))
+  );
+
+  const [osRes, osPartsRes, salesRes] = await Promise.all([
+    osIds.length > 0
+      ? supabase
+          .from("service_orders")
+          .select("id, order_number, customer_name, device_brand, device_model, requested_service, delivered_at, created_at")
+          .in("id", osIds)
+      : Promise.resolve({ data: [] as any[] }),
+    osIds.length > 0
+      ? (supabase
+          .from("service_order_items" as any)
+          .select("service_order_id, quantity, unit_cost, products(name)")
+          .in("service_order_id", osIds) as any)
+      : Promise.resolve({ data: [] as any[] }),
+    saleIds.length > 0
+      ? supabase
+          .from("sales")
+          .select("id, customer_name, created_at, products(name, brand, model)")
+          .in("id", saleIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const osMap = new Map<string, any>((osRes.data || []).map((o: any) => [o.id, o]));
+  const saleMap = new Map<string, any>((salesRes.data || []).map((s: any) => [s.id, s]));
+
+  const partsListMap = new Map<string, string[]>();
+  (osPartsRes.data || []).forEach((pt: any) => {
+    if (!pt.service_order_id) return;
+    const pName = pt.products?.name || "Peça";
+    const qty = Number(pt.quantity || 1);
+    const label = qty > 1 ? `${pName} (${qty}x)` : pName;
+    const arr = partsListMap.get(pt.service_order_id) || [];
+    arr.push(label);
+    partsListMap.set(pt.service_order_id, arr);
+  });
+
+  return rawItems.map((item) => {
+    if (item.item_type === "service_order" && item.service_order_id) {
+      const os = osMap.get(item.service_order_id);
+      const deviceName = [os?.device_brand, os?.device_model].filter(Boolean).join(" ").trim() || null;
+      const partsArr = partsListMap.get(item.service_order_id);
+      return {
+        ...item,
+        order_number: os?.order_number ?? item.order_number ?? null,
+        customer_name: os?.customer_name ?? item.customer_name ?? null,
+        device_name: deviceName ?? item.device_name ?? null,
+        service_name: os?.requested_service ?? item.service_name ?? null,
+        operation_date: os?.delivered_at || os?.created_at || item.operation_date || item.created_at,
+        parts_summary: partsArr && partsArr.length > 0 ? partsArr.join(", ") : item.parts_summary ?? null,
+      };
+    }
+
+    if (item.item_type === "sale" && item.sale_id) {
+      const sale = saleMap.get(item.sale_id);
+      const prod = sale?.products;
+      const prodName =
+        prod?.name || [prod?.brand, prod?.model].filter(Boolean).join(" ").trim() || item.device_name || "Produto";
+      return {
+        ...item,
+        order_number: null,
+        customer_name: sale?.customer_name ?? item.customer_name ?? null,
+        device_name: prodName,
+        service_name: item.service_name || "Venda PDV",
+        operation_date: sale?.created_at || item.operation_date || item.created_at,
+        parts_summary: null,
+      };
+    }
+
+    return item;
+  });
 }
 
 /**
- * Gera recibo formal de quitação de comissões em PDF após o sucesso da liquidação
+ * Gera recibo formal de quitação de comissões em PDF com detalhamento completo de cada OS/Venda
  */
 export function generateSettlementReceiptPDF(data: {
   settlement: {
@@ -217,7 +365,11 @@ export function generateSettlementReceiptPDF(data: {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const M = 12;
   const W = 210;
-  const CW = W - M * 2;
+  const CW = W - M * 2; // 186mm
+
+  const safeStoreName = pdfSafe(data.storeName) || "Cell Pro 360";
+  const safeCollabName = pdfSafe(data.collaboratorName) || "Colaborador";
+  const safeManagerName = pdfSafe(data.managerName) || "Gestão Financeira";
 
   // Header Dark Elegante
   doc.setFillColor(17, 24, 39);
@@ -233,7 +385,7 @@ export function generateSettlementReceiptPDF(data: {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.text("Comprovante de Liquidação de Comissões", M, 20);
-  doc.text(`Loja: ${data.storeName}`, M, 26);
+  doc.text(`Loja: ${safeStoreName}`, M, 26);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
@@ -264,7 +416,7 @@ export function generateSettlementReceiptPDF(data: {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10.5);
   doc.setTextColor(17, 24, 39);
-  doc.text(data.collaboratorName, M + 4, y + 14);
+  doc.text(safeCollabName, M + 4, y + 14);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -279,91 +431,187 @@ export function generateSettlementReceiptPDF(data: {
   const metodoLabel =
     data.settlement.payment_method === "dinheiro"
       ? "Dinheiro (Caixa)"
-      : data.settlement.payment_method.toUpperCase();
+      : pdfSafe(data.settlement.payment_method).toUpperCase();
   doc.text(metodoLabel, M + 140, y + 14);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(107, 114, 128);
-  doc.text(`Autorizado por: ${data.managerName}`, M + 4, y + 20);
+  doc.text(`Autorizado por: ${safeManagerName}`, M + 4, y + 20);
 
   y += 30;
 
-  // Tabela de Itens Liquidados
+  // Tabela de Itens Liquidados (Largura exata: 26 + 68 + 22 + 21 + 21 + 10 + 18 = 186mm)
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(17, 24, 39);
   doc.text(`Demonstrativo das Operações Liquidadas (${data.items.length} itens)`, M, y);
   y += 4;
 
-  const cols = [
-    { label: "TIPO", w: 20 },
-    { label: "REFERÊNCIA", w: 50 },
-    { label: "FATURADO", w: 30 },
-    { label: "CUSTO / PEÇAS", w: 28 },
-    { label: "LUCRO BRUTO", w: 28 },
-    { label: "% COM.", w: 14 },
-    { label: "COMISSÃO", w: 16 },
+  const cols: Array<{ label: string; w: number; align: "left" | "right" }> = [
+    { label: "OS / DATA", w: 26, align: "left" },
+    { label: "DETALHES DO SERVIÇO / VENDA", w: 68, align: "left" },
+    { label: "FATURADO", w: 22, align: "right" },
+    { label: "CUSTO PEÇAS", w: 21, align: "right" },
+    { label: "LUCRO BRUTO", w: 21, align: "right" },
+    { label: "% COM.", w: 10, align: "right" },
+    { label: "COMISSÃO", w: 18, align: "right" },
   ];
 
-  doc.setFillColor(17, 24, 39);
-  let x = M;
-  cols.forEach((c) => {
-    doc.rect(x, y, c.w, 7, "F");
-    x += c.w;
-  });
+  const drawTableHeader = () => {
+    doc.setFillColor(17, 24, 39);
+    doc.rect(M, y, CW, 7, "F");
 
-  x = M;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.setTextColor(255, 255, 255);
-  cols.forEach((c) => {
-    doc.text(c.label, x + 2, y + 4.8);
-    x += c.w;
-  });
+    let hx = M;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.3);
+    doc.setTextColor(255, 255, 255);
+    cols.forEach((c) => {
+      if (c.align === "right") {
+        doc.text(c.label, hx + c.w - 2, y + 4.8, { align: "right" });
+      } else {
+        doc.text(c.label, hx + 2, y + 4.8);
+      }
+      hx += c.w;
+    });
+    y += 7;
+  };
 
-  y += 7;
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(30, 30, 30);
+  drawTableHeader();
 
   data.items.forEach((it, idx) => {
-    if (y > 250) {
+    const isSale = it.item_type === "sale";
+    const refPrimary = isSale
+      ? "Venda PDV"
+      : it.order_number != null
+      ? `OS #${it.order_number}`
+      : `OS #${(it.service_order_id || "").slice(0, 8)}`;
+
+    const opDateStr =
+      it.operation_date || it.created_at
+        ? formatBrasiliaDate(it.operation_date || it.created_at)
+        : "";
+
+    // Monta linhas ricas da coluna de detalhes com quebra automática em 64mm
+    const detailSublines: Array<{ text: string; bold: boolean; muted: boolean }> = [];
+    const maxDetailWidth = cols[1].w - 4;
+
+    if (isSale) {
+      const mainTitle = pdfSafe(it.device_name) || `Venda #${(it.sale_id || "").slice(0, 8)}`;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      (doc.splitTextToSize(mainTitle, maxDetailWidth) as string[]).forEach((ln) => {
+        detailSublines.push({ text: ln, bold: true, muted: false });
+      });
+
+      if (it.customer_name) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.5);
+        (doc.splitTextToSize(`Cliente: ${pdfSafe(it.customer_name)}`, maxDetailWidth) as string[]).forEach((ln) => {
+          detailSublines.push({ text: ln, bold: false, muted: true });
+        });
+      }
+    } else {
+      const mainParts = [pdfSafe(it.device_name), pdfSafe(it.service_name)].filter(Boolean);
+      const mainTitle = mainParts.length > 0 ? mainParts.join(" - ") : "Ordem de Serviço";
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      (doc.splitTextToSize(mainTitle, maxDetailWidth) as string[]).forEach((ln) => {
+        detailSublines.push({ text: ln, bold: true, muted: false });
+      });
+
+      const custText = `Cliente: ${pdfSafe(it.customer_name) || "Não informado"}`;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.5);
+      (doc.splitTextToSize(custText, maxDetailWidth) as string[]).forEach((ln) => {
+        detailSublines.push({ text: ln, bold: false, muted: true });
+      });
+
+      if (it.parts_summary) {
+        const partsText = `Peças: ${pdfSafe(it.parts_summary)}`;
+        (doc.splitTextToSize(partsText, maxDetailWidth) as string[]).forEach((ln) => {
+          detailSublines.push({ text: ln, bold: false, muted: true });
+        });
+      }
+    }
+
+    const lineSpacing = 3.4;
+    const rowH = Math.max(9.5, detailSublines.length * lineSpacing + 2.8);
+
+    if (y + rowH > 268) {
       doc.addPage();
-      y = 20;
+      y = 18;
+      drawTableHeader();
     }
 
     if (idx % 2 === 0) {
       doc.setFillColor(249, 250, 251);
-      doc.rect(M, y, CW, 6.5, "F");
+      doc.rect(M, y, CW, rowH, "F");
     }
 
-    const tipoLabel = it.item_type === "sale" ? "Venda" : "OS";
-    const refLabel = it.sale_id
-      ? `Venda #${it.sale_id.slice(0, 8)}`
-      : `OS #${it.service_order_id?.slice(0, 8)}`;
+    doc.setDrawColor(235, 238, 242);
+    doc.line(M, y + rowH, W - M, y + rowH);
 
-    const vals = [
-      tipoLabel,
-      refLabel,
-      formatCurrency(it.gross_amount),
-      it.cost_amount !== null ? formatCurrency(it.cost_amount) : "—",
-      it.profit_amount !== null ? formatCurrency(it.profit_amount) : "—",
-      `${it.commission_percent}%`,
-      formatCurrency(it.commission_amount),
-    ];
+    // Col 0: OS / Data
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.2);
+    doc.setTextColor(17, 24, 39);
+    doc.text(refPrimary, M + 2, y + 4.2);
 
-    let cx = M;
-    vals.forEach((v, i) => {
-      doc.text(v, cx + 2, y + 4.5);
-      cx += cols[i].w;
+    if (opDateStr) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.3);
+      doc.setTextColor(107, 114, 128);
+      doc.text(opDateStr, M + 2, y + 7.6);
+    }
+
+    // Col 1: Detalhes multi-linha
+    const detailX = M + cols[0].w + 2;
+    detailSublines.forEach((dl, lIdx) => {
+      doc.setFont("helvetica", dl.bold ? "bold" : "normal");
+      doc.setFontSize(dl.bold ? 7 : 6.4);
+      if (dl.muted) {
+        doc.setTextColor(90, 98, 112);
+      } else {
+        doc.setTextColor(24, 32, 48);
+      }
+      doc.text(dl.text, detailX, y + 4.1 + lIdx * lineSpacing);
     });
 
-    y += 6.5;
+    // Cols 2..6: Valores financeiros alinhados à direita
+    const numericVals = [
+      formatCurrency(Number(it.gross_amount)),
+      it.cost_amount !== null ? formatCurrency(Number(it.cost_amount)) : "-",
+      it.profit_amount !== null ? formatCurrency(Number(it.profit_amount)) : "-",
+      `${it.commission_percent}%`,
+      formatCurrency(Number(it.commission_amount)),
+    ];
+
+    let cx = M + cols[0].w + cols[1].w;
+    numericVals.forEach((val, nIdx) => {
+      const colCfg = cols[nIdx + 2];
+      const isCommCol = nIdx === 4;
+      doc.setFont("helvetica", isCommCol ? "bold" : "normal");
+      doc.setFontSize(7);
+      if (isCommCol) {
+        doc.setTextColor(16, 145, 100);
+      } else {
+        doc.setTextColor(30, 30, 30);
+      }
+      doc.text(pdfSafe(val), cx + colCfg.w - 2, y + 4.6, { align: "right" });
+      cx += colCfg.w;
+    });
+
+    y += rowH;
   });
 
-  y += 4;
+  y += 5;
+
+  // Paginação segura antes do Bloco de Totais + Termo + Assinaturas
+  if (y + 62 > 282) {
+    doc.addPage();
+    y = 20;
+  }
 
   // Box de Totais
   doc.setFillColor(243, 244, 246);
@@ -381,23 +629,34 @@ export function generateSettlementReceiptPDF(data: {
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(30, 30, 30);
-  doc.text(formatCurrency(data.settlement.total_sales_commission), W - M - 4, y + 6, { align: "right" });
-  doc.text(formatCurrency(data.settlement.total_service_commission), W - M - 4, y + 12, { align: "right" });
+  doc.text(pdfSafe(formatCurrency(data.settlement.total_sales_commission)), W - M - 4, y + 6, { align: "right" });
+  doc.text(pdfSafe(formatCurrency(data.settlement.total_service_commission)), W - M - 4, y + 12, { align: "right" });
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(16, 185, 129);
-  doc.text(formatCurrency(data.settlement.total_amount), W - M - 4, y + 20, { align: "right" });
+  doc.text(pdfSafe(formatCurrency(data.settlement.total_amount)), W - M - 4, y + 20, { align: "right" });
 
-  y += 36;
+  y += 32;
+
+  if (data.settlement.notes) {
+    const obsLines = doc.splitTextToSize(`Observações: ${pdfSafe(data.settlement.notes)}`, CW) as string[];
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(75, 85, 99);
+    doc.text(obsLines, M, y);
+    y += obsLines.length * 3.5 + 4;
+  }
 
   // Termo de Quitação e Assinatura
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7);
   doc.setTextColor(107, 114, 128);
-  const termo = `Declaro para os devidos fins que recebi integralmente o valor de ${formatCurrency(
-    data.settlement.total_amount
-  )} referente à liquidação das comissões detalhadas acima, dando plena e irrevogável quitação.`;
+  const termo = pdfSafe(
+    `Declaro para os devidos fins que recebi integralmente o valor de ${formatCurrency(
+      data.settlement.total_amount
+    )} referente à liquidação das comissões detalhadas acima, dando plena e irrevogável quitação.`
+  );
   doc.text(doc.splitTextToSize(termo, CW), M, y);
 
   y += 18;
@@ -411,13 +670,13 @@ export function generateSettlementReceiptPDF(data: {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(75, 85, 99);
-  doc.text(data.collaboratorName, M + sigW / 2, y + 4, { align: "center" });
+  doc.text(safeCollabName, M + sigW / 2, y + 4, { align: "center" });
   doc.text("Assinatura do Colaborador", M + sigW / 2, y + 8, { align: "center" });
 
-  doc.text(data.managerName, W - M - sigW / 2, y + 4, { align: "center" });
+  doc.text(safeManagerName, W - M - sigW / 2, y + 4, { align: "center" });
   doc.text("Responsável Financeiro", W - M - sigW / 2, y + 8, { align: "center" });
 
   // Salvar PDF
-  const filename = `Recibo-Comissao-${data.collaboratorName.replace(/\s+/g, "_")}-${data.settlement.id.slice(0, 8)}.pdf`;
+  const filename = `Recibo-Comissao-${safeCollabName.replace(/\s+/g, "_")}-${data.settlement.id.slice(0, 8)}.pdf`;
   doc.save(filename);
 }

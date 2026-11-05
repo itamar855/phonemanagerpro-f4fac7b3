@@ -101,6 +101,10 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   const [directOsParts, setDirectOsParts] = useState<any[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
   const [pendingFinancialOsIds, setPendingFinancialOsIds] = useState<Set<string>>(new Set());
+  const [periodSales, setPeriodSales] = useState<any[]>([]);
+  const [periodServiceOrders, setPeriodServiceOrders] = useState<any[]>([]);
+  const [loadingPeriodItems, setLoadingPeriodItems] = useState(false);
+  const [localWaivedOsIds, setLocalWaivedOsIds] = useState<Set<string>>(new Set());
 
   const handleWaiveCommissionFromModal = async (osId: string, orderNumber?: number) => {
     const reason = prompt('Informe o motivo para anular a comissao do tecnico da OS:');
@@ -112,7 +116,11 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       const tag = '[COMISSAO_ANULADA: ' + reason.trim() + ']';
       const newNotes = currentNotes ? currentNotes + '\n' + tag : tag;
       await supabase.from('service_orders').update({ internal_notes: newNotes, updated_at: new Date().toISOString() }).eq('id', osId);
-      toast.success('Comissao da OS anulada com sucesso!');
+      setLocalWaivedOsIds((prev) => new Set(prev).add(osId));
+      setPeriodServiceOrders((prev) =>
+        prev.map((o) => (o.id === osId ? { ...o, internal_notes: newNotes } : o))
+      );
+      toast.success(`Comissão da OS ${orderNumber ? `#${orderNumber}` : ""} anulada com sucesso!`);
       onSuccess();
     } catch (err: any) {
       toast.error('Erro ao anular comissao: ' + err.message);
@@ -167,6 +175,97 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
 
   const profileMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.display_name ?? p.user_id])), [profiles]);
   const storeMap = useMemo(() => new Map(stores.map((s) => [s.id, s.name])), [stores]);
+
+  // Garante que qualquer colaborador com vínculo apareça no seletor mesmo quando o filtro da página pai está em outro mês
+  const selectableCollaborators = useMemo(() => {
+    const map = new Map<string, { uid: string; nome: string; role: string }>();
+    (collaborators || []).forEach((c) => {
+      if (c?.uid) {
+        map.set(c.uid, { uid: c.uid, nome: c.nome, role: c.role || "vendedor" });
+      }
+    });
+    (profiles || []).forEach((p) => {
+      if (!p?.user_id || map.has(p.user_id)) return;
+      const r = userRolesMap.get(p.user_id);
+      if (!r) return;
+      map.set(p.user_id, {
+        uid: p.user_id,
+        nome: p.display_name || p.user_id,
+        role: r.role || "vendedor",
+      });
+    });
+    return Array.from(map.values());
+  }, [collaborators, profiles, userRolesMap]);
+
+  // Busca vendas e OSs entregues diretamente para o período escolhido no modal (permite reliquidar meses anteriores)
+  useEffect(() => {
+    if (!open || !selectedUserId || !selectedStoreId || !startDate || !endDate) {
+      setPeriodSales([]);
+      setPeriodServiceOrders([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingPeriodItems(true);
+
+    const startBuf = new Date(new Date(`${startDate}T00:00:00Z`).getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const endBuf = new Date(new Date(`${endDate}T23:59:59Z`).getTime() + 24 * 60 * 60 * 1000).toISOString();
+
+    Promise.all([
+      supabase
+        .from("sales")
+        .select("*, products(*)")
+        .eq("store_id", selectedStoreId)
+        .eq("created_by", selectedUserId)
+        .gte("created_at", startBuf)
+        .lte("created_at", endBuf),
+      supabase
+        .from("service_orders")
+        .select("*")
+        .eq("store_id", selectedStoreId)
+        .eq("technician_id", selectedUserId)
+        .eq("status", "delivered")
+        .gte("delivered_at", startBuf)
+        .lte("delivered_at", endBuf),
+    ])
+      .then(([sRes, oRes]) => {
+        if (cancelled) return;
+        setPeriodSales((sRes.data as any[]) ?? []);
+        setPeriodServiceOrders((oRes.data as any[]) ?? []);
+      })
+      .catch((err) => {
+        console.error("Erro ao sincronizar itens do período para liquidação:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPeriodItems(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedUserId, selectedStoreId, startDate, endDate]);
+
+  const effectiveSales = useMemo(() => {
+    const map = new Map<string, any>();
+    (allSales || []).forEach((s) => {
+      if (s?.id) map.set(s.id, s);
+    });
+    periodSales.forEach((s) => {
+      if (s?.id) map.set(s.id, s);
+    });
+    return Array.from(map.values());
+  }, [allSales, periodSales]);
+
+  const effectiveServiceOrders = useMemo(() => {
+    const map = new Map<string, any>();
+    (allServiceOrders || []).forEach((o) => {
+      if (o?.id) map.set(o.id, o);
+    });
+    periodServiceOrders.forEach((o) => {
+      if (o?.id) map.set(o.id, o);
+    });
+    return Array.from(map.values());
+  }, [allServiceOrders, periodServiceOrders]);
 
   // Se modal abrir ou storeId mudar, sincroniza loja
   useEffect(() => {
@@ -223,7 +322,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       return;
     }
 
-    const targetOrders = allServiceOrders.filter(
+    const targetOrders = effectiveServiceOrders.filter(
       (o) => o.technician_id === selectedUserId && o.store_id === selectedStoreId && o.status === "delivered"
     );
     const targetOsIds = targetOrders.map((o) => o.id);
@@ -317,7 +416,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
 
       setPendingFinancialOsIds(pendingFin);
     });
-  }, [open, selectedUserId, selectedStoreId, allServiceOrders]);
+  }, [open, selectedUserId, selectedStoreId, effectiveServiceOrders]);
 
   const effectiveOsItems = useMemo(() => {
     if (directOsParts.length > 0) {
@@ -335,7 +434,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     const items: PendingCommissionItem[] = [];
 
     // 1. Vendas pendentes (CANONICAL_SALES_COMMISSION_OWNER = created_by)
-    allSales.forEach((s) => {
+    effectiveSales.forEach((s) => {
       if (s.created_by === selectedUserId && s.store_id === selectedStoreId) {
         if (!settledSaleIds.has(s.id)) {
           const commVal = Number(s.commission_value || 0);
@@ -364,7 +463,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     });
 
     // 2. Ordens de Serviço entregues pendentes
-    allServiceOrders.forEach((o) => {
+    effectiveServiceOrders.forEach((o) => {
       if (o.technician_id === selectedUserId && o.store_id === selectedStoreId && o.status === "delivered") {
         if (!settledOsIds.has(o.id)) {
           const roleData = userRolesMap.get(selectedUserId);
@@ -386,7 +485,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
             0
           );
           const profit = gross - partsCost;
-          const isWaived = isOSCommissionWaived(o);
+          const isWaived = localWaivedOsIds.has(o.id) || isOSCommissionWaived(o);
           const isFinPending = pendingFinancialOsIds.has(o.id);
           const isZeroOrNegative = profit <= 0;
           const commAmount = (isZeroOrNegative || isWaived || isFinPending) ? 0 : (profit * commPct) / 100;
@@ -418,7 +517,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     });
 
     return items;
-  }, [selectedUserId, selectedStoreId, allSales, allServiceOrders, effectiveOsItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate, pendingFinancialOsIds]);
+  }, [selectedUserId, selectedStoreId, effectiveSales, effectiveServiceOrders, effectiveOsItems, userRolesMap, settledSaleIds, settledOsIds, startDate, endDate, pendingFinancialOsIds, localWaivedOsIds]);
 
   const eligibleItems = useMemo(
     () => pendingItems.filter((i) => !i.hasZeroOrNegativeProfit && !i.isFinancialPending && !i.isCommissionWaived && i.commissionAmount > 0),
@@ -613,7 +712,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       // Interceptação e tradução amigável de qualquer erro relacionado a OS/Venda na liquidação
       const uuidMatch = rawMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
       const failedId = uuidMatch ? uuidMatch[0] : "";
-      const ordersList = Array.isArray(allServiceOrders) ? allServiceOrders : [];
+      const ordersList = Array.isArray(effectiveServiceOrders) ? effectiveServiceOrders : [];
       const targetOs = ordersList.find((o) => o.id === failedId);
       const pendingMatch = pendingItems.find((p) => p.id === failedId);
 
@@ -631,6 +730,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       const isAlreadySettled = rawMsg.includes("ALREADY_SETTLED") || rawMsg.includes("já foi liquidada");
       const isStoreMismatch = rawMsg.includes("STORE_MISMATCH") || rawMsg.includes("outra loja");
       const isNotDelivered = rawMsg.includes("NOT_DELIVERED") || rawMsg.includes("delivered");
+      const isWaivedError = rawMsg.includes("OS_COMMISSION_WAIVED") || rawMsg.includes("anulada pela gestão");
+      const isFinPendingError = rawMsg.includes("OS_FINANCIAL_PENDING") || rawMsg.includes("confirmado no Caixa");
 
       const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
       const profitText = profitMatch ? profitMatch[1] : "";
@@ -659,9 +760,17 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         errorTitle = "OS Não Entregue";
         errorBadge = "Status Inválido";
         errorDesc = `A ${osLabel} não consta com status Entregue (delivered). Apenas serviços finalizados e entregues geram direito a comissão. Ela foi desmarcada automaticamente.`;
+      } else if (isWaivedError) {
+        errorTitle = "Comissão da OS Anulada";
+        errorBadge = "Comissão Anulada";
+        errorDesc = `A comissão da ${osLabel} foi expressamente anulada pela gestão e não pode ser liquidada. Ela foi desmarcada automaticamente.`;
+      } else if (isFinPendingError) {
+        errorTitle = "OS Pendente no Caixa";
+        errorBadge = "Aguardando Caixa";
+        errorDesc = `A ${osLabel} ainda não possui recebimento confirmado no Caixa. Confirme a entrada no Caixa antes de liquidar sua comissão.`;
       }
 
-      const hasOsError = failedId || isZeroProfit || isOwnerMismatch || isAlreadySettled || isStoreMismatch || isNotDelivered;
+      const hasOsError = failedId || isZeroProfit || isOwnerMismatch || isAlreadySettled || isStoreMismatch || isNotDelivered || isWaivedError || isFinPendingError;
 
       if (hasOsError) {
         if (failedId) {
@@ -774,7 +883,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                   <SelectValue placeholder="Selecione quem receberá..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {collaborators.map((c) => (
+                  {selectableCollaborators.map((c) => (
                     <SelectItem key={c.uid} value={c.uid} className="text-xs">
                       {c.nome} ({c.role === "tecnico" ? "Técnico" : "Vendedor"})
                     </SelectItem>
@@ -827,13 +936,13 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                     <Badge variant="destructive" className="text-[10px] h-5 gap-1 font-semibold">
                       <AlertTriangle className="h-3 w-3" />
                       {ineligibleItems.length === 1
-                        ? "1 com margem zero/negativa (desmarcada)"
-                        : `${ineligibleItems.length} com margem zero/negativa (desmarcadas)`}
+                        ? "1 bloqueada/não elegível (desmarcada)"
+                        : `${ineligibleItems.length} bloqueadas/não elegíveis (desmarcadas)`}
                     </Badge>
                   )}
-                  {loadingParts && (
+                  {(loadingParts || loadingPeriodItems) && (
                     <span className="text-[10px] text-muted-foreground animate-pulse">
-                      Sincronizando peças...
+                      Sincronizando período...
                     </span>
                   )}
                 </div>
@@ -907,6 +1016,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                     const isChecked = selectedItemIds.has(item.id);
                     const isFailed = failedOsInfo?.id === item.id;
                     const isNegative = Boolean(item.hasZeroOrNegativeProfit) || isFailed;
+                    const isBlockedItem =
+                      isNegative || Boolean(item.isFinancialPending) || Boolean(item.isCommissionWaived);
 
                     return (
                       <div
@@ -915,8 +1026,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                         className={`flex items-center justify-between p-2 rounded-md border text-xs transition-colors ${
                           isFailed
                             ? "bg-destructive/10 border-destructive ring-1 ring-destructive/40"
-                            : isNegative
-                            ? "bg-destructive/5 border-destructive/30 opacity-80 cursor-not-allowed"
+                            : isBlockedItem
+                            ? "bg-muted/20 border-border/40 opacity-80 cursor-not-allowed"
                             : isChecked
                             ? "bg-primary/5 border-primary/30 cursor-pointer"
                             : "bg-muted/10 border-border/40 hover:bg-muted/20 cursor-pointer"
@@ -925,7 +1036,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                         <div className="flex items-center gap-2.5 min-w-0">
                           <Checkbox
                             checked={isChecked}
-                            disabled={isNegative}
+                            disabled={isBlockedItem}
                             onCheckedChange={() => toggleItem(item.id)}
                             onClick={(e) => e.stopPropagation()}
                           />

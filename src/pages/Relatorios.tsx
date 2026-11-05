@@ -368,7 +368,7 @@ const Relatorios = () => {
       supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
       supabase.from("user_roles").select("*"),
       fetchSettledItemIds(),
-      fetchSettlementsHistory(effectiveStoreId),
+      fetchSettlementsHistory(effectiveStoreId, undefined, true),
       supabase.from("transactions").select("*").eq("type", "income").eq("category", "acessorio").gte("created_at", start).lte("created_at", end),
     ]);
     const allSales = ((salesRes.data ?? []) as any[]);
@@ -406,14 +406,63 @@ const Relatorios = () => {
     setRankingAccessories(accRanking);
     setStoreAccessoryMetrics(accMetrics);
 
-    // Fetch peças usadas para apurar margem líquida dos reparos
+    // Fetch peças usadas e status financeiro no Caixa para apurar margem líquida e elegibilidade das OSs
     let osItems: any[] = [];
+    const pendingFinOsIds = new Set<string>();
     if (os.length > 0) {
-      const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
-        .select("service_order_id, unit_cost, quantity")
-        .in("service_order_id", os.map((o: any) => o.id));
-      osItems = itemsData ?? [];
+      const osIdsList = os.map((o: any) => o.id);
+      let cashEntriesQuery = supabase
+        .from("cash_entries" as any)
+        .select("reference_id, description, confirmed, created_at, store_id")
+        .eq("type", "entrada");
+      if (effectiveStoreId && effectiveStoreId !== "all") {
+        cashEntriesQuery = cashEntriesQuery.or(`store_id.eq.${effectiveStoreId},store_id.is.null`);
+      }
+
+      const [itemsRes, entriesRes, reopenRes] = await Promise.all([
+        supabase
+          .from("service_order_items" as any)
+          .select("service_order_id, unit_cost, quantity")
+          .in("service_order_id", osIdsList),
+        cashEntriesQuery,
+        supabase
+          .from("service_order_history")
+          .select("service_order_id, created_at")
+          .in("service_order_id", osIdsList)
+          .eq("old_status", "delivered")
+          .neq("new_status", "delivered")
+          .order("created_at", { ascending: false }),
+      ]);
+
+      osItems = itemsRes.data ?? [];
+      const osCashEntries = (entriesRes.data as any[]) ?? [];
+      const lastReopenMap = new Map<string, string>();
+      ((reopenRes.data as any[]) ?? []).forEach((h: any) => {
+        if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
+          lastReopenMap.set(h.service_order_id, h.created_at);
+        }
+      });
+
+      os.forEach((o: any) => {
+        const expectedVal = Number(o.final_price || o.estimated_price || 0);
+        if (expectedVal <= 0) return;
+        const lastReopenAt = lastReopenMap.get(o.id) || null;
+        const orderNum = Number(o.order_number);
+        const matching = osCashEntries.filter((e: any) => {
+          const desc = e.description || "";
+          if (desc.startsWith("PDV:") || desc.startsWith("Venda:")) return false;
+          if (lastReopenAt && e.created_at && e.created_at <= lastReopenAt) return false;
+          if (e.reference_id) return e.reference_id === o.id;
+          if (e.store_id && o.store_id && e.store_id !== o.store_id) return false;
+          const match = desc.match(/\bOS\s*#?\s*(\d+)\b/i);
+          return Boolean(match && match[1] && parseInt(match[1], 10) === orderNum);
+        });
+        const refDate = o.delivered_at || o.created_at || "";
+        const isPostIntegration = refDate >= "2026-07-01";
+        if (matching.some((e: any) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
+          pendingFinOsIds.add(o.id);
+        }
+      });
     }
 
     setRawSalesForPayout(sales);
@@ -487,12 +536,14 @@ const Relatorios = () => {
         const metrics = calculateOSItemMetrics(o, osParts, userRoleData);
 
         stats[uid].lucro += metrics.lucroBrutoOS;
-        stats[uid].comissoes += metrics.comissaoTecnico;
-        stats[uid].comissoesOS += metrics.comissaoTecnico;
 
         if (sOsIds.has(o.id)) {
+          stats[uid].comissoes += metrics.comissaoTecnico;
+          stats[uid].comissoesOS += metrics.comissaoTecnico;
           stats[uid].comissoesLiquidadas += metrics.comissaoTecnico;
-        } else {
+        } else if (!pendingFinOsIds.has(o.id)) {
+          stats[uid].comissoes += metrics.comissaoTecnico;
+          stats[uid].comissoesOS += metrics.comissaoTecnico;
           stats[uid].comissoesPendentes += metrics.comissaoTecnico;
         }
       }
@@ -915,7 +966,11 @@ const Relatorios = () => {
             settledSaleIds={settledSaleIds}
             settledOsIds={settledOsIds}
             user={user}
-            fetchRanking={fetchRanking}
+            fetchRanking={() => {
+              fetchRanking();
+              fetchDRE();
+              fetchFinanceiro();
+            }}
           />
         </TabsContent>
       </Tabs>
