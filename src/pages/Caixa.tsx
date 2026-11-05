@@ -307,12 +307,14 @@ const Caixa = () => {
     const reconcileMissingOS = async () => {
       if (!user || !activeStoreId || activeStoreId === "all") return;
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const postIntegrationCutoff = "2026-11-01T00:00:00.000Z";
+      const effectiveSince = sevenDaysAgo > postIntegrationCutoff ? sevenDaysAgo : postIntegrationCutoff;
       const { data: deliveredOrders } = await supabase
         .from("service_orders")
         .select("*")
         .eq("store_id", activeStoreId)
         .eq("status", "delivered")
-        .gte("delivered_at", sevenDaysAgo);
+        .gte("delivered_at", effectiveSince);
 
       if (!deliveredOrders || deliveredOrders.length === 0) return;
 
@@ -344,9 +346,29 @@ const Caixa = () => {
         });
       }
 
+      const { data: deletedEntryLogs } = await supabase
+        .from("audit_logs" as any)
+        .select("before_state, created_at")
+        .eq("action", "DELETE_RECORD")
+        .eq("entity_type", "cash_entries")
+        .gte("created_at", effectiveSince);
+
       let reconciledAny = false;
       for (const o of deliveredOrders as any[]) {
         const lastReopenAt = lastReopenMap.get(o.id) || null;
+
+        const wasManuallyDeleted = (deletedEntryLogs || []).some((log: any) => {
+          if (lastReopenAt && log.created_at <= lastReopenAt) return false;
+          const before = log.before_state;
+          if (!before || typeof before !== "object") return false;
+          if (before.reference_id && before.reference_id === o.id) return true;
+          if (typeof before.description === "string") {
+            const match = before.description.match(/\bOS\s*#?\s*(\d+)\b/i);
+            if (match && match[1] && parseInt(match[1], 10) === o.order_number) return true;
+          }
+          return false;
+        });
+        if (wasManuallyDeleted) continue;
 
         let existingRefQ = supabase
           .from("cash_entries" as any)
@@ -1043,8 +1065,24 @@ const Caixa = () => {
 
   const handleDeleteEntry = async (id: string, reason: string) => {
     setLoading(true);
+    const deletedEntry = entries.find((e) => e.id === id) || null;
     await supabase.from("cash_entries" as any).delete().eq("id", id);
-    logAction("DELETE_RECORD" as any, "cash_entries", id, null, { reason });
+    await logAction(
+      "DELETE_RECORD" as any,
+      "cash_entries",
+      id,
+      deletedEntry
+        ? {
+            reference_id: (deletedEntry as any).reference_id || null,
+            description: deletedEntry.description || null,
+            amount: deletedEntry.amount,
+            payment_method: deletedEntry.payment_method,
+            type: deletedEntry.type,
+          }
+        : null,
+      { reason },
+      (deletedEntry as any)?.store_id || activeStoreId
+    );
     toast.success("Lançamento apagado!");
     fetchRegister(activeStoreId);
     setLoading(false);
