@@ -189,7 +189,7 @@ const OrdensServico = () => {
       });
 
       const refDate = o.delivered_at || o.created_at || "";
-      const isPostIntegration = refDate >= "2026-07-01";
+      const isPostIntegration = refDate >= "2026-11-01";
 
       if (matchingEntries.some((e: any) => !e.confirmed) || (matchingEntries.length === 0 && isPostIntegration)) {
         idSet.add(o.id);

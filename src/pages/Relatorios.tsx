@@ -458,7 +458,7 @@ const Relatorios = () => {
           return Boolean(match && match[1] && parseInt(match[1], 10) === orderNum);
         });
         const refDate = o.delivered_at || o.created_at || "";
-        const isPostIntegration = refDate >= "2026-07-01";
+        const isPostIntegration = refDate >= "2026-11-01";
         if (matching.some((e: any) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
           pendingFinOsIds.add(o.id);
         }
