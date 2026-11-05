@@ -219,15 +219,18 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   useEffect(() => {
     if (!open || !selectedUserId || !selectedStoreId) {
       setDirectOsParts([]);
+      setPendingFinancialOsIds(new Set());
       return;
     }
 
-    const targetOsIds = allServiceOrders
-      .filter((o) => o.technician_id === selectedUserId && o.store_id === selectedStoreId && o.status === "delivered")
-      .map((o) => o.id);
+    const targetOrders = allServiceOrders.filter(
+      (o) => o.technician_id === selectedUserId && o.store_id === selectedStoreId && o.status === "delivered"
+    );
+    const targetOsIds = targetOrders.map((o) => o.id);
 
     if (targetOsIds.length === 0) {
       setDirectOsParts([]);
+      setPendingFinancialOsIds(new Set());
       return;
     }
 
@@ -260,27 +263,60 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         setLoadingParts(false);
       });
 
-    // Sincroniza status financeiro (Caixa): comissao so e liberada com financeiro confirmado
-    supabase
-      .from('cash_entries' as any)
-      .select('reference_id, confirmed')
-      .in('reference_id', targetOsIds)
-      .then(({ data }) => {
-        const entries = (data as any[]) || [];
-        const confirmedSet = new Set<string>();
-        const unconfirmedSet = new Set<string>();
-        entries.forEach((e: any) => {
-          if (e.confirmed) confirmedSet.add(e.reference_id);
-          else unconfirmedSet.add(e.reference_id);
-        });
-        const pendingFin = new Set<string>();
-        targetOsIds.forEach((id: string) => {
-          if (unconfirmedSet.has(id) || !confirmedSet.has(id)) {
-            pendingFin.add(id);
+    // Sincroniza status financeiro (Caixa): comissão só é liberada com entrada ("entrada") ativa e confirmada
+    Promise.all([
+      supabase
+        .from("cash_entries" as any)
+        .select("reference_id, description, confirmed, created_at, store_id")
+        .eq("type", "entrada")
+        .or(`store_id.eq.${selectedStoreId},store_id.is.null`),
+      supabase
+        .from("service_order_history")
+        .select("service_order_id, created_at")
+        .in("service_order_id", targetOsIds)
+        .eq("old_status", "delivered")
+        .neq("new_status", "delivered")
+        .order("created_at", { ascending: false }),
+    ]).then(([entriesRes, reopenRes]) => {
+      const entries = (entriesRes.data as any[]) || [];
+      const lastReopenMap = new Map<string, string>();
+      if (reopenRes.data) {
+        (reopenRes.data as any[]).forEach((h: any) => {
+          if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
+            lastReopenMap.set(h.service_order_id, h.created_at);
           }
         });
-        setPendingFinancialOsIds(pendingFin);
+      }
+
+      const pendingFin = new Set<string>();
+      targetOrders.forEach((o: any) => {
+        const expectedVal = Number(o.final_price || o.estimated_price || 0);
+        if (expectedVal <= 0) return;
+
+        const lastReopenAt = lastReopenMap.get(o.id) || null;
+        const orderNum = Number(o.order_number);
+
+        const matching = entries.filter((e: any) => {
+          const desc = e.description || "";
+          if (desc.startsWith("PDV:") || desc.startsWith("Venda:")) return false;
+          if (lastReopenAt && e.created_at && e.created_at <= lastReopenAt) return false;
+
+          if (e.reference_id) return e.reference_id === o.id;
+          if (e.store_id && o.store_id && e.store_id !== o.store_id) return false;
+          const match = desc.match(/\bOS\s*#?\s*(\d+)\b/i);
+          return Boolean(match && match[1] && parseInt(match[1], 10) === orderNum);
+        });
+
+        const refDate = o.delivered_at || o.created_at || "";
+        const isPostIntegration = refDate >= "2026-07-01";
+
+        if (matching.some((e: any) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
+          pendingFin.add(o.id);
+        }
       });
+
+      setPendingFinancialOsIds(pendingFin);
+    });
   }, [open, selectedUserId, selectedStoreId, allServiceOrders]);
 
   const effectiveOsItems = useMemo(() => {

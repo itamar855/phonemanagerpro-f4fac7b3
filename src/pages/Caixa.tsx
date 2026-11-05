@@ -300,6 +300,10 @@ const Caixa = () => {
       }
       if (reconciledAny) fetchRegister(activeStoreId);
     };
+    reconcileMissing();
+  }, [user]);
+
+  useEffect(() => {
     const reconcileMissingOS = async () => {
       if (!user || !activeStoreId || activeStoreId === "all") return;
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -322,21 +326,46 @@ const Caixa = () => {
       if (!openRegs || openRegs.length === 0) return;
       const regId = (openRegs[0] as any).id;
 
+      const osIds = (deliveredOrders as any[]).map((o) => o.id);
+      const { data: reopenRows } = await supabase
+        .from("service_order_history")
+        .select("service_order_id, created_at")
+        .in("service_order_id", osIds)
+        .eq("old_status", "delivered")
+        .neq("new_status", "delivered")
+        .order("created_at", { ascending: false });
+
+      const lastReopenMap = new Map<string, string>();
+      if (reopenRows) {
+        reopenRows.forEach((h: any) => {
+          if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
+            lastReopenMap.set(h.service_order_id, h.created_at);
+          }
+        });
+      }
+
       let reconciledAny = false;
       for (const o of deliveredOrders as any[]) {
-        const { data: existingEntries } = await supabase
+        const lastReopenAt = lastReopenMap.get(o.id) || null;
+
+        let existingRefQ = supabase
           .from("cash_entries" as any)
           .select("id")
-          .eq("reference_id", o.id)
-          .limit(1);
+          .eq("type", "entrada")
+          .eq("reference_id", o.id);
+        if (lastReopenAt) existingRefQ = existingRefQ.gt("created_at", lastReopenAt);
+        const { data: existingEntries } = await existingRefQ.limit(1);
 
         if (existingEntries && existingEntries.length > 0) continue;
 
-        const { data: existingByDesc } = await supabase
+        let existingDescQ = supabase
           .from("cash_entries" as any)
           .select("id")
-          .like("description", `OS #${o.order_number} %`)
-          .limit(1);
+          .eq("type", "entrada")
+          .eq("store_id", o.store_id)
+          .like("description", `OS #${o.order_number} %`);
+        if (lastReopenAt) existingDescQ = existingDescQ.gt("created_at", lastReopenAt);
+        const { data: existingByDesc } = await existingDescQ.limit(1);
 
         if (existingByDesc && existingByDesc.length > 0) continue;
 
@@ -414,8 +443,7 @@ const Caixa = () => {
       if (reconciledAny) fetchRegister(activeStoreId);
     };
     reconcileMissingOS();
-    reconcileMissing();
-  }, [user]);
+  }, [user, activeStoreId]);
 
   // ── Suppliers ────────────────────────────────────────────
   const fetchSuppliers = async () => {
