@@ -6,6 +6,7 @@ import type { Enums } from "@/integrations/supabase/types";
 type AuthContextType = {
   session: Session | null;
   user: User | null;
+  userDisplayName: string | null;
   userRole: Enums<"app_role"> | null;
   userPermissions: Record<string, boolean> | null;
   userStoreIds: string[];
@@ -18,6 +19,7 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType>({
   session: null,
   user: null,
+  userDisplayName: null,
   userRole: null,
   userPermissions: null,
   userStoreIds: [],
@@ -32,6 +34,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [userDisplayName, setUserDisplayName] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<Enums<"app_role"> | null>(null);
   const [userPermissions, setUserPermissions] = useState<Record<string, boolean> | null>(null);
   const [userStoreIds, setUserStoreIds] = useState<string[]>([]);
@@ -45,9 +48,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const fetchUserData = async (userId: string) => {
-    const [roleRes, storesRes] = await Promise.all([
+    const [roleRes, storesRes, profileRes] = await Promise.all([
       supabase.from("user_roles").select("role, permissions").eq("user_id", userId).maybeSingle(),
-      supabase.from("member_stores" as any).select("store_id").eq("user_id", userId)
+      supabase.from("member_stores" as any).select("store_id").eq("user_id", userId),
+      supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
     ]);
     
     if (roleRes.data) {
@@ -56,6 +60,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } else {
       setUserRole(null);
       setUserPermissions(null);
+    }
+
+    if (profileRes.data?.display_name) {
+      setUserDisplayName(profileRes.data.display_name);
+    } else {
+      setUserDisplayName(null);
     }
 
     const assignedStoreIds = storesRes.data ? (storesRes.data as any[]).map(s => s.store_id) : [];
@@ -84,6 +94,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setUserRole(null);
           setUserPermissions(null);
+          setUserDisplayName(null);
           setUserStoreIds([]);
           setActiveStoreIdState(null);
           localStorage.removeItem("cellmanager-active-store-id");
@@ -109,7 +120,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ session, user, userRole, userPermissions, userStoreIds, activeStoreId, setActiveStoreId, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, userDisplayName, userRole, userPermissions, userStoreIds, activeStoreId, setActiveStoreId, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

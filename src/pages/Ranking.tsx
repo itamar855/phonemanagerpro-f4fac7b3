@@ -71,7 +71,7 @@ const Ranking = () => {
     );
     const effectiveStoreId = isAdmin ? storeId : activeStoreId || "all";
 
-    const [salesRes, productsRes, rolesRes, accTxRes, osRes, partsRes] = await Promise.all([
+    const [salesRes, productsRes, rolesRes, accTxRes, osRes, partsRes, profsRes, storesRes] = await Promise.all([
       supabase
         .from("sales")
         .select("*, products(*)")
@@ -92,6 +92,8 @@ const Ranking = () => {
         .eq("status", "delivered")
         .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
       supabase.from("service_order_items").select("*"),
+      supabase.from("profiles").select("*"),
+      supabase.from("stores").select("*"),
     ]);
 
     const allSales = (salesRes.data ?? []) as any[];
@@ -99,12 +101,16 @@ const Ranking = () => {
     const productMap = new Map(products.map((p: any) => [p.id, p]));
     const roles = (rolesRes.data ?? []) as any[];
     const allAccTx = (accTxRes.data ?? []) as any[];
+    const activeProfiles = (profsRes.data && profsRes.data.length > 0) ? profsRes.data : profiles;
+    const activeStores = (storesRes.data && storesRes.data.length > 0) ? storesRes.data : stores;
+    if (profsRes.data && profsRes.data.length > 0) setProfiles(profsRes.data);
+    if (storesRes.data && storesRes.data.length > 0) setStores(storesRes.data);
 
     // 1. Trilha Geral de Celulares (Vendedoras + Técnicos)
     const phoneRanking = aggregatePhoneRanking({
       sales: allSales,
-      profiles,
-      stores,
+      profiles: activeProfiles,
+      stores: activeStores,
       userRoles: roles,
       productMap,
     });
@@ -114,8 +120,8 @@ const Ranking = () => {
     const { ranking: accRanking, storeMetrics: accMetrics } = aggregateAccessoryRanking({
       transactions: allAccTx,
       sales: allSales,
-      profiles,
-      stores,
+      profiles: activeProfiles,
+      stores: activeStores,
       userRoles: roles,
       filterStoreId: effectiveStoreId,
     });
@@ -126,8 +132,8 @@ const Ranking = () => {
     const { ranking: techRanking } = aggregateTechRanking({
       serviceOrders: (osRes.data ?? []) as any[],
       parts: (partsRes.data ?? []) as any[],
-      profiles,
-      stores,
+      profiles: activeProfiles,
+      stores: activeStores,
       userRoles: roles,
       filterStoreId: effectiveStoreId,
     });

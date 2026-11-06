@@ -362,7 +362,7 @@ const Relatorios = () => {
   const fetchRanking = useCallback(async () => {
     const { start, end } = getPeriodDates(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const [salesRes, productsRes, osRes, rolesRes, settledIdsRes, historyRes, accTxRes] = await Promise.all([
+    const [salesRes, productsRes, osRes, rolesRes, settledIdsRes, historyRes, accTxRes, profsRes, storesRes] = await Promise.all([
       supabase.from("sales").select("*, products(*)").gte("created_at", start).lte("created_at", end),
       supabase.from("products").select("*"),
       supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
@@ -370,6 +370,8 @@ const Relatorios = () => {
       fetchSettledItemIds(),
       fetchSettlementsHistory(effectiveStoreId, undefined, true),
       supabase.from("transactions").select("*").eq("type", "income").eq("category", "acessorio").gte("created_at", start).lte("created_at", end),
+      supabase.from("profiles").select("*"),
+      supabase.from("stores").select("*"),
     ]);
     const allSales = ((salesRes.data ?? []) as any[]);
     const sales = allSales.filter(s => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
@@ -378,6 +380,10 @@ const Relatorios = () => {
     const roles = (rolesRes.data ?? []) as any[];
     const roleMap = new Map(roles.map((r: any) => [r.user_id, r]));
     const allAccTx = (accTxRes.data ?? []) as any[];
+    const activeProfiles = (profsRes.data && profsRes.data.length > 0) ? profsRes.data : profiles;
+    const activeStores = (storesRes.data && storesRes.data.length > 0) ? storesRes.data : stores;
+    if (profsRes.data && profsRes.data.length > 0) setProfiles(profsRes.data);
+    if (storesRes.data && storesRes.data.length > 0) setStores(storesRes.data);
 
     const { settledSaleIds: sSaleIds, settledOsIds: sOsIds } = settledIdsRes;
     setSettledSaleIds(sSaleIds);
@@ -387,8 +393,8 @@ const Relatorios = () => {
     // Gamification: Ranking Geral de Celulares (Vendedoras + Técnicos)
     const phoneRanking = aggregatePhoneRanking({
       sales: allSales,
-      profiles,
-      stores,
+      profiles: activeProfiles,
+      stores: activeStores,
       userRoles: roles,
       productMap,
     });
@@ -398,8 +404,8 @@ const Relatorios = () => {
     const { ranking: accRanking, storeMetrics: accMetrics } = aggregateAccessoryRanking({
       transactions: allAccTx,
       sales: allSales,
-      profiles,
-      stores,
+      profiles: activeProfiles,
+      stores: activeStores,
       userRoles: roles,
       filterStoreId: effectiveStoreId,
     });
@@ -474,8 +480,8 @@ const Relatorios = () => {
     const { ranking: techRanking } = aggregateTechRanking({
       serviceOrders: os,
       parts: osItems,
-      profiles,
-      stores,
+      profiles: activeProfiles,
+      stores: activeStores,
       userRoles: roles,
       filterStoreId: effectiveStoreId,
     });
