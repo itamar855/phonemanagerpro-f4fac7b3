@@ -108,7 +108,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   return (
     <div className="flex h-[100dvh] overflow-hidden text-foreground bg-background">
       {/* Sidebar - Desktop */}
-      <aside className="hidden md:flex w-64 flex-col bg-sidebar-background border-r border-sidebar-border">
+      <aside className="glass hidden md:flex w-64 flex-col bg-sidebar-background/60 backdrop-saturate-150 border-r border-sidebar-border/50">
         <div className="p-6 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="rounded-lg bg-primary/15 p-1.5">
@@ -219,7 +219,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between border-b border-border bg-card px-4 py-3 safe-top">
+        <header className="glass md:hidden flex items-center justify-between border-b border-border/50 bg-card/60 backdrop-saturate-150 px-4 py-3 safe-top">
           <div className="flex items-center gap-2">
             <div className="rounded-md bg-primary/15 p-1">
               <Smartphone className="h-4 w-4 text-primary" />
@@ -269,7 +269,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
         </main>
 
         {/* Mobile bottom nav (Apple HIG layout) */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border/50 safe-bottom z-40">
+        <nav className="glass md:hidden fixed bottom-0 left-0 right-0 bg-card/55 backdrop-saturate-150 border-t border-border/40 safe-bottom z-40">
           <div className="grid grid-cols-5 py-1 px-1 h-16 items-center">
             {(() => {
               const primaryPaths = ["/", "/vendas", "/estoque", "/ordens-servico"];
@@ -320,12 +320,12 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           return (
             <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-all duration-300">
               <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
-              <div className="relative bg-card rounded-t-2xl border-t border-border p-4 pb-8 max-h-[70vh] overflow-y-auto z-10 shadow-2xl">
+              <div className="glass relative bg-card/70 backdrop-saturate-150 rounded-t-2xl border-t border-border/50 p-4 pb-8 max-h-[70vh] overflow-y-auto z-10 shadow-2xl">
                 <div className="flex justify-between items-center pb-3 border-b border-border/50 mb-3">
                   <span className="font-display font-bold text-sm">Mais Módulos</span>
                   <button 
                     onClick={() => setMenuOpen(false)}
-                    className="h-8 w-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 active:scale-95"
+                    className="glass h-8 w-8 rounded-full bg-muted/60 border border-white/10 flex items-center justify-center hover:bg-muted/80 active:scale-95"
                   >
                     <X className="h-4 w-4 text-muted-foreground" />
                   </button>
