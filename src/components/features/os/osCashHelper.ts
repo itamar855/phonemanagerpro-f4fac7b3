@@ -1,6 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+export interface CashEntryResult {
+  success: boolean;
+  error?: string;
+}
+
 export const createPendingCashEntry = async (
   storeId: string,
   userId: string,
@@ -10,9 +15,9 @@ export const createPendingCashEntry = async (
   receiptUrl: string | null = null,
   referenceId: string | null = null,
   confirmed = false
-) => {
-  if (!storeId || amount <= 0) return;
-  
+): Promise<CashEntryResult> => {
+  if (!storeId || amount <= 0) return { success: false, error: "Loja ou valor inválido para lançamento no caixa." };
+
   let query = supabase
     .from("cash_registers" as any)
     .select("id, store_id")
@@ -70,9 +75,12 @@ export const createPendingCashEntry = async (
     if (insertError) {
       console.error("Erro ao inserir cash_entry (OS):", insertError);
       toast.error("Erro ao registrar no caixa: " + insertError.message);
+      return { success: false, error: insertError.message };
     }
+    return { success: true };
   } else {
     console.warn("Nenhum caixa aberto encontrado para storeId:", storeId);
     toast.error("Aviso: Nenhum caixa aberto na loja atual. O valor da OS não foi para o caixa!");
+    return { success: false, error: "Nenhum caixa aberto na loja atual." };
   }
 };

@@ -440,20 +440,38 @@ const Vendas = () => {
           }
         }
 
-      // Registra transação principal se for apenas um método, ou se quiser agregar. 
+      // Registra transação principal se for apenas um método, ou se quiser agregar.
       // Mas para aparecer no Financeiro, vamos inserir por método!
-      
+
+      // Garante que uma falha ao lançar no caixa nunca deixe uma transação órfã:
+      // se createPendingCashEntry lançar erro, desfaz a transação recém-criada
+      // antes de propagar o erro.
+      const createCashEntryOrRollbackTx = async (
+        amount: number, description: string, method: string, txId: string | undefined
+      ) => {
+        try {
+          await createPendingCashEntry(selectedProduct.store_id, user.id, amount, description, method, form.retro_date, (saleData as any).id);
+        } catch (cashErr: any) {
+          if (txId) {
+            await supabase.from("transactions").delete().eq("id", txId);
+          }
+          throw new Error(
+            `Venda NÃO registrada: falha ao lançar no caixa (${cashErr.message || "erro desconhecido"}). Tente novamente.`
+          );
+        }
+      };
+
       if (cashVal === 0 && cardVal === 0 && pixVal === 0) {
-        const { error: txError } = await supabase.from("transactions").insert({
+        const { data: tx0, error: txError } = await supabase.from("transactions").insert({
           type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
           description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
           sale_id: (saleData as any).id,
           created_by: user.id, destination_account_id: form.destination_account_id || null,
           expected_settlement_date: expectedDate.toISOString(),
           ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-        });
+        }).select().single();
         if (txError) throw txError;
-        await createPendingCashEntry(selectedProduct.store_id, user.id, salePriceAfterDiscount, desc, "dinheiro", form.retro_date, (saleData as any).id);
+        await createCashEntryOrRollbackTx(salePriceAfterDiscount, desc, "dinheiro", tx0?.id);
       } else {
         const paymentsList = [
           { name: "dinheiro", val: cashVal },
@@ -472,59 +490,59 @@ const Vendas = () => {
 
           const descMisto = `${desc} [MISTO:{"dinheiro":${cashVal},"pix":${pixVal},"cartao_credito":${cardVal}}]`;
 
-          const { error: txError } = await supabase.from("transactions").insert({
+          const { data: txMisto, error: txError } = await supabase.from("transactions").insert({
             type: "sale", amount: totalConsolidated, net_amount: totalNet,
             description: descMisto, store_id: selectedProduct.store_id, product_id: form.product_id,
             sale_id: (saleData as any).id,
             created_by: user.id, destination_account_id: form.destination_account_id || null,
             expected_settlement_date: expectedDate.toISOString(),
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-          });
+          }).select().single();
           if (txError) throw txError;
-          if (cashVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, `${desc} (Parte em Dinheiro)`, "dinheiro", form.retro_date, (saleData as any).id);
-          if (cardVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, `${desc} (Parte em Cartão)`, "cartao_credito", form.retro_date, (saleData as any).id);
-          if (pixVal > 0) await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, `${desc} (Parte em PIX)`, "pix", form.retro_date, (saleData as any).id);
+          if (cashVal > 0) await createCashEntryOrRollbackTx(cashVal, `${desc} (Parte em Dinheiro)`, "dinheiro", txMisto?.id);
+          if (cardVal > 0) await createCashEntryOrRollbackTx(cardVal, `${desc} (Parte em Cartão)`, "cartao_credito", txMisto?.id);
+          if (pixVal > 0) await createCashEntryOrRollbackTx(pixVal, `${desc} (Parte em PIX)`, "pix", txMisto?.id);
         } else {
           // Single payment type
           if (cashVal > 0) {
-            const { error: txError1 } = await supabase.from("transactions").insert({
+            const { data: tx1, error: txError1 } = await supabase.from("transactions").insert({
               type: "sale", amount: cashVal, net_amount: cashVal,
               description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
               sale_id: (saleData as any).id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-            });
+            }).select().single();
             if (txError1) throw txError1;
-            await createPendingCashEntry(selectedProduct.store_id, user.id, cashVal, desc, "dinheiro", form.retro_date, (saleData as any).id);
+            await createCashEntryOrRollbackTx(cashVal, desc, "dinheiro", tx1?.id);
           }
           if (cardVal > 0) {
             const fee = (acc && Number(acc.credit_fee_percent)) || 0;
             const net = cardVal - (cardVal * (fee / 100));
-            const { error: txError2 } = await supabase.from("transactions").insert({
+            const { data: tx2, error: txError2 } = await supabase.from("transactions").insert({
               type: "sale", amount: cardVal, net_amount: net,
               description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
               sale_id: (saleData as any).id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-            });
+            }).select().single();
             if (txError2) throw txError2;
-            await createPendingCashEntry(selectedProduct.store_id, user.id, cardVal, desc, "cartao_credito", form.retro_date, (saleData as any).id);
+            await createCashEntryOrRollbackTx(cardVal, desc, "cartao_credito", tx2?.id);
           }
           if (pixVal > 0) {
             const fee = (acc && Number(acc.pix_fee_percent)) || 0;
             const net = pixVal - (pixVal * (fee / 100));
-            const { error: txError3 } = await supabase.from("transactions").insert({
+            const { data: tx3, error: txError3 } = await supabase.from("transactions").insert({
               type: "sale", amount: pixVal, net_amount: net,
               description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
               sale_id: (saleData as any).id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
-            });
+            }).select().single();
             if (txError3) throw txError3;
-            await createPendingCashEntry(selectedProduct.store_id, user.id, pixVal, desc, "pix", form.retro_date, (saleData as any).id);
+            await createCashEntryOrRollbackTx(pixVal, desc, "pix", tx3?.id);
           }
         }
       }

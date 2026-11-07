@@ -1064,6 +1064,14 @@ const OrdensServico = () => {
     const updates: any = {};
     if (updateForm.final_price) updates.final_price = parseFloat(updateForm.final_price);
 
+    // Trava: uma OS já entregue nunca pode ficar com Valor Final zerado/negativo,
+    // pois isso zera o lucro apurado na liquidação de comissão do técnico.
+    if (detailOrder.status === "delivered" && updates.final_price !== undefined && updates.final_price <= 0) {
+      toast.error("O Valor Final de uma OS já entregue não pode ser zero. Ajuste o valor antes de salvar.");
+      setLoading(false);
+      return;
+    }
+
     // Vendedor não pode alterar técnico, checklist nem garantia
     if (!isVendedor) {
       const techResolution = resolveTechnicianIdOnUpdate(updateForm.technician_id, detailOrder.technician_id);

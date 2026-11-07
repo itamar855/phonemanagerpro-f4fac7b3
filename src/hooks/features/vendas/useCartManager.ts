@@ -98,6 +98,24 @@ export const useCartManager = (
         discount_type: discountType ?? "fixed",
       };
 
+      // Garante que uma falha ao lançar no caixa nunca deixe uma transação órfã:
+      // se createPendingCashEntry lançar erro, desfaz a transação recém-criada
+      // antes de propagar o erro, para que a venda nunca fique "meio salva".
+      const createCashEntryOrRollback = async (
+        amount: number, description: string, method: string, txId: string | undefined
+      ) => {
+        try {
+          await createPendingCashEntry(storeToUse, user.id, amount, description, method, undefined, txId);
+        } catch (cashErr: any) {
+          if (txId) {
+            await supabase.from("transactions").delete().eq("id", txId);
+          }
+          throw new Error(
+            `Venda NÃO registrada: falha ao lançar no caixa (${cashErr.message || "erro desconhecido"}). Tente novamente.`
+          );
+        }
+      };
+
       const cashAmount = pdvCash - pdvTroco;
       const paymentsCount = [cashAmount > 0, pdvCard > 0, pdvPix > 0].filter(Boolean).length;
 
@@ -109,35 +127,35 @@ export const useCartManager = (
         }).select().single();
         if (txError) throw txError;
         if (tx) txIdForNote = tx.id;
-        if (cashAmount > 0) await createPendingCashEntry(storeToUse, user.id, cashAmount, `${desc} (Parte em Dinheiro)`, "dinheiro", undefined, txIdForNote);
-        if (pdvCard > 0) await createPendingCashEntry(storeToUse, user.id, pdvCard, `${desc} (Parte em Cartão)`, "cartao_credito", undefined, txIdForNote);
-        if (pdvPix > 0) await createPendingCashEntry(storeToUse, user.id, pdvPix, `${desc} (Parte em PIX)`, "pix", undefined, txIdForNote);
+        if (cashAmount > 0) await createCashEntryOrRollback(cashAmount, `${desc} (Parte em Dinheiro)`, "dinheiro", txIdForNote);
+        if (pdvCard > 0) await createCashEntryOrRollback(pdvCard, `${desc} (Parte em Cartão)`, "cartao_credito", txIdForNote);
+        if (pdvPix > 0) await createCashEntryOrRollback(pdvPix, `${desc} (Parte em PIX)`, "pix", txIdForNote);
       } else {
         if (pdvCash === 0 && pdvCard === 0 && pdvPix === 0) {
           const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cartTotal, description: desc, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
           if (txError) throw txError;
           txIdForNote = tx?.id;
-          await createPendingCashEntry(storeToUse, user.id, cartTotal, desc, "dinheiro", undefined, txIdForNote);
+          await createCashEntryOrRollback(cartTotal, desc, "dinheiro", txIdForNote);
         } else {
           if (pdvCash > 0) {
             if (cashAmount > 0) {
               const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: cashAmount, description: `${desc} [Dinheiro]`, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
               if (txError) throw txError;
               if (!txIdForNote && tx) txIdForNote = tx.id;
-              await createPendingCashEntry(storeToUse, user.id, cashAmount, desc, "dinheiro", undefined, tx?.id);
+              await createCashEntryOrRollback(cashAmount, desc, "dinheiro", tx?.id);
             }
           }
           if (pdvCard > 0) {
             const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvCard, description: `${desc} [Cartão]`, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
             if (txError) throw txError;
             if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(storeToUse, user.id, pdvCard, desc, "cartao_credito", undefined, tx?.id);
+            await createCashEntryOrRollback(pdvCard, desc, "cartao_credito", tx?.id);
           }
           if (pdvPix > 0) {
             const { data: tx, error: txError } = await supabase.from("transactions").insert({ type: "income", category: "acessorio", amount: pdvPix, description: `${desc} [PIX]`, store_id: storeToUse, created_by: user.id, metadata: pdvMetadata }).select().single();
             if (txError) throw txError;
             if (!txIdForNote && tx) txIdForNote = tx.id;
-            await createPendingCashEntry(storeToUse, user.id, pdvPix, desc, "pix", undefined, tx?.id);
+            await createCashEntryOrRollback(pdvPix, desc, "pix", tx?.id);
           }
         }
       }
