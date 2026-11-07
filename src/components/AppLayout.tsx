@@ -106,9 +106,16 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
   });
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden text-foreground bg-background">
+    <div className="relative flex h-[100dvh] overflow-hidden text-foreground bg-background">
+      {/* Decorative background blobs so the glass bars have something to blur */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -left-24 -top-24 h-96 w-96 rounded-full bg-primary/30 blur-3xl" />
+        <div className="absolute right-0 top-1/3 h-80 w-80 rounded-full bg-accent/25 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
+      </div>
+
       {/* Sidebar - Desktop */}
-      <aside className="hidden md:flex w-64 flex-col bg-sidebar-background border-r border-sidebar-border">
+      <aside className="glass relative z-10 hidden md:flex w-64 flex-col bg-gradient-to-br from-primary/20 via-sidebar/80 to-accent/10 backdrop-saturate-150 border-r border-sidebar-border/50">
         <div className="p-6 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="rounded-lg bg-primary/15 p-1.5">
@@ -217,9 +224,9 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
       </aside>
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
         {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between border-b border-border bg-card px-4 py-3 safe-top">
+        <header className="glass md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between border-b border-border/50 bg-gradient-to-r from-primary/15 via-card/75 to-accent/10 backdrop-saturate-150 px-4 py-3 safe-top">
           <div className="flex items-center gap-2">
             <div className="rounded-md bg-primary/15 p-1">
               <Smartphone className="h-4 w-4 text-primary" />
@@ -264,12 +271,12 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-4 md:p-8 pb-24 md:pb-8">
+        <main className="flex-1 overflow-auto p-4 pt-20 md:p-8 pb-24 md:pb-8">
           {children}
         </main>
 
         {/* Mobile bottom nav (Apple HIG layout) */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border/50 safe-bottom z-40">
+        <nav className="glass md:hidden fixed bottom-0 left-0 right-0 bg-gradient-to-r from-primary/12 via-card/75 to-accent/10 backdrop-saturate-150 border-t border-border/40 safe-bottom z-40">
           <div className="grid grid-cols-5 py-1 px-1 h-16 items-center">
             {(() => {
               const primaryPaths = ["/", "/vendas", "/estoque", "/ordens-servico"];
@@ -320,12 +327,12 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           return (
             <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm transition-all duration-300">
               <div className="absolute inset-0" onClick={() => setMenuOpen(false)} />
-              <div className="relative bg-card rounded-t-2xl border-t border-border p-4 pb-8 max-h-[70vh] overflow-y-auto z-10 shadow-2xl">
+              <div className="glass relative bg-card/70 backdrop-saturate-150 rounded-t-2xl border-t border-border/50 p-4 pb-8 max-h-[70vh] overflow-y-auto z-10 shadow-2xl">
                 <div className="flex justify-between items-center pb-3 border-b border-border/50 mb-3">
                   <span className="font-display font-bold text-sm">Mais Módulos</span>
                   <button 
                     onClick={() => setMenuOpen(false)}
-                    className="h-8 w-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 active:scale-95"
+                    className="glass h-8 w-8 rounded-full bg-muted/60 border border-white/10 flex items-center justify-center hover:bg-muted/80 active:scale-95"
                   >
                     <X className="h-4 w-4 text-muted-foreground" />
                   </button>

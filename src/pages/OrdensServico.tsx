@@ -605,6 +605,22 @@ const OrdensServico = () => {
     if (newStatus === oldStatus) return;
     if (isSubmitting.current) return;
 
+    // Persiste os campos de pagamento preenchidos no modal de detalhes antes de trocar
+    // o status, para que os botões de status rápido (ex: "Entregue") não percam o
+    // método de pagamento escolhido pelo técnico ao reler a OS do banco a seguir.
+    if (detailOrder?.id === orderId) {
+      const paymentUpdates: any = {};
+      if (updateForm.payment_cash !== "") paymentUpdates.payment_cash = parseFloat(updateForm.payment_cash) || 0;
+      if (updateForm.payment_card !== "") paymentUpdates.payment_card = parseFloat(updateForm.payment_card) || 0;
+      if (updateForm.payment_pix !== "") paymentUpdates.payment_pix = parseFloat(updateForm.payment_pix) || 0;
+      if (updateForm.payment_other !== "") paymentUpdates.payment_other = parseFloat(updateForm.payment_other) || 0;
+      if (updateForm.payment_notes) paymentUpdates.payment_notes = updateForm.payment_notes;
+
+      if (Object.keys(paymentUpdates).length > 0) {
+        await supabase.from("service_orders").update(paymentUpdates).eq("id", orderId);
+      }
+    }
+
     const isLeavingDelivered = oldStatus === "delivered" && newStatus !== "delivered";
 
     // Governança profissional para reabrir/cancelar OS já entregue
@@ -1114,7 +1130,7 @@ const OrdensServico = () => {
         const lastReopenAt = await getLastReopenTimestamp(detailOrder.id);
         let existingEntriesQ = supabase
           .from("cash_entries" as any)
-          .select("id")
+          .select("id, payment_method, amount, cash_register_id")
           .eq("type", "entrada")
           .eq("reference_id", detailOrder.id);
         if (lastReopenAt) existingEntriesQ = existingEntriesQ.gt("created_at", lastReopenAt);
@@ -1124,7 +1140,7 @@ const OrdensServico = () => {
         if (!existingEntriesByRef || existingEntriesByRef.length === 0) {
           let descQ = supabase
             .from("cash_entries" as any)
-            .select("id")
+            .select("id, payment_method, amount, cash_register_id")
             .eq("type", "entrada")
             .eq("store_id", detailOrder.store_id)
             .like("description", `OS #${detailOrder.order_number} %`);
@@ -1163,6 +1179,52 @@ const OrdensServico = () => {
           const entryUpdatePayload: any = {};
           if (finalReceiptUrl) entryUpdatePayload.receipt_url = finalReceiptUrl;
           if (canConfirmService) entryUpdatePayload.confirmed = true;
+
+          // Reconcilia método/valor do lançamento já existente no caixa quando o
+          // técnico corrige a forma de pagamento de uma OS já entregue (ex: tinha
+          // lançado em "dinheiro" por engano e corrigiu para "pix"). Só reconcilia
+          // automaticamente o caso simples de um único lançamento/método; casos com
+          // múltiplos lançamentos ou caixa já fechado exigem correção manual de um
+          // administrador para não corromper um caixa já fechado/conferido.
+          const targetEntries: any[] = (existingEntriesByRef && existingEntriesByRef.length > 0)
+            ? existingEntriesByRef
+            : (existingEntriesByDesc || []);
+
+          if (targetEntries.length === 1) {
+            const entry = targetEntries[0];
+            const newSplit: Record<string, number> = {
+              dinheiro: finalCash, cartao_credito: finalCard, pix: finalPix, outro: finalOther,
+            };
+            const nonZeroMethods = Object.entries(newSplit).filter(([, v]) => v > 0);
+
+            if (nonZeroMethods.length === 1) {
+              const [newMethod, newAmount] = nonZeroMethods[0];
+              const methodChanged = entry.payment_method !== newMethod;
+              const amountChanged = Number(entry.amount) !== Number(newAmount);
+
+              if (methodChanged || amountChanged) {
+                const { data: regData } = entry.cash_register_id
+                  ? await supabase.from("cash_registers" as any).select("status").eq("id", entry.cash_register_id).maybeSingle()
+                  : { data: null as any };
+                const registerOpen = (regData as any)?.status === "open";
+
+                if (registerOpen) {
+                  await supabase.from("cash_entries" as any).update({ payment_method: newMethod, amount: newAmount }).eq("id", entry.id);
+                  if (methodChanged) {
+                    toast.success(`Lançamento do caixa corrigido de "${entry.payment_method}" para "${newMethod}".`);
+                  }
+                } else {
+                  toast.warning("O método de pagamento mudou, mas o caixa desse lançamento já está fechado. Peça a um administrador para corrigir manualmente na tela de Caixa.");
+                }
+              }
+            }
+          } else if (targetEntries.length > 1) {
+            const oldTotal = targetEntries.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+            const newTotal = finalCash + finalCard + finalPix + finalOther;
+            if (Math.abs(oldTotal - newTotal) > 0.01) {
+              toast.warning("O pagamento dessa OS está dividido em mais de um lançamento no caixa — ajuste manualmente na tela de Caixa se o método ou valor mudou.");
+            }
+          }
 
           if (Object.keys(entryUpdatePayload).length > 0) {
             let updRef = supabase.from("cash_entries" as any).update(entryUpdatePayload).eq("type", "entrada").eq("reference_id", detailOrder.id);
