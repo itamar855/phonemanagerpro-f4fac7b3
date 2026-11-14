@@ -386,70 +386,21 @@ export function WhatsAppConnectModal({
 
     setAutoConfiguringWebhook(true);
     try {
-      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_q1FPRdUrknXLi7966SRljg_c1YWE0fS";
-      const endpoint = `${cleanUrl(apiUrl)}/webhook/set/${instanceName.trim()}`;
-      
-      const payload = {
-        webhook: {
-          enabled: true,
-          url: webhookUrl,
-          byEvents: false,
-          base64: true,
-          headers: {
-            apikey: anonKey,
-            Authorization: `Bearer ${anonKey}`,
-          },
-          events: [
-            "MESSAGES_UPSERT",
-            "CONNECTION_UPDATE",
-            "MESSAGES_UPDATE"
-          ]
-        }
-      };
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: apiKey.trim(),
-        },
-        body: JSON.stringify(payload),
+      // Configurado pelo servidor: o segredo do webhook nunca passa pelo navegador.
+      const { data, error } = await supabase.functions.invoke("whatsapp-send", {
+        body: { action: "configure-webhook", storeId },
       });
-
-      if (!res.ok) {
-        // Tentar formato plano
-        const altPayload = {
-          enabled: true,
-          url: webhookUrl,
-          byEvents: false,
-          base64: true,
-          headers: {
-            apikey: anonKey,
-            Authorization: `Bearer ${anonKey}`,
-          },
-          events: [
-            "MESSAGES_UPSERT",
-            "CONNECTION_UPDATE",
-            "MESSAGES_UPDATE"
-          ]
-        };
-
-        const altRes = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: apiKey.trim(),
-          },
-          body: JSON.stringify(altPayload),
-        });
-
-        if (!altRes.ok) {
-          const txt = await altRes.text();
-          throw new Error(`Servidor Evolution retornou ${altRes.status}: ${txt.slice(0, 120)}`);
-        }
+      if (error) {
+        let detail = error.message;
+        try {
+          const ctx = await (error as any).context?.json?.();
+          if (ctx?.error) detail = ctx.error;
+        } catch { /* corpo não-JSON */ }
+        throw new Error(detail);
       }
+      if ((data as any)?.error) throw new Error((data as any).error);
 
-      toast.success("✅ Webhook configurado na Evolution com autenticação do Supabase!");
+      toast.success("✅ Webhook configurado na Evolution com segredo de autenticação!");
     } catch (err: any) {
       toast.error("Falha ao auto-configurar webhook: " + err.message);
     } finally {
