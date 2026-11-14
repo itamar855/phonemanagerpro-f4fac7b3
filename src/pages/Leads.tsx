@@ -662,10 +662,12 @@ const Leads = () => {
 
           await supabase.from('lead_messages').insert({
             lead_id: selectedLead.id,
+            store_id: selectedLead.store_id,
             content: responseText,
-            sender_type: 'vendedor',
+            sender: 'vendedor',
+            sender_user_id: user?.id ?? null,
             message_type: 'text',
-          });
+          } as any);
 
           toast.success("Mensagem enviada via Instagram!");
         } else {

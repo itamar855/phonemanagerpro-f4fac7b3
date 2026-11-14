@@ -159,10 +159,12 @@ export default function ChatCenter({ leads, onRefreshProfile, onAIQualify, user,
 
         await supabase.from('lead_messages').insert({
           lead_id: selectedLead.id,
+          store_id: selectedLead.store_id,
           content: inputText,
-          sender_type: 'vendedor',
+          sender: 'vendedor',
+          sender_user_id: user?.id ?? null,
           message_type: 'text',
-        });
+        } as any);
       } else {
         // WhatsApp Logic
         const phone = selectedLead.phone;
