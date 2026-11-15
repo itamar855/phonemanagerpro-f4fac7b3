@@ -15,6 +15,7 @@ const MIGRATIONS = path.resolve(__dirname, "../../../supabase/migrations");
 const read = (f: string) => readFileSync(path.join(MIGRATIONS, f), "utf8");
 const FOUNDATION = read("20261114200000_crm_foundation.sql");
 const IMPORT = read("20261114200100_crm_import_legacy_leads.sql");
+const INBOX = read("20261115000000_crm_inbox.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -61,6 +62,7 @@ beforeAll(async () => {
     create table public.stores (id uuid primary key default gen_random_uuid(), name text, created_at timestamptz default now());
     create table public.member_stores (id uuid primary key default gen_random_uuid(), user_id uuid, store_id uuid, created_at timestamptz default now());
     create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role);
+    create table public.profiles (id uuid primary key default gen_random_uuid(), user_id uuid, display_name text);
     create table public.customers (id uuid primary key default gen_random_uuid(), name text, phone text, store_id uuid, created_at timestamptz default now());
     create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid);
     create table public.leads (id uuid primary key default gen_random_uuid(), name text, phone text, email text, source text, status text,
@@ -74,6 +76,7 @@ beforeAll(async () => {
     insert into public.stores (id, name) values ('${A}', 'Loja A'), ('${B}', 'Loja B');
     insert into public.member_stores (user_id, store_id) values ('${U1}', '${A}'), ('${U2}', '${B}'), ('${ADM}', '${A}'), ('${ADM}', '${B}');
     insert into public.user_roles (user_id, role) values ('${U1}', 'vendedor'), ('${U2}', 'vendedor'), ('${ADM}', 'admin');
+    insert into public.profiles (user_id, display_name) values ('${U1}', 'Vendedor A'), ('${U2}', 'Vendedor B'), ('${ADM}', 'Dono');
     insert into public.customers (name, phone, store_id) values ('Maria Cliente', '(87) 99911-2233', '${A}');
 
     insert into public.leads (id, name, phone, source, store_id, created_at) values
@@ -92,6 +95,7 @@ beforeAll(async () => {
   `);
   await db.exec(FOUNDATION);
   await db.exec(IMPORT);
+  await db.exec(INBOX);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -283,6 +287,21 @@ describe("CRM — segurança (RLS)", () => {
       await db.query(`update crm_stages set sla_hours = 12 where store_id = $1 and code = 'wa_invited'`, [A]);
     });
     expect(await val(`select sla_hours from crm_stages where store_id = $1 and code = 'wa_invited'`, [A])).toBe(12);
+  });
+
+  it("equipe: só membros da loja veem os colegas", async () => {
+    const teamA = await asUser(U1, () => db.query<{ display_name: string }>(`select display_name from crm_team($1) order by 1`, [A]));
+    expect(teamA.rows.map((r) => r.display_name)).toEqual(["Dono", "Vendedor A"]);
+    const fromB = await asUser(U2, () => db.query(`select * from crm_team($1)`, [A]));
+    expect(fromB.rows).toHaveLength(0);
+  });
+
+  it("contadores da caixa de entrada respeitam a loja", async () => {
+    const a = await asUser(U1, () => val<any>(`select crm_inbox_counts(null)`));
+    const b = await asUser(U2, () => val<any>(`select crm_inbox_counts(null)`));
+    expect(a.all).toBeGreaterThan(0);
+    expect(a.instagram).toBeGreaterThan(0);
+    expect(b.all).toBe(0);
   });
 
   it("funções do app checam a loja", async () => {
