@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { crmReport, type CrmReport } from "../api/reports";
 import { trackingReport } from "../api/tracking";
+import { igManualReport } from "../api/igLead";
 import { EmptyState } from "../components/shared/EmptyState";
 import { useCrmContext, useTeam } from "../hooks/useInbox";
 import { ORIGIN_LABEL } from "../lib/constants";
@@ -84,6 +85,30 @@ function DailyChart({ series, metric }: { series: CrmReport["series"]; metric: M
         </BarChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+/** Leads do Instagram cadastrados pelo vendedor: quantos responderam no WhatsApp, em quanto tempo, e compraram. */
+function IgManualPanel({ storeId, from, to }: { storeId: string | null; from: Date; to: Date }) {
+  const { data: r } = useQuery({
+    queryKey: ["crm", "report-ig-manual", storeId, from.toISOString(), to.toISOString()],
+    queryFn: () => igManualReport(storeId, from, to),
+    staleTime: 60_000,
+  });
+  if (!r || !r.leads) return null;
+  const replied = pct(r.replied, r.leads);
+  return (
+    <Panel title="Instagram → WhatsApp (leads cadastrados pela equipe)">
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+        <div><dt className="text-xs text-muted-foreground">Números pegos</dt><dd className="text-lg font-semibold tabular-nums">{r.leads}</dd>
+          <dd className="text-xs text-muted-foreground">{r.from_ads} de anúncio</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Responderam no WhatsApp</dt><dd className="text-lg font-semibold tabular-nums">{r.replied}{replied !== null ? <span className="text-xs font-normal text-muted-foreground"> ({replied}%)</span> : null}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Tempo até responder</dt><dd className="text-lg font-semibold tabular-nums">{minutesLabel(r.median_reply_min)}</dd>
+          <dd className="text-xs text-muted-foreground">mediana</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Compraram</dt><dd className="text-lg font-semibold tabular-nums">{r.won}{pct(r.won, r.leads) !== null ? <span className="text-xs font-normal text-muted-foreground"> ({pct(r.won, r.leads)}%)</span> : null}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Receita</dt><dd className="text-lg font-semibold tabular-nums">{brl(r.revenue)}</dd></div>
+      </dl>
+    </Panel>
   );
 }
 
@@ -270,6 +295,7 @@ export default function ReportsPage() {
               </Panel>
             </div>
 
+            <IgManualPanel storeId={storeId} from={range.from} to={range.to} />
             <CampaignPanel storeId={storeId} from={range.from} to={range.to} />
 
             <div className="grid gap-4 lg:grid-cols-2">

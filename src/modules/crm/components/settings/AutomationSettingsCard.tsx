@@ -12,11 +12,14 @@ import { useCrmContext, useTeam } from "../../hooks/useInbox";
 import { taskKeys, useAutomationSettings } from "../../hooks/useTasks";
 import type { CrmAutomationSettings } from "../../lib/types";
 import { EmptyState } from "../shared/EmptyState";
+import { Textarea } from "@/components/ui/textarea";
+import { DEFAULT_IG_MESSAGE, fillTemplate } from "../../lib/igLead";
 
 type Form = Omit<CrmAutomationSettings, "store_id">;
 const DEFAULTS: Form = {
   round_robin: false, round_robin_members: [], unanswered_minutes: 30, stale_deals: true,
   os_ready: true, review_after_days: 3, warranty_alert_days: 7,
+  ig_first_message: DEFAULT_IG_MESSAGE, ig_followup_hours: 2,
 };
 const MANAGER = new Set(["admin", "gerente", "dono"]);
 
@@ -26,6 +29,7 @@ function pick(d: CrmAutomationSettings | null | undefined): Form {
   return {
     round_robin: d.round_robin, round_robin_members: d.round_robin_members ?? [], unanswered_minutes: d.unanswered_minutes,
     stale_deals: d.stale_deals, os_ready: d.os_ready, review_after_days: d.review_after_days, warranty_alert_days: d.warranty_alert_days,
+    ig_first_message: d.ig_first_message || DEFAULT_IG_MESSAGE, ig_followup_hours: d.ig_followup_hours ?? 2,
   };
 }
 
@@ -149,6 +153,23 @@ export function AutomationSettingsCard() {
           <NumberSelect label="Avisar" value={form.warranty_alert_days} options={[3, 7, 15, 30]} disabled={off}
             unit={(n) => `${n} dias antes`} onChange={(n) => set({ warranty_alert_days: n })} />
         </Row>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-border/60 bg-card p-4">
+        <div>
+          <Label htmlFor="au-ig" className="font-medium">Lead do Instagram · primeira mensagem no WhatsApp</Label>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Usada no botão “Lead do Instagram”. O vendedor revisa antes de enviar. Variáveis: {"{primeiro_nome}"}, {"{nome}"}, {"{loja}"}, {"{assunto}"} e {"{sobre}"} (vira “sobre o assunto” ou some).
+          </p>
+        </div>
+        <Textarea id="au-ig" value={form.ig_first_message} onChange={(e) => set({ ig_first_message: e.target.value })} rows={3} maxLength={600}
+          disabled={off} className="text-base md:text-sm" />
+        <p className="rounded-md bg-muted/40 p-2 text-xs">
+          <span className="text-muted-foreground">Exemplo: </span>
+          {fillTemplate(form.ig_first_message || DEFAULT_IG_MESSAGE, { name: "Ana Souza", store: "sua loja", subject: "Troca de tela do A54" })}
+        </p>
+        <NumberSelect label="Lembrar de retomar se não responder em" value={form.ig_followup_hours} options={[1, 2, 4, 8, 24]} disabled={off}
+          unit={(n) => (n === 1 ? "1 hora" : `${n} horas`)} onChange={(n) => set({ ig_followup_hours: n })} />
       </div>
 
       {canEdit && (

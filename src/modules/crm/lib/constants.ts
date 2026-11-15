@@ -30,6 +30,7 @@ export const TASK_KIND_LABEL: Record<string, string> = {
   os_ready: "OS pronta",
   review: "Avaliação",
   warranty: "Garantia",
+  ig_followup: "Instagram → WhatsApp",
 };
 
 export const CHANNEL_LABEL: Record<Channel, string> = { whatsapp: "WhatsApp", instagram: "Instagram" };
