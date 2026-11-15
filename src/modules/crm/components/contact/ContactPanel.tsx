@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Ban, Loader2, Plus, UserCheck, Wrench, X } from "lucide-react";
+import { Ban, Loader2, Megaphone, Plus, UserCheck, Wrench, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { getAttribution } from "../../api/tracking";
+import { attributionLabel } from "../../lib/tracking";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +28,18 @@ const OS_STATUS: Record<string, string> = {
   open: "Aberta", analyzing: "Em análise", waiting_part: "Aguardando peça", repairing: "Em reparo",
   waiting_approval: "Aguard. aprovação", ready: "Pronta p/ retirada", delivered: "Entregue", cancelled: "Cancelada",
 };
+
+/** De onde veio o contato (campanha, anúncio ou orgânico). */
+function ContactOrigin({ attributionId }: { attributionId: string }) {
+  const { data } = useQuery({ queryKey: ["crm", "attribution", attributionId], queryFn: () => getAttribution(attributionId), staleTime: 10 * 60_000 });
+  if (!data) return null;
+  return (
+    <p className="flex items-start gap-1.5">
+      <Megaphone className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", data.kind === "organic" ? "text-muted-foreground" : "text-primary")} aria-hidden="true" />
+      <span><span className="text-muted-foreground">Origem: </span>{attributionLabel(data)}</span>
+    </p>
+  );
+}
 
 export function ContactPanel({ contactId, onOpenConversation, showDeals = true }: { contactId: string; onOpenConversation?: (id: string) => void; showDeals?: boolean }) {
   const qc = useQueryClient();
@@ -95,6 +110,7 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
         {contact.phone && <p><span className="text-muted-foreground">WhatsApp: </span>{formatPhone(contact.phone)}</p>}
         {contact.instagram_username && <p><span className="text-muted-foreground">Instagram: </span>@{contact.instagram_username}</p>}
         <p><span className="text-muted-foreground">No CRM desde </span>{relative(contact.created_at)}</p>
+        {contact.attribution_id && <ContactOrigin attributionId={contact.attribution_id} />}
       </section>
 
       {conversations.length > 1 && (

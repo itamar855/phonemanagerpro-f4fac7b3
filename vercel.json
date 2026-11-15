@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/w/:slug",
+      "destination": "https://hzrqtolfbwnmmeliazmh.supabase.co/functions/v1/crm-track?l=:slug"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

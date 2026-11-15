@@ -90,6 +90,59 @@ export function isDirectChat(key: any): boolean {
   return resolveContactJid(key) !== null;
 }
 
+// ------------------------------------------------------------------ rastreamento
+
+export interface NativeAttribution {
+  entry_point?: string;
+  entry_app?: string;
+  ad_source_id?: string;
+  ad_source_url?: string;
+  ad_source_type?: string;
+  ad_title?: string;
+  ctwa_clid?: string;
+}
+
+/** Procura os campos de origem/anúncio em qualquer contextInfo da mensagem (formato do WhatsApp Web/Baileys). */
+export function extractAdAttribution(message: any): NativeAttribution {
+  const out: NativeAttribution = {};
+  const seen = new Set<any>();
+  const walk = (o: any, depth: number) => {
+    if (!o || typeof o !== "object" || depth > 8 || seen.has(o)) return;
+    seen.add(o);
+    if (typeof o.entryPointConversionSource === "string") out.entry_point ??= o.entryPointConversionSource;
+    if (typeof o.entryPointConversionApp === "string") out.entry_app ??= o.entryPointConversionApp;
+    if (typeof o.conversionSource === "string" && !out.entry_point) out.entry_point = o.conversionSource;
+    const ad = o.externalAdReply;
+    if (ad && typeof ad === "object") {
+      if (ad.sourceId) out.ad_source_id ??= String(ad.sourceId);
+      if (ad.sourceUrl) out.ad_source_url ??= String(ad.sourceUrl);
+      if (ad.sourceType) out.ad_source_type ??= String(ad.sourceType);
+      if (ad.title) out.ad_title ??= String(ad.title).slice(0, 200);
+      if (ad.ctwaClid) out.ctwa_clid ??= String(ad.ctwaClid);
+    }
+    // API oficial (referral) — por compatibilidade
+    const ref = o.referral ?? o.adReferral;
+    if (ref && typeof ref === "object") {
+      if (ref.source_id ?? ref.sourceId) out.ad_source_id ??= String(ref.source_id ?? ref.sourceId);
+      if (ref.source_url ?? ref.sourceUrl) out.ad_source_url ??= String(ref.source_url ?? ref.sourceUrl);
+      if (ref.ctwa_clid ?? ref.ctwaClid) out.ctwa_clid ??= String(ref.ctwa_clid ?? ref.ctwaClid);
+      if (ref.headline) out.ad_title ??= String(ref.headline).slice(0, 200);
+    }
+    for (const v of Object.values(o)) if (v && typeof v === "object") walk(v, depth + 1);
+  };
+  walk(message, 0);
+  if ((out.ad_source_id || out.ctwa_clid) && !out.entry_point) out.entry_point = "ctwa_ad";
+  return out;
+}
+
+export const hasAdData = (n: NativeAttribution) => Boolean(n.ad_source_id || n.ctwa_clid || n.entry_point === "ctwa_ad");
+
+/** Código do link de rastreio na 1ª mensagem: "(cód. K7Q2M)", "cod: K7Q2M", "código K7Q2M". */
+export function extractTrackCode(text: string | null | undefined): string | null {
+  const m = /c[oó]d(?:igo)?\.?\s*:?\s*([A-HJ-NP-Z2-9]{5})\b/i.exec(text ?? "");
+  return m ? m[1].toUpperCase() : null;
+}
+
 /** Status de entrega da Evolution → status do CRM. */
 export function mapAckStatus(raw: unknown): "sent" | "delivered" | "read" | null {
   const s = String(raw ?? "").toUpperCase();

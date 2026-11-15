@@ -12,6 +12,7 @@ import { WhatsAppChannelCard } from "../components/settings/WhatsAppChannelCard"
 import { InstagramChannelCard } from "../components/settings/InstagramChannelCard";
 import { AutomationSettingsCard } from "../components/settings/AutomationSettingsCard";
 import { AiAgentSettings } from "../components/settings/AiAgentSettings";
+import { TrackingSettings } from "../components/settings/TrackingSettings";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext, useQuickReplies } from "../hooks/useInbox";
 
@@ -26,6 +27,7 @@ export default function SettingsPage() {
             <TabsTrigger value="respostas">Respostas rápidas</TabsTrigger>
             <TabsTrigger value="automacoes">Automações</TabsTrigger>
             <TabsTrigger value="ia">Agente de IA</TabsTrigger>
+            <TabsTrigger value="rastreamento">Rastreamento</TabsTrigger>
           </TabsList>
           <TabsContent value="canais" className="space-y-4 pt-2">
             <WhatsAppChannelCard storeId={storeId} />
@@ -39,6 +41,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="ia" className="pt-2">
             <AiAgentSettings />
+          </TabsContent>
+          <TabsContent value="rastreamento" className="pt-2">
+            <TrackingSettings />
           </TabsContent>
         </Tabs>
       </div>

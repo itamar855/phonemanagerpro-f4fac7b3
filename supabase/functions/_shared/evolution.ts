@@ -99,6 +99,15 @@ export function evolution(cfg: EvolutionConfig) {
       const d = must(await call("POST", path, body, 30000), "Enviar mídia");
       return { externalId: d?.key?.id ?? null, raw: d };
     },
+    /** Número conectado na instância (55 + DDD + número), ou null. */
+    async ownerNumber(): Promise<string | null> {
+      const r = await call("GET", `/instance/fetchInstances?instanceName=${instance}`, undefined, 8000);
+      if (!r.ok) return null;
+      const list = Array.isArray(r.data) ? r.data : [r.data];
+      const jid = String(list[0]?.ownerJid ?? list[0]?.instance?.owner ?? "");
+      const digits = jid.split("@")[0].replace(/\D/g, "");
+      return digits.length >= 12 ? digits : null;
+    },
     /** Todas as conversas da instância (para o aprendizado com o histórico). */
     async findChats(): Promise<any[]> {
       const d = must(await call("POST", `/chat/findChats/${instance}`, {}, 30000), "Listar conversas");

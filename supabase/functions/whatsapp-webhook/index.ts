@@ -8,7 +8,7 @@ import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
 import { base64ToBytes, transcribeMessage } from "../_shared/transcribe.ts"
 import { checkWebhookAuth } from "./auth.ts"
-import { mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
+import { extractAdAttribution, extractTrackCode, hasAdData, mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
 /** Config pela instância do evento; sem ela, o número ativo. */
 async function resolveConfig(admin: SupabaseClient, instance: unknown): Promise<EvolutionConfig | null> {
@@ -185,6 +185,29 @@ serve(async (req) => {
       transcription = transcribeMessage(admin, crm.message_id, base64ToBytes(audioBase64), parsed.mimeType || 'audio/ogg')
       background(transcription)
     }
+    // Rastreamento: código do link / dados do anúncio → origem do contato; 1º contato → evento Lead para a Meta
+    if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
+      const code = extractTrackCode(parsed.content)
+      const native = extractAdAttribution(message)
+      if (code || crm.contact_created || hasAdData(native)) {
+        background((async () => {
+          const { error: attErr } = await admin.rpc('crm_track_attach', {
+            p_contact_id: crm.contact_id, p_code: code, p_native: native, p_is_new: Boolean(crm.contact_created),
+          })
+          if (attErr) console.error('[WhatsApp Webhook] origem:', attErr.message)
+          if (crm.contact_created) {
+            const { data: ev } = await admin.rpc('crm_meta_enqueue', { p_contact_id: crm.contact_id, p_deal_id: null, p_kind: 'lead' })
+            const secret = Deno.env.get('CRM_CRON_SECRET')
+            if (ev && secret) {
+              await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/crm-meta`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-crm-internal': secret }, body: JSON.stringify({ action: 'flush' }),
+              }).catch(() => { /* o cron envia no próximo minuto */ })
+            }
+          }
+        })().catch((e) => console.error('[WhatsApp Webhook] rastreamento:', (e as Error).message)))
+      }
+    }
+
     if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
       const photo = (async () => {
         const { data: c } = await admin.from('crm_contacts').select('id, phone, avatar_url, avatar_checked_at').eq('id', crm.contact_id).maybeSingle()
