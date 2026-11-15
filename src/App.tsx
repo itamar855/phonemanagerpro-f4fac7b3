@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -37,7 +38,16 @@ import ConfiguracoesFiscais from "./pages/ConfiguracoesFiscais";
 // Inicializar debug logger (registra listeners globais de erro)
 import "@/utils/debugLogger";
 
+// Módulo CRM independente: só é baixado quando alguém abre /crm
+const CrmModule = lazy(() => import("./modules/crm"));
+
 const queryClient = new QueryClient();
+
+const ModuleFallback = () => (
+  <div className="flex h-full items-center justify-center" role="status" aria-label="Carregando">
+    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+  </div>
+);
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { session, loading } = useAuth();
@@ -87,6 +97,7 @@ const App = () => (
                 <Route path="/notas-fiscais" element={<ProtectedRoute><NotasFiscais /></ProtectedRoute>} />
                 <Route path="/financas-pf" element={<ProtectedRoute><FinancasPF /></ProtectedRoute>} />
                 <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
+                <Route path="/crm/*" element={<ProtectedRoute><Suspense fallback={<ModuleFallback />}><CrmModule /></Suspense></ProtectedRoute>} />
                 <Route path="/assistente-ia" element={<ProtectedRoute><AIAssistant /></ProtectedRoute>} />
                 <Route path="/teste-meta" element={<ProtectedRoute><TesteMeta /></ProtectedRoute>} />
                 <Route path="/instalar" element={<Instalar />} />

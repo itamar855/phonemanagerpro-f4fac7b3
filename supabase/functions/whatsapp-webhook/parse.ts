@@ -66,10 +66,34 @@ export function resolveTimestamp(raw: unknown, fallback = new Date()): string {
   return new Date(ms).toISOString();
 }
 
+const PHONE_JID = /^\d{8,15}@s\.whatsapp\.net$/;
+
+/**
+ * jid de telefone da conversa privada, ou null para grupos, transmissões, canais e status.
+ * Contas com identificador oculto (@lid) trazem o número em remoteJidAlt/senderPn.
+ */
+export function resolveContactJid(key: any): string | null {
+  const jid: string = key?.remoteJid || "";
+  if (key?.participant && !jid.endsWith("@lid")) return null;
+  if (PHONE_JID.test(jid)) return jid;
+  if (jid.endsWith("@lid")) {
+    for (const alt of [key?.remoteJidAlt, key?.senderPn, key?.participantAlt]) {
+      if (typeof alt === "string" && PHONE_JID.test(alt)) return alt;
+    }
+  }
+  return null;
+}
+
 /** Só conversas privadas com pessoas: sem grupos, transmissões, canais ou status. */
 export function isDirectChat(key: any): boolean {
-  const jid: string = key?.remoteJid || "";
-  if (!jid.endsWith("@s.whatsapp.net")) return false;
-  if (key?.participant) return false;
-  return true;
+  return resolveContactJid(key) !== null;
+}
+
+/** Status de entrega da Evolution → status do CRM. */
+export function mapAckStatus(raw: unknown): "sent" | "delivered" | "read" | null {
+  const s = String(raw ?? "").toUpperCase();
+  if (s === "SERVER_ACK" || s === "2") return "sent";
+  if (s === "DELIVERY_ACK" || s === "3") return "delivered";
+  if (s === "READ" || s === "PLAYED" || s === "4" || s === "5") return "read";
+  return null;
 }

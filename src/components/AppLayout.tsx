@@ -271,7 +271,13 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-4 pt-20 md:p-8 pb-24 md:pb-8">
+        <main
+          className={
+            location.pathname.startsWith("/crm")
+              ? "flex-1 min-h-0 overflow-hidden pt-[4.25rem] pb-[4.5rem] md:pt-0 md:pb-0"
+              : "flex-1 overflow-auto p-4 pt-20 md:p-8 pb-24 md:pb-8"
+          }
+        >
           {children}
         </main>
 
