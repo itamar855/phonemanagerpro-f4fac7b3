@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { avatarUsable } from "../../lib/avatar";
 import { initials } from "../../lib/format";
 import type { Channel } from "../../lib/types";
 import { ChannelIcon } from "./ChannelIcon";
@@ -18,7 +19,7 @@ export function ContactAvatar({ name, avatarUrl, channel, size = "md", className
   return (
     <div className={cn("relative shrink-0", className)}>
       <Avatar className={SIZES[size]}>
-        {avatarUrl && <AvatarImage src={avatarUrl} alt="" />}
+        {avatarUsable(avatarUrl) && <AvatarImage src={avatarUrl!} alt="" referrerPolicy="no-referrer" loading="lazy" />}
         <AvatarFallback className="bg-primary/15 font-semibold text-primary">{initials(name)}</AvatarFallback>
       </Avatar>
       {channel && (

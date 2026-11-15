@@ -6,8 +6,9 @@ import {
 } from "../_shared/http.ts";
 import { evolution, loadWhatsAppConfig } from "../_shared/evolution.ts";
 import { IG_TOKEN_TTL_DAYS, igMe, igRefreshToken, igSubscribe } from "../_shared/instagram.ts";
+import { refreshAvatars } from "../_shared/contact-avatar.ts";
 
-const ACTIONS = ["status", "connect", "logout", "configure-webhook", "save-config", "ig-status", "ig-save", "ig-disconnect", "ig-app-save", "ig-auth-url"] as const;
+const ACTIONS = ["status", "connect", "logout", "configure-webhook", "save-config", "refresh-avatars", "ig-status", "ig-save", "ig-disconnect", "ig-app-save", "ig-auth-url"] as const;
 const DAY = 24 * 60 * 60 * 1000;
 // Para onde o login do Instagram pode devolver o usuário
 const ALLOWED_RETURN_ORIGINS = ["https://cellpro360.vercel.app", "https://cellpromanager.vercel.app", "http://localhost:8080"];
@@ -222,6 +223,18 @@ serve(async (req) => {
         reachable,
         can_manage: await isManager(admin, user.id),
       });
+    }
+
+    // Fotos de perfil dos contatos na tela (qualquer membro; só contatos das lojas dele)
+    if (action === "refresh-avatars") {
+      const ids = (Array.isArray(body.contact_ids) ? body.contact_ids : []).map(String).filter((s: string) => /^[0-9a-f-]{36}$/i.test(s)).slice(0, 40);
+      if (ids.length === 0) return json({ checked: 0, updated: 0 });
+      const { data: stores } = await admin.from("member_stores").select("store_id").eq("user_id", user.id);
+      const allowed = (stores ?? []).map((s: { store_id: string }) => s.store_id);
+      const { data: rows, error } = await admin.from("crm_contacts")
+        .select("id, phone, avatar_url, avatar_checked_at").in("id", ids).in("store_id", allowed).eq("ignored", false);
+      if (error) throw new HttpError(500, error.message);
+      return json(await refreshAvatars(admin, cfg, rows ?? []));
     }
 
     await requireManager(admin, user.id);

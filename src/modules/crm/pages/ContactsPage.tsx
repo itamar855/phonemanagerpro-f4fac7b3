@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Search, Users } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { ContactPanel } from "../components/contact/ContactPanel";
 import { ContactAvatar } from "../components/shared/ContactAvatar";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext } from "../hooks/useInbox";
+import { useAvatarRefresh } from "../hooks/useAvatarRefresh";
 import { ORIGIN_LABEL } from "../lib/constants";
 import { brl, relative } from "../lib/format";
 import { formatPhone } from "../lib/phone";
@@ -44,7 +45,8 @@ function ContactList() {
     staleTime: 15_000,
     placeholderData: (prev) => prev,
   });
-  const rows = data?.rows ?? [];
+  const rows = useMemo(() => data?.rows ?? [], [data]);
+  useAvatarRefresh(rows, storeId);
   const pages = Math.max(1, Math.ceil((data?.count ?? 0) / CONTACTS_PAGE));
 
   return (

@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { ChannelTab, ConversationQuery, InboxFilter } from "../../api/inbox";
 import { useConversations, useInboxCounts } from "../../hooks/useInbox";
+import { useAvatarRefresh } from "../../hooks/useAvatarRefresh";
 import { formatPhone } from "../../lib/phone";
 import { shortTime } from "../../lib/format";
 import type { CrmConversationWithContact } from "../../lib/types";
@@ -47,6 +48,8 @@ export function ConversationList({ storeId, userId, selectedId, onSelect, channe
   const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(query);
   const { data: counts } = useInboxCounts(storeId);
   const items = useMemo(() => data?.pages.flat() ?? [], [data]);
+  const avatarRows = useMemo(() => items.filter((c) => c.channel === "whatsapp").map((c) => c.contact), [items]);
+  useAvatarRefresh(avatarRows, storeId);
 
   // carrega mais ao chegar no fim da lista
   const sentinel = useRef<HTMLDivElement>(null);

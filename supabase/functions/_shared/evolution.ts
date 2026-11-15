@@ -99,6 +99,13 @@ export function evolution(cfg: EvolutionConfig) {
       const d = must(await call("POST", path, body, 30000), "Enviar mídia");
       return { externalId: d?.key?.id ?? null, raw: d };
     },
+    /** Link da foto de perfil (null se a pessoa não tem foto ou esconde). */
+    async profilePicture(number: string): Promise<string | null> {
+      const r = await call("POST", `/chat/fetchProfilePictureUrl/${instance}`, { number }, 6000);
+      if (!r.ok) return null;
+      const url = r.data?.profilePictureUrl ?? r.data?.picture ?? null;
+      return typeof url === "string" && /^https:\/\//.test(url) ? url : null;
+    },
     async mediaBase64(messageId: string): Promise<string | undefined> {
       const r = await call("POST", `/chat/getBase64FromMediaMessage/${instance}`, { message: { key: { id: messageId } }, convertToMp4: false }, 20000);
       if (!r.ok) return undefined;
