@@ -9,6 +9,7 @@ import type { CrmQuickReply } from "../../lib/types";
 export type ComposerMode = "reply" | "note";
 
 interface Props {
+  channel: "whatsapp" | "instagram";
   disabledReason?: string | null;
   quickReplies: CrmQuickReply[];
   onSend: (args: { mode: ComposerMode; text: string; file: File | null }) => Promise<void>;
@@ -17,7 +18,7 @@ interface Props {
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 const MAX_FILE = 16 * 1024 * 1024;
 
-export function Composer({ disabledReason, quickReplies, onSend }: Props) {
+export function Composer({ channel, disabledReason, quickReplies, onSend }: Props) {
   const [mode, setMode] = useState<ComposerMode>("reply");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -132,8 +133,8 @@ export function Composer({ disabledReason, quickReplies, onSend }: Props) {
       <div className="flex items-end gap-2">
         {mode === "reply" && (
           <>
-            <input ref={fileRef} type="file" accept={ACCEPT} className="hidden" onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
-            <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => fileRef.current?.click()} disabled={blocked || sending} aria-label="Anexar imagem ou PDF">
+            <input ref={fileRef} type="file" accept={channel === "instagram" ? "image/jpeg,image/png,image/webp" : ACCEPT} className="hidden" onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
+            <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => fileRef.current?.click()} disabled={blocked || sending} aria-label={channel === "instagram" ? "Anexar imagem" : "Anexar imagem ou PDF"}>
               <Paperclip className="h-5 w-5" />
             </Button>
           </>

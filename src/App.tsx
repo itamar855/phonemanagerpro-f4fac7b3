@@ -39,6 +39,7 @@ import "@/utils/debugLogger";
 
 // Módulo CRM independente: só é baixado quando alguém abre /crm
 const CrmModule = lazy(() => import("./modules/crm"));
+const Privacidade = lazy(() => import("./pages/Privacidade"));
 
 const queryClient = new QueryClient();
 
@@ -104,6 +105,7 @@ const App = () => (
                 {/* Rota pública para o cliente acompanhar a OS */}
                 <Route path="/os/:id" element={<OSPublica />} />
                 <Route path="/avaliacao" element={<Avaliacao />} />
+                <Route path="/privacidade" element={<Suspense fallback={<ModuleFallback />}><Privacidade /></Suspense>} />
                 <Route path="/auditoria" element={<ProtectedRoute><Auditoria /></ProtectedRoute>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

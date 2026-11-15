@@ -5,8 +5,95 @@ import {
   adminClient, corsHeaders, errorResponse, HttpError, isManager, json, requireManager, requireMember, requireUser,
 } from "../_shared/http.ts";
 import { evolution, loadWhatsAppConfig } from "../_shared/evolution.ts";
+import { IG_TOKEN_TTL_DAYS, igMe, igRefreshToken, igSubscribe } from "../_shared/instagram.ts";
 
-const ACTIONS = ["status", "connect", "logout", "configure-webhook", "save-config"] as const;
+const ACTIONS = ["status", "connect", "logout", "configure-webhook", "save-config", "ig-status", "ig-save", "ig-disconnect"] as const;
+const DAY = 24 * 60 * 60 * 1000;
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- linhas do PostgREST sem tipos gerados */
+async function handleInstagram(action: Action, admin: any, userId: string, storeId: string, body: any) {
+  const canManage = await isManager(admin, userId);
+  const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-webhook`;
+
+  if (action === "ig-save") {
+    await requireManager(admin, userId);
+    const token = String(body.access_token || "").trim();
+    const appSecret = String(body.app_secret || "").trim();
+    if (!token) throw new HttpError(400, "Cole o token de acesso gerado no painel da Meta.");
+
+    const { data: prevSec } = await admin.from("crm_channel_secrets").select("secrets").eq("store_id", storeId).eq("channel", "instagram").maybeSingle();
+    const secret = appSecret || prevSec?.secrets?.app_secret;
+    if (!secret) throw new HttpError(400, "Cole a chave secreta do app do Instagram.");
+
+    const me = await igMe(token); // valida o token
+    const igUserId = String(me.user_id || me.id);
+    const { data: other } = await admin.from("instagram_config").select("store_id").eq("ig_user_id", igUserId).neq("store_id", storeId).limit(1);
+    if (other && other.length > 0) throw new HttpError(409, "Esta conta do Instagram já está conectada em outra loja.");
+
+    const now = new Date();
+    const row = {
+      store_id: storeId, ig_user_id: igUserId, ig_username: me.username ?? null, instagram_business_account_id: igUserId,
+      token_expires_at: new Date(now.getTime() + IG_TOKEN_TTL_DAYS * DAY).toISOString(), is_active: true, updated_at: now.toISOString(),
+    };
+    const { error: cfgErr } = await admin.from("instagram_config").upsert(row, { onConflict: "store_id" });
+    if (cfgErr) throw new HttpError(500, cfgErr.message);
+    const { error: secErr } = await admin.from("crm_channel_secrets").upsert(
+      { store_id: storeId, channel: "instagram", secrets: { access_token: token, app_secret: secret }, updated_at: now.toISOString() },
+      { onConflict: "store_id,channel" },
+    );
+    if (secErr) throw new HttpError(500, secErr.message);
+
+    let subscribed = false;
+    let subscribeError: string | null = null;
+    try {
+      await igSubscribe(token);
+      subscribed = true;
+      await admin.from("instagram_config").update({ webhook_subscribed_at: new Date().toISOString() }).eq("store_id", storeId);
+    } catch (e) {
+      subscribeError = (e as Error).message;
+    }
+    return { status: "saved", username: me.username, subscribed, subscribe_error: subscribeError };
+  }
+
+  if (action === "ig-disconnect") {
+    await requireManager(admin, userId);
+    await admin.from("instagram_config").update({ is_active: false, updated_at: new Date().toISOString() }).eq("store_id", storeId);
+    await admin.from("crm_channel_secrets").delete().eq("store_id", storeId).eq("channel", "instagram");
+    return { status: "disconnected" };
+  }
+
+  // ig-status
+  const { data: cfg } = await admin.from("instagram_config")
+    .select("ig_user_id, ig_username, token_expires_at, webhook_subscribed_at, is_active").eq("store_id", storeId).maybeSingle();
+  const { data: sec } = await admin.from("crm_channel_secrets").select("secrets").eq("store_id", storeId).eq("channel", "instagram").maybeSingle();
+  const connected = Boolean(cfg?.is_active && cfg?.ig_user_id && sec?.secrets?.access_token);
+
+  // Renova o token quando faltam menos de 15 dias (a Meta aceita renovar tokens com 24 h+ de idade)
+  let expiresAt = cfg?.token_expires_at ?? null;
+  if (connected && expiresAt && new Date(expiresAt).getTime() - Date.now() < 15 * DAY) {
+    try {
+      const r = await igRefreshToken(sec!.secrets.access_token);
+      expiresAt = new Date(Date.now() + (Number(r.expires_in) || IG_TOKEN_TTL_DAYS * 86400) * 1000).toISOString();
+      await admin.from("crm_channel_secrets").update({ secrets: { ...sec!.secrets, access_token: r.access_token }, updated_at: new Date().toISOString() })
+        .eq("store_id", storeId).eq("channel", "instagram");
+      await admin.from("instagram_config").update({ token_expires_at: expiresAt }).eq("store_id", storeId);
+    } catch (e) {
+      console.error("[crm-channel] renovar token IG:", (e as Error).message);
+    }
+  }
+
+  return {
+    connected,
+    username: cfg?.ig_username ?? null,
+    token_expires_at: expiresAt,
+    webhook_subscribed: Boolean(cfg?.webhook_subscribed_at),
+    has_app_secret: Boolean(sec?.secrets?.app_secret),
+    can_manage: canManage,
+    // dados para colar no painel da Meta (só para quem administra)
+    webhook_url: canManage ? webhookUrl : null,
+    verify_token: canManage ? Deno.env.get("INSTAGRAM_VERIFY_TOKEN") ?? null : null,
+  };
+}
 type Action = typeof ACTIONS[number];
 
 serve(async (req) => {
@@ -26,6 +113,8 @@ serve(async (req) => {
     }
     if (!storeId) throw new HttpError(400, "Selecione uma loja.");
     await requireMember(admin, user.id, storeId);
+
+    if (action.startsWith("ig-")) return json(await handleInstagram(action, admin, user.id, storeId, body));
 
     if (action === "save-config") {
       await requireManager(admin, user.id);

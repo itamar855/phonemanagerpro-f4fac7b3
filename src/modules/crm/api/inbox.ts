@@ -231,5 +231,20 @@ export const channelStatus = (storeId: string | null) => invokeFn<ChannelStatus>
 export const channelConnect = (storeId: string | null) => invokeFn<{ base64?: string; pairingCode?: string }>("crm-channel", { action: "connect", storeId });
 export const channelLogout = (storeId: string | null) => invokeFn("crm-channel", { action: "logout", storeId });
 export const channelConfigureWebhook = (storeId: string | null) => invokeFn<{ url: string }>("crm-channel", { action: "configure-webhook", storeId });
-export const channelSaveConfig = (storeId: string | null, cfg: { api_url: string; instance_name: string; api_key?: string; is_active?: boolean }) =>
+export interface InstagramStatus {
+  connected: boolean;
+  username: string | null;
+  token_expires_at: string | null;
+  webhook_subscribed: boolean;
+  has_app_secret: boolean;
+  can_manage: boolean;
+  webhook_url: string | null;
+  verify_token: string | null;
+}
+export const igStatus = (storeId: string | null) => invokeFn<InstagramStatus>("crm-channel", { action: "ig-status", storeId });
+export const igSave = (storeId: string | null, access_token: string, app_secret?: string) =>
+  invokeFn<{ username: string; subscribed: boolean; subscribe_error: string | null }>("crm-channel", { action: "ig-save", storeId, access_token, app_secret });
+export const igDisconnect = (storeId: string | null) => invokeFn("crm-channel", { action: "ig-disconnect", storeId });
+
+export const channelSaveConfig =(storeId: string | null, cfg: { api_url: string; instance_name: string; api_key?: string; is_active?: boolean }) =>
   invokeFn("crm-channel", { action: "save-config", storeId, ...cfg });

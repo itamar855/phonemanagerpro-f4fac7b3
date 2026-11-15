@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, corsHeaders, errorResponse, HttpError, json, requireMember, requireUser } from "../_shared/http.ts";
 import { evolution, loadWhatsAppConfig, whatsappNumber } from "../_shared/evolution.ts";
+import { igSendImage, igSendText, loadInstagramAccount } from "../_shared/instagram.ts";
 
 const MAX_TEXT = 4096;
 const IG_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -58,18 +59,19 @@ serve(async (req) => {
       if (Date.now() - lastIn > IG_WINDOW_MS) {
         throw new HttpError(409, "A janela de 24 h do Instagram fechou. Aguarde o cliente escrever de novo.");
       }
-      if (kind !== "text") throw new HttpError(400, "Envio de arquivos pelo Instagram ainda não está disponível.");
-      const { data: ig } = await admin.from("instagram_config").select("*")
-        .eq("store_id", conv.store_id).eq("is_active", true).limit(1).maybeSingle();
-      if (!ig?.page_access_token || !ig?.instagram_business_account_id) throw new HttpError(400, "Instagram não conectado para esta loja.");
-      const res = await fetch(`https://graph.facebook.com/v21.0/${ig.instagram_business_account_id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ig.page_access_token}` },
-        body: JSON.stringify({ recipient: { id: contact?.instagram_user_id }, message: { text } }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new HttpError(502, `Instagram: ${data?.error?.message || res.status}`);
-      externalId = data?.message_id ?? null;
+      if (kind !== "text" && kind !== "image") throw new HttpError(400, "Pelo Instagram dá para enviar texto e imagem.");
+      const acct = await loadInstagramAccount(admin, { storeId: conv.store_id });
+      if (!acct) throw new HttpError(400, "Instagram não conectado para esta loja.");
+      const recipient = contact?.instagram_user_id ?? conv.external_thread_id;
+      if (!recipient) throw new HttpError(400, "Contato sem identificador do Instagram.");
+      if (kind === "image") {
+        const { data: signed, error } = await admin.storage.from(MEDIA_BUCKET).createSignedUrl(mediaPath!, 600);
+        if (error || !signed?.signedUrl) throw new HttpError(400, "Arquivo não encontrado.");
+        externalId = await igSendImage(acct.access_token, recipient, signed.signedUrl);
+        if (text) await igSendText(acct.access_token, recipient, text); // legenda vai como mensagem separada
+      } else {
+        externalId = await igSendText(acct.access_token, recipient, text);
+      }
     }
 
     const { data: saved, error: saveError } = await admin.rpc("crm_ingest_message", {
