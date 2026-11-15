@@ -69,7 +69,7 @@ export function AutomationSettingsCard() {
   const [saving, setSaving] = useState(false);
   const canEdit = MANAGER.has(String(userRole ?? ""));
 
-  useEffect(() => setForm(pick(data)), [data]);
+  useEffect(() => { setForm(pick(data)); }, [data]);
 
   if (!storeId) {
     return <EmptyState icon={Workflow} title="Escolha uma loja" description="As automações são configuradas por loja. Selecione a loja no topo da tela." />;

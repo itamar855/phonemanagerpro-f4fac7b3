@@ -5,6 +5,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { adminClient, corsHeaders, json } from "../_shared/http.ts"
 import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/evolution.ts"
 import { refreshAvatars } from "../_shared/contact-avatar.ts"
+import { runAgent } from "../_shared/ai-agent.ts"
 import { checkWebhookAuth } from "./auth.ts"
 import { mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
@@ -173,14 +174,17 @@ serve(async (req) => {
     })
     if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
 
-    // Foto de perfil: busca em segundo plano quando o contato não tem ou o link venceu
-    if (!fromMe && crm?.contact_id && !crm.ignored) {
-      const job = (async () => {
+    // Segundo plano: foto de perfil e agente de IA (sem atrasar a resposta à Evolution)
+    if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
+      const photo = (async () => {
         const { data: c } = await admin.from('crm_contacts').select('id, phone, avatar_url, avatar_checked_at').eq('id', crm.contact_id).maybeSingle()
         if (c) await refreshAvatars(admin, cfg, [c])
       })().catch((e) => console.error('[WhatsApp Webhook] foto:', (e as Error).message))
+      // espera 8 s: se a pessoa mandar outra mensagem, só a última aciona a IA
+      const agent = runAgent(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 })
+        .then((r) => { if (r.status !== 'skipped') console.log('[WhatsApp Webhook] IA:', r.status, r.status === 'done' ? r.decision.decision : '') })
       const rt = (globalThis as any).EdgeRuntime
-      if (rt?.waitUntil) rt.waitUntil(job); else await job
+      if (rt?.waitUntil) { rt.waitUntil(photo); rt.waitUntil(agent) } else await Promise.all([photo, agent])
     }
 
     // Mensagem que o próprio CRM enviou (crm-send já gravou): não repete nas tabelas antigas

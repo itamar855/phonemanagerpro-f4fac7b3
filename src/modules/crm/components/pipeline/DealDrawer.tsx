@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, MessageSquare, Save, Trash2, Trophy, XCircle } from "lucide-react";
+import { Bot, Loader2, MessageSquare, Save, Trash2, Trophy, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ function activityText(a: CrmActivity, stageName: (id: unknown) => string, who: (
     case "deal_won": return `${who(a.actor_id)} marcou como ganho`;
     case "deal_lost": return `${who(a.actor_id)} marcou como perdido${p.lost_reason ? `: ${p.lost_reason}` : ""}`;
     case "note": return String(p.text ?? "");
+    case "ai_handoff": return `IA passou para o atendente${p.reason ? ` (${p.reason})` : ""}`;
     default: return a.type;
   }
 }
@@ -110,6 +111,16 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
               </Button>
             )}
           </div>
+
+          {deal.ai_summary && (
+            <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-3 text-sm">
+              <p className="mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-violet-700 dark:text-violet-300">
+                <Bot className="h-3.5 w-3.5" aria-hidden="true" /> Resumo da IA
+                {deal.ai_score && <span className="font-normal text-muted-foreground">· {deal.ai_score === "hot" ? "quente" : deal.ai_score === "warm" ? "morno" : "frio"}</span>}
+              </p>
+              <p className="whitespace-pre-wrap">{deal.ai_summary}</p>
+            </div>
+          )}
 
           <form
             className="space-y-3"

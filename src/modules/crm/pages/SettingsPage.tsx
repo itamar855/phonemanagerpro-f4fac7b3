@@ -11,6 +11,7 @@ import { createQuickReply, deleteQuickReply } from "../api/inbox";
 import { WhatsAppChannelCard } from "../components/settings/WhatsAppChannelCard";
 import { InstagramChannelCard } from "../components/settings/InstagramChannelCard";
 import { AutomationSettingsCard } from "../components/settings/AutomationSettingsCard";
+import { AiAgentSettings } from "../components/settings/AiAgentSettings";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext, useQuickReplies } from "../hooks/useInbox";
 
@@ -20,10 +21,11 @@ export default function SettingsPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl p-3 md:p-6">
         <Tabs defaultValue="canais">
-          <TabsList>
+          <TabsList className="h-auto w-full justify-start overflow-x-auto [scrollbar-width:none] sm:w-auto">
             <TabsTrigger value="canais">Canais</TabsTrigger>
             <TabsTrigger value="respostas">Respostas rápidas</TabsTrigger>
             <TabsTrigger value="automacoes">Automações</TabsTrigger>
+            <TabsTrigger value="ia">Agente de IA</TabsTrigger>
           </TabsList>
           <TabsContent value="canais" className="space-y-4 pt-2">
             <WhatsAppChannelCard storeId={storeId} />
@@ -34,6 +36,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="automacoes" className="pt-2">
             <AutomationSettingsCard />
+          </TabsContent>
+          <TabsContent value="ia" className="pt-2">
+            <AiAgentSettings />
           </TabsContent>
         </Tabs>
       </div>

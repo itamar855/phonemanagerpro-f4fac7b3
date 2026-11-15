@@ -182,6 +182,60 @@ export interface CrmActivity {
   created_at: string;
 }
 
+export interface CrmBusinessHours { enabled?: boolean; start?: string; end?: string; days?: number[] }
+
+export interface CrmAiSettings {
+  store_id: string;
+  mode: "off" | "draft" | "autopilot";
+  knowledge: string | null;
+  persona: string | null;
+  model: string | null;
+  business_hours: CrmBusinessHours | null;
+  max_replies_per_day: number;
+  max_turns: number;
+  handoff_message: string | null;
+  enabled_channels: string[];
+}
+
+export interface CrmAiSuggestion {
+  id: string;
+  store_id: string;
+  conversation_id: string;
+  run_id: string | null;
+  kind: "reply" | "handoff";
+  body: string;
+  status: "pending" | "sent" | "discarded";
+  created_at: string;
+}
+
+export interface CrmAiDecision {
+  decision: "reply" | "handoff" | "ignore";
+  reply: string;
+  commercial: boolean;
+  interest: Interest | null;
+  device_model: string | null;
+  defect: string | null;
+  urgency: string | null;
+  customer_name: string | null;
+  score: "hot" | "warm" | "cold";
+  summary: string;
+  title: string;
+  reason: string | null;
+}
+
+export interface CrmAiRun {
+  id: string;
+  store_id: string;
+  conversation_id: string | null;
+  decision: string | null;
+  output: CrmAiDecision | null;
+  model: string | null;
+  latency_ms: number | null;
+  error: string | null;
+  created_at: string;
+  conversation?: { id: string; contact: { name: string } | null } | null;
+}
+
 export interface CrmQuickReply {
   id: string;
   store_id: string;

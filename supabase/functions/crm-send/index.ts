@@ -38,6 +38,16 @@ serve(async (req) => {
 
     if (mediaPath && !mediaPath.startsWith(`${conv.store_id}/`)) throw new HttpError(403, "Arquivo de outra loja.");
 
+    let suggestion: { id: string } | null = null;
+    if (body.ai_suggestion_id) {
+      const { data: sg } = await admin.from("crm_ai_suggestions").select("id, status, conversation_id")
+        .eq("id", String(body.ai_suggestion_id)).maybeSingle();
+      if (!sg || sg.conversation_id !== conv.id) throw new HttpError(404, "Sugestão não encontrada.");
+      if (sg.status !== "pending") throw new HttpError(409, "Esta sugestão já foi usada ou descartada.");
+      if (kind !== "text") throw new HttpError(400, "Sugestão da IA é só texto.");
+      suggestion = { id: sg.id };
+    }
+
     let externalId: string | null = null;
 
     if (conv.channel === "whatsapp") {
@@ -74,11 +84,16 @@ serve(async (req) => {
       }
     }
 
+    // Sugestão da IA aprovada por uma pessoa: registra como IA (a conversa continua com ela)
+    if (suggestion) {
+      await admin.from("crm_ai_suggestions").update({ status: "sent", decided_by: user.id, decided_at: new Date().toISOString() }).eq("id", suggestion.id);
+    }
+
     const { data: saved, error: saveError } = await admin.rpc("crm_ingest_message", {
       p_store_id: conv.store_id,
       p_channel: conv.channel,
       p_direction: "out",
-      p_sender_kind: "user",
+      p_sender_kind: suggestion ? "ai" : "user",
       p_sender_user_id: user.id,
       p_kind: kind,
       p_body: text || null,

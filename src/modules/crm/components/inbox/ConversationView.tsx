@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { ArrowLeft, CheckCircle2, Loader2, MessageSquareDashed, PanelRight, RotateCcw } from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, Loader2, MessageSquareDashed, PanelRight, RotateCcw } from "lucide-react";
+import { setConversationHandler } from "../../api/ai";
+import { AiSuggestionBar } from "./AiSuggestionBar";
 import { toast } from "sonner";
 import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -169,6 +171,28 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
               ))}
             </SelectContent>
           </Select>
+          {conv.channel === "whatsapp" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-9 w-9", conv.handler === "ai" && "bg-violet-500/15 text-violet-700 hover:text-violet-700 dark:text-violet-300")}
+              aria-pressed={conv.handler === "ai"}
+              aria-label={conv.handler === "ai" ? "IA atendendo: toque para assumir" : "Deixar a IA atender esta conversa"}
+              title={conv.handler === "ai" ? "IA atendendo (toque para assumir)" : "Deixar a IA atender"}
+              onClick={async () => {
+                const next = conv.handler === "ai" ? "human" : "ai";
+                try {
+                  await setConversationHandler(conv.id, next);
+                  qc.invalidateQueries({ queryKey: crmKeys.conversation(conv.id) });
+                  qc.invalidateQueries({ queryKey: ["crm", "conversations"] });
+                  qc.invalidateQueries({ queryKey: ["crm", "ai-suggestion", conv.id] });
+                  toast.success(next === "ai" ? "A IA vai atender as próximas mensagens desta conversa." : "Você assumiu a conversa. A IA parou aqui.");
+                } catch (e) { toast.error((e as Error).message); }
+              }}
+            >
+              <Bot className="h-4 w-4" />
+            </Button>
+          )}
           {resolved ? (
             <Button variant="outline" size="sm" className="h-9" onClick={() => setStatus("open")}>
               <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" /> Reabrir
@@ -214,7 +238,7 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
           return (
             <Fragment key={m.id}>
               {showDay && (
-                <div className="sticky top-0 z-10 flex justify-center py-1">
+                <div className="flex justify-center py-1">
                   <span className="rounded-full border border-border/50 bg-card/90 px-3 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
                     {dayLabel(m.created_at)}
                   </span>
@@ -226,6 +250,9 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
         })}
       </div>
 
+      {conv.channel === "whatsapp" && (
+        <AiSuggestionBar conversationId={conv.id} userId={userId} canSuggest={conv.last_message_direction === "in" && !resolved} />
+      )}
       <Composer
         key={`${conversationId}:${draft ?? ""}`}
         channel={conv.channel}

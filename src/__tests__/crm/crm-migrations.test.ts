@@ -19,6 +19,8 @@ const INBOX = read("20261115000000_crm_inbox.sql");
 const PIPELINE = read("20261115030000_crm_pipeline.sql");
 const TASKS = read("20261116000000_crm_tasks_automations.sql");
 const REPORTS = read("20261116010000_crm_reports.sql");
+const AVATARS = read("20261116020000_crm_contact_avatars.sql");
+const AI = read("20261116030000_crm_ai_agent.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -109,6 +111,8 @@ beforeAll(async () => {
   await db.exec(PIPELINE);
   await db.exec(TASKS);
   await db.exec(REPORTS);
+  await db.exec(AVATARS);
+  await db.exec(AI);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -466,5 +470,70 @@ describe("CRM — relatórios e vínculo com Vendas/OS", () => {
     await asUser(U2, async () => {
       expect(await errorOf(`select * from crm_deal_link_candidates($1)`, [deal])).toMatch(/Sem acesso/);
     });
+  });
+});
+
+describe("CRM — agente de IA", () => {
+  const newConv = async (phone: string, id: string) =>
+    (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi, quanto custa a tela do A54?", p_phone: phone, p_name: "Cliente IA", p_external_id: id })).conversation_id as string;
+
+  it("conversa nova nasce com a IA só quando o agente está ligado", async () => {
+    const off = await newConv("5511955550001", "AI1");
+    expect(await val(`select handler from crm_conversations where id = $1`, [off])).toBe("human");
+    await db.query(`update crm_ai_settings set mode = 'draft' where store_id = $1`, [A]);
+    const on = await newConv("5511955550002", "AI2");
+    expect(await val(`select handler from crm_conversations where id = $1`, [on])).toBe("ai");
+  });
+
+  it("pessoa respondendo devolve ao humano; resposta da IA não", async () => {
+    const conv = await val<string>(`select cv.id from crm_conversations cv join crm_contacts c on c.id = cv.contact_id where c.phone = '5511955550002'`);
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "ai", p_body: "Olá! Qual o modelo?", p_phone: "5511955550002", p_external_id: "AI2-out" });
+    expect(await val(`select handler from crm_conversations where id = $1`, [conv])).toBe("ai");
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "user", p_body: "Oi, aqui é o João", p_phone: "5511955550002", p_external_id: "AI2-h" });
+    expect(await val(`select handler from crm_conversations where id = $1`, [conv])).toBe("human");
+  });
+
+  it("passagem cria negócio de assistência na 1ª etapa visível, tarefa e usa o rodízio", async () => {
+    await db.query(`update crm_automation_settings set round_robin = true, round_robin_members = array[$1::uuid] where store_id = $2`, [U1, A]);
+    const conv = await newConv("5511955550003", "AI3");
+    expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(U1);
+    const r = await val<any>(`select crm_ai_handoff($1, 'Troca de tela A54', 'Quer trocar a tela do A54, urgente.', 'hot', 'repair', 'qualificado')`, [conv]);
+    const deal = await one(`select d.*, s.code, p.kind from crm_deals d join crm_stages s on s.id = d.stage_id join crm_pipelines p on p.id = d.pipeline_id where d.id = $1`, [r.deal_id]);
+    expect(deal).toMatchObject({ kind: "service", code: "svc_new", owner_id: U1, ai_score: "hot", interest: "repair", title: "Troca de tela A54" });
+    expect(await val(`select handler from crm_conversations where id = $1`, [conv])).toBe("human");
+    const task = await one(`select * from crm_tasks where conversation_id = $1 and source = 'ai'`, [conv]);
+    expect(task.title).toMatch(/^Assumir atendimento: /);
+    expect(task.assigned_to).toBe(U1);
+    // de novo: atualiza o mesmo negócio aberto, sem duplicar
+    const r2 = await val<any>(`select crm_ai_handoff($1, 'x', 'Resumo novo', 'warm', 'repair', 'pediu humano')`, [conv]);
+    expect(r2.deal_id).toBe(r.deal_id);
+    expect(await val(`select ai_summary from crm_deals where id = $1`, [r.deal_id])).toBe("Resumo novo");
+    await db.query(`update crm_automation_settings set round_robin = false where store_id = $1`, [A]);
+  });
+
+  it("venda vai para o funil de Vendas (etapa do Instagram fica de fora)", async () => {
+    const conv = await newConv("5511955550004", "AI4");
+    const r = await val<any>(`select crm_ai_handoff($1, 'iPhone 13', 'Quer iPhone 13', 'warm', 'device', null)`, [conv]);
+    expect(await val(`select s.code from crm_deals d join crm_stages s on s.id = d.stage_id where d.id = $1`, [r.deal_id])).toBe("wa_active");
+  });
+
+  it("sugestões: membro só descarta; ligar/desligar a IA checa a loja", async () => {
+    const conv = await val<string>(`select cv.id from crm_conversations cv join crm_contacts c on c.id = cv.contact_id where c.phone = '5511955550004'`);
+    const sug = await val<string>(`insert into crm_ai_suggestions (store_id, conversation_id, body) values ($1, $2, 'Olá!') returning id`, [A, conv]);
+    await asUser(U1, async () => {
+      expect(await errorOf(`update crm_ai_suggestions set status = 'sent', decided_by = $2 where id = $1`, [sug, U1])).not.toBeNull();
+      await db.query(`update crm_ai_suggestions set status = 'discarded', decided_by = $2, decided_at = now() where id = $1`, [sug, U1]);
+      expect(await errorOf(`insert into crm_ai_suggestions (store_id, conversation_id, body) values ($1, $2, 'x')`, [A, conv])).not.toBeNull();
+      await db.query(`select crm_set_conversation_handler($1, 'ai')`, [conv]);
+    });
+    expect(await val(`select status from crm_ai_suggestions where id = $1`, [sug])).toBe("discarded");
+    expect(await val(`select handler from crm_conversations where id = $1`, [conv])).toBe("ai");
+    await asUser(U2, async () => {
+      expect(await errorOf(`select crm_set_conversation_handler($1, 'human')`, [conv])).toMatch(/Sem acesso/);
+    });
+    await asUser(U1, async () => {
+      await db.query(`select crm_set_conversation_handler($1, 'human')`, [conv]);
+    });
+    expect(await val(`select handler from crm_conversations where id = $1`, [conv])).toBe("human");
   });
 });
