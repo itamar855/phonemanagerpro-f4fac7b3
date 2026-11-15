@@ -30,7 +30,7 @@ describe("agente de IA — aprendizado", () => {
     });
     expect(p).toContain('Cliente: "trocam tela de iphone 11?"');
     expect(p).toContain('Loja: "Trocamos sim! Fica pronto no mesmo dia."');
-    expect(p).toMatch(/NÃO repita preços dos exemplos/);
+    expect(p).toMatch(/use SÓ para o jeito de falar/);
   });
 });
 
@@ -116,6 +116,13 @@ describe("agente de IA — travas", () => {
   it("transcrição entra na conversa enviada ao modelo", () => {
     const turns = toTurns([{ ...msg("in", "[Áudio]", "audio"), transcript: "boa tarde, tem capinha do iPhone 13?" }]);
     expect(turns).toEqual([{ role: "user", text: "[áudio da pessoa, transcrito]: boa tarde, tem capinha do iPhone 13?" }]);
+  });
+
+  it("frase de passagem sai sem perguntas", () => {
+    const d = applyGuards(reply({ decision: "handoff", reply: "Entendido! Um atendente te chama amanhã às 8h. Poderia me dizer seu nome, por favor?" }), g);
+    expect(d.reply).toBe("Entendido! Um atendente te chama amanhã às 8h.");
+    // se sobrar vazio, o executor usa a frase padrão de passagem
+    expect(applyGuards(reply({ decision: "handoff", reply: "Qual seu nome?" }), g).reply).toBe("");
   });
 
   it("limite de mensagens da IA", () => {
