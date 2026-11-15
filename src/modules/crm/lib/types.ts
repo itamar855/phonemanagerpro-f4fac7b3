@@ -132,19 +132,41 @@ export interface CrmDeal {
   created_at: string;
 }
 
+export type TaskKind = "follow_up" | "call" | "reply" | "stale_deal" | "os_ready" | "review" | "warranty";
+export type TaskSource = "user" | "automation" | "ai";
+
 export interface CrmTask {
   id: string;
   store_id: string;
   title: string;
   notes: string | null;
-  kind: string;
+  kind: TaskKind | string;
   due_at: string | null;
   done_at: string | null;
   assigned_to: string | null;
   contact_id: string | null;
   deal_id: string | null;
+  conversation_id: string | null;
+  source: TaskSource;
+  suggested_message: string | null;
   created_by: string | null;
   created_at: string;
+}
+
+export interface CrmTaskWithLinks extends CrmTask {
+  contact: Pick<CrmContact, "id" | "name" | "phone"> | null;
+  deal: Pick<CrmDeal, "id" | "title" | "pipeline_id" | "status"> | null;
+}
+
+export interface CrmAutomationSettings {
+  store_id: string;
+  round_robin: boolean;
+  round_robin_members: string[];
+  unanswered_minutes: number | null;
+  stale_deals: boolean;
+  os_ready: boolean;
+  review_after_days: number | null;
+  warranty_alert_days: number | null;
 }
 
 export interface CrmActivity {

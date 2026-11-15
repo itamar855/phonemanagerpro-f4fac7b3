@@ -11,7 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getContactDetail, updateContact } from "../../api/inbox";
-import { crmKeys } from "../../hooks/useInbox";
+import { crmKeys, useCrmContext } from "../../hooks/useInbox";
+import { EntityTasks } from "../tasks/EntityTasks";
 import { brl, relative } from "../../lib/format";
 import { formatPhone } from "../../lib/phone";
 import { CHANNEL_LABEL, ORIGIN_LABEL } from "../../lib/constants";
@@ -19,13 +20,15 @@ import { ChannelIcon } from "../shared/ChannelIcon";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { ContactDeals } from "./ContactDeals";
 
+// Mesmos códigos de status usados em Ordens de Serviço (src/utils/osStatus.ts)
 const OS_STATUS: Record<string, string> = {
-  aguardando: "Aguardando", em_analise: "Em análise", aguardando_aprovacao: "Aguard. aprovação", aprovado: "Aprovado",
-  em_reparo: "Em reparo", pronto: "Pronto", entregue: "Entregue", cancelado: "Cancelado",
+  open: "Aberta", analyzing: "Em análise", waiting_part: "Aguardando peça", repairing: "Em reparo",
+  waiting_approval: "Aguard. aprovação", ready: "Pronta p/ retirada", delivered: "Entregue", cancelled: "Cancelada",
 };
 
 export function ContactPanel({ contactId, onOpenConversation, showDeals = true }: { contactId: string; onOpenConversation?: (id: string) => void; showDeals?: boolean }) {
   const qc = useQueryClient();
+  const { userId } = useCrmContext();
   const { data, isLoading } = useQuery({ queryKey: crmKeys.contact(contactId), queryFn: () => getContactDetail(contactId), staleTime: 30_000 });
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -112,6 +115,17 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
       )}
 
       {showDeals && !contact.ignored && <ContactDeals contact={contact} />}
+
+      {!contact.ignored && (
+        <EntityTasks
+          userId={userId}
+          preset={{
+            storeId: contact.store_id,
+            contact: { id: contact.id, name: contact.name },
+            conversationId: (conversations.find((c) => c.channel === "whatsapp") ?? conversations[0])?.id ?? null,
+          }}
+        />
+      )}
 
       <section aria-labelledby="ct-cliente" className="space-y-1.5">
         <h3 id="ct-cliente" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cadastro de cliente</h3>

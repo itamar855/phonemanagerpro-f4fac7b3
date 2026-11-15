@@ -13,14 +13,16 @@ interface Props {
   disabledReason?: string | null;
   quickReplies: CrmQuickReply[];
   onSend: (args: { mode: ComposerMode; text: string; file: File | null }) => Promise<void>;
+  /** Rascunho inicial (ex.: mensagem sugerida por uma tarefa). Nunca é enviado sozinho. */
+  initialText?: string;
 }
 
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 const MAX_FILE = 16 * 1024 * 1024;
 
-export function Composer({ channel, disabledReason, quickReplies, onSend }: Props) {
+export function Composer({ channel, disabledReason, quickReplies, onSend, initialText }: Props) {
   const [mode, setMode] = useState<ComposerMode>("reply");
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);

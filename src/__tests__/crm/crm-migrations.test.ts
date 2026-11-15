@@ -17,6 +17,7 @@ const FOUNDATION = read("20261114200000_crm_foundation.sql");
 const IMPORT = read("20261114200100_crm_import_legacy_leads.sql");
 const INBOX = read("20261115000000_crm_inbox.sql");
 const PIPELINE = read("20261115030000_crm_pipeline.sql");
+const TASKS = read("20261116000000_crm_tasks_automations.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -65,7 +66,12 @@ beforeAll(async () => {
     create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role);
     create table public.profiles (id uuid primary key default gen_random_uuid(), user_id uuid, display_name text);
     create table public.customers (id uuid primary key default gen_random_uuid(), name text, phone text, store_id uuid, created_at timestamptz default now());
-    create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid);
+    create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid, order_number serial, customer_id uuid,
+      customer_name text, customer_phone text, device_brand text, device_model text, status text default 'open', completed_at timestamptz,
+      delivered_at timestamptz, warranty_end_date timestamptz, updated_at timestamptz default now());
+    create table public.products (id uuid primary key default gen_random_uuid(), store_id uuid, name text, brand text, model text);
+    create table public.sales (id uuid primary key default gen_random_uuid(), store_id uuid, product_id uuid, customer_id uuid,
+      customer_name text, customer_phone text, warranty_days integer, seller_id uuid, created_by uuid, created_at timestamptz default now());
     create table public.leads (id uuid primary key default gen_random_uuid(), name text, phone text, email text, source text, status text,
       notes text, store_id uuid, created_at timestamptz default now(), instagram_user_id text, instagram_username text, avatar_url text);
     create table public.lead_messages (id uuid primary key default gen_random_uuid(), lead_id uuid, content text, sender text,
@@ -98,6 +104,7 @@ beforeAll(async () => {
   await db.exec(IMPORT);
   await db.exec(INBOX);
   await db.exec(PIPELINE);
+  await db.exec(TASKS);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -324,5 +331,95 @@ describe("CRM — segurança (RLS)", () => {
       expect(await errorOf(`select crm_ensure_handoff_code($1)`, [ana])).toMatch(/Sem acesso/);
       expect(await errorOf(`select crm_merge_contacts($1, $2)`, [ana, bia])).toMatch(/Sem acesso/);
     });
+  });
+});
+
+describe("CRM — tarefas e automações", () => {
+  const later = "now() + interval '1 hour'";
+
+  it("toda loja tem configuração; vendedor lê mas não altera", async () => {
+    expect(await val(`select count(*)::int from crm_automation_settings`)).toBe(3);
+    await asUser(U1, async () => {
+      expect(await val(`select unanswered_minutes from crm_automation_settings where store_id = $1`, [A])).toBe(30);
+      await db.query(`update crm_automation_settings set round_robin = true where store_id = $1`, [A]);
+    });
+    expect(await val(`select round_robin from crm_automation_settings where store_id = $1`, [A])).toBe(false);
+  });
+
+  it("rodízio distribui conversas novas entre os escolhidos, pulando quem saiu da loja", async () => {
+    await db.query(`update crm_automation_settings set round_robin = true, round_robin_members = array[$1::uuid, $2::uuid, $3::uuid] where store_id = $4`, [U1, U2, ADM, A]);
+    const owners: string[] = [];
+    for (const [i, phone] of ["5511900000001", "5511900000002", "5511900000003"].entries()) {
+      const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi", p_phone: phone, p_external_id: `RR${i}` });
+      owners.push(await val<string>(`select assigned_to from crm_conversations where id = $1`, [r.conversation_id]));
+    }
+    // U2 não é membro da loja A → fica fora; alterna U1 / ADM
+    expect(owners).toEqual([U1, ADM, U1]);
+    await db.query(`update crm_automation_settings set round_robin = false where store_id = $1`, [A]);
+  });
+
+  it("conversa sem resposta vira tarefa uma única vez e fecha sozinha ao responder", async () => {
+    const conv = await val<string>(`select cv.id from crm_conversations cv join crm_contacts c on c.id = cv.contact_id where c.phone = '5511900000001'`);
+    const r1 = await val<any>(`select crm_run_automations(${later})`);
+    expect(r1.reply).toBeGreaterThan(0);
+    const t = await one(`select * from crm_tasks where conversation_id = $1 and kind = 'reply'`, [conv]);
+    expect(t).toMatchObject({ source: "automation", assigned_to: U1, done_at: null });
+    expect((await val<any>(`select crm_run_automations(${later})`)).reply).toBe(0);
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "user", p_body: "Olá!", p_phone: "5511900000001", p_external_id: "RR-out" });
+    expect(await val(`select done_at is not null from crm_tasks where id = $1`, [t.id])).toBe(true);
+  });
+
+  it("negócio parado além do prazo gera tarefa; mudar de etapa fecha", async () => {
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+    const contact = await val<string>(`select id from crm_contacts where phone = '5511900000002'`);
+    const deal = await val<string>(
+      `insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, owner_id) values ($1, $2, $3, $4, 'Moto G', $5) returning id`,
+      [A, pipe, await stage(A, "sales", "proposal"), contact, ADM],
+    );
+    await db.query(`update crm_deals set stage_entered_at = now() - interval '4 days' where id = $1`, [deal]);
+    expect((await val<any>(`select crm_run_automations()`)).stale_deal).toBe(1);
+    const t = await one(`select * from crm_tasks where deal_id = $1`, [deal]);
+    expect(t).toMatchObject({ kind: "stale_deal", assigned_to: ADM });
+    await db.query(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "won"), deal]);
+    expect(await val(`select done_at is not null from crm_tasks where id = $1`, [t.id])).toBe(true);
+  });
+
+  it("pós-venda: OS pronta, avaliação e garantia viram sugestões (sem enviar nada)", async () => {
+    const maria = await one(`select id, customer_id from crm_contacts where store_id = $1 and phone = '5587999112233'`, [A]);
+    const prod = await val<string>(`insert into products (store_id, name, brand, model) values ($1, 'iPhone', 'Apple', 'iPhone 13') returning id`, [A]);
+    await db.query(
+      `insert into service_orders (store_id, customer_id, customer_name, customer_phone, device_brand, device_model, status, completed_at, delivered_at, warranty_end_date) values
+        ($1, $2, 'Maria Cliente', '(87) 99911-2233', 'Samsung', 'A54', 'ready', now(), null, null),
+        ($1, null, 'Zé', '(11) 97777-0000', 'Moto', 'G8', 'delivered', now() - interval '20 days', now() - interval '4 days', now() + interval '3 days'),
+        ($1, null, 'Antigo', null, null, null, 'ready', now() - interval '30 days', null, null)`,
+      [A, maria.customer_id],
+    );
+    await db.query(
+      `insert into sales (store_id, product_id, customer_name, customer_phone, warranty_days, seller_id, created_at) values ($1, $2, 'Maria', '87999112233', 90, $3, now() - interval '3 days 12 hours')`,
+      [A, prod, U1],
+    );
+    const r = await val<any>(`select crm_run_automations()`);
+    expect(r).toMatchObject({ os_ready: 1, review: 2, warranty: 1 });
+
+    const ready = await one(`select * from crm_tasks where kind = 'os_ready'`);
+    expect(ready.contact_id).toBe(maria.id);
+    expect(ready.conversation_id).not.toBeNull();
+    expect(ready.suggested_message).toMatch(/^Olá Maria! Seu aparelho Samsung A54 \(OS #\d+\) já está pronto/);
+    const saleReview = await one(`select * from crm_tasks where dedupe_key like 'review_sale:%'`);
+    expect(saleReview).toMatchObject({ assigned_to: U1, contact_id: maria.id });
+    expect(saleReview.title).toBe("Pedir avaliação · compra de Apple iPhone 13");
+    // nada vira mensagem: o motor só cria tarefas
+    expect(await val(`select count(*)::int from crm_messages where body like '%avaliação%'`)).toBe(0);
+    expect(await val<any>(`select crm_run_automations()`)).toMatchObject({ os_ready: 0, review: 0, warranty: 0 });
+  });
+
+  it("contadores de tarefas: minhas + sem responsável, vencidas e de hoje", async () => {
+    await db.query(`insert into crm_tasks (store_id, title, due_at, assigned_to) values ($1, 'vencida', now() - interval '2 hours', $2), ($1, 'de outro', now() - interval '2 hours', $3)`, [A, U1, ADM]);
+    const c = await asUser(U1, () => val<any>(`select crm_task_counts($1)`, [A]));
+    const mine = await asUser(U1, () => val<number>(`select count(*)::int from crm_tasks where done_at is null and (assigned_to = $1 or assigned_to is null) and due_at < now()`, [U1]));
+    expect(c.overdue).toBe(mine);
+    expect(c.overdue).toBeGreaterThanOrEqual(1);
+    const b = await asUser(U2, () => val<any>(`select crm_task_counts(null)`));
+    expect(b.open).toBe(0);
   });
 });
