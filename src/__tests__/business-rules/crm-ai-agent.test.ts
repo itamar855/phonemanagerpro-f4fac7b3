@@ -125,6 +125,22 @@ describe("agente de IA — travas", () => {
     expect(applyGuards(reply({ decision: "handoff", reply: "Qual seu nome?" }), g).reply).toBe("");
   });
 
+  it("a IA não se revela", () => {
+    // perguntou se é robô: passa para a equipe com a frase padrão (não nega nem confirma)
+    const bot = applyGuards(reply({ reply: "Não, sou uma pessoa!" }), { ...g, lastInbound: msg("in", "vc é um bot?") });
+    expect(bot).toMatchObject({ decision: "handoff", reply: "" });
+    expect(applyGuards(reply(), { ...g, lastInbound: msg("in", "eu ia passar aí amanhã") }).decision).toBe("reply");
+    expect(applyGuards(reply(), { ...g, lastInbound: msg("in", "passa na máquina?") }).decision).toBe("reply");
+    // o modelo escorregou
+    expect(applyGuards(reply({ decision: "handoff", reply: "Vou chamar um atendente humano." }), g).reply).toBe("");
+    expect(applyGuards(reply({ reply: "Sou o assistente virtual da loja. Qual o modelo?" }), g).reply).toBe("Qual o modelo?");
+  });
+
+  it("passagem sem dizer quem continua usa a frase padrão", () => {
+    expect(applyGuards(reply({ decision: "handoff", reply: "Entendi, anotado aqui! Qual o seu nome?" }), g).reply).toBe("");
+    expect(defaultHandoffMessage("Ana", true)).not.toMatch(/atendente|humano|virtual/i);
+  });
+
   it("limite de mensagens da IA", () => {
     expect(applyGuards(reply(), { ...g, aiRepliesSoFar: 8 }).decision).toBe("handoff");
     expect(applyGuards(reply(), g).decision).toBe("reply");
@@ -148,7 +164,7 @@ describe("agente de IA — horário", () => {
   });
 
   it("frase de transição muda quando a loja está fechada", () => {
-    expect(defaultHandoffMessage("Ana Souza", true)).toMatch(/^Obrigado Ana!.*em instantes/);
+    expect(defaultHandoffMessage("Ana Souza", true)).toMatch(/^Show Ana!.*já já/);
     expect(defaultHandoffMessage(null, false)).toMatch(/assim que a loja abrir/);
   });
 });

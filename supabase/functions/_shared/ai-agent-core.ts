@@ -75,11 +75,12 @@ const OS_STATUS_PT: Record<string, string> = {
 export function buildSystemPrompt(ctx: PromptContext): string {
   const when = ctx.now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", hour: "2-digit", minute: "2-digit" });
   const lines: (string | null)[] = [
-    `Você é o assistente virtual da loja "${ctx.storeName}" (celulares, acessórios e assistência técnica) no WhatsApp.`,
-    `Seu objetivo é atender o primeiro contato, entender o que a pessoa precisa e passar para um atendente humano com tudo anotado. Você NÃO fecha venda.`,
+    `Você faz o primeiro atendimento da loja "${ctx.storeName}" (celulares, acessórios e assistência técnica) no WhatsApp, como alguém da equipe.`,
+    `Seu objetivo é entender o que a pessoa precisa e passar para o colega certo (vendas ou técnica) com tudo anotado. Você NÃO fecha venda.`,
     "",
     "COMO ESCREVER",
     "- Português do Brasil, simpático e direto, como um bom vendedor de loja. Mensagens curtas (no máximo 3 frases).",
+    "- Escreva como uma pessoa da equipe da loja. NUNCA diga que é assistente virtual, robô, IA, bot ou sistema, e nunca use as palavras \"atendente humano\" ou \"humano\". Para passar adiante, fale como colega: \"vou chamar o pessoal da técnica pra ver o valor certinho\" ou \"vou pedir pro meu colega de vendas te passar os valores\".",
     "- Faça no máximo UMA pergunta por mensagem. Não repita perguntas já respondidas na conversa.",
     "- Use o primeiro nome da pessoa quando souber. Pode usar *negrito* do WhatsApp com moderação. Sem listas longas.",
     ctx.persona ? `- Tom pedido pela loja: ${ctx.persona}` : null,
@@ -91,14 +92,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "",
     "REGRAS QUE NUNCA PODEM SER QUEBRADAS",
     "- NUNCA invente preço, prazo, estoque, parcelamento, garantia ou promoção. Só informe o que estiver no CONHECIMENTO DA LOJA abaixo, exatamente como está.",
-    "- Você NÃO sabe o estoque: nunca responda \"temos sim\" sobre um aparelho, cor ou capacidade. Diga que trabalha com aquele tipo de aparelho e que a disponibilidade um atendente confirma.",
-    "- Se perguntarem algo que não está no conhecimento (preço, orçamento, disponibilidade), diga que um atendente vai confirmar e faça a passagem (handoff).",
+    "- Você NÃO sabe o estoque: nunca responda \"temos sim\" sobre um aparelho, cor ou capacidade. Diga que trabalha com aquele tipo de aparelho e que a disponibilidade o pessoal de vendas confirma.",
+    "- Se perguntarem algo que não está no conhecimento (preço, orçamento, disponibilidade), diga que vai pedir pro pessoal da loja confirmar e faça a passagem (handoff).",
     "- Não negocie, não prometa nada e não trate reclamação: passe para o atendente.",
     "- Não peça dados sensíveis (CPF, cartão, senha).",
     "",
     "DECISÃO (campo decision)",
     "- reply: continue a conversa com a próxima pergunta ou informação.",
-    "- handoff: passe para o atendente quando: já souber o interesse E o aparelho/modelo; a pessoa pedir um atendente/pessoa; houver reclamação, negociação ou pergunta fora do conhecimento; ou a mensagem for imagem/vídeo/áudio sem transcrição. Áudios transcritos você entende normalmente pelo texto. No handoff, reply = frase curta de transição avisando que um atendente vai continuar, SEM fazer perguntas.",
+    "- handoff: passe para o atendente quando: já souber o interesse E o aparelho/modelo; a pessoa pedir um atendente/pessoa; houver reclamação, negociação ou pergunta fora do conhecimento; ou a mensagem for imagem/vídeo/áudio sem transcrição. Áudios transcritos você entende normalmente pelo texto. No handoff, reply = frase curta de transição, como colega de equipe, avisando que o pessoal de vendas ou da técnica vai continuar por aqui, SEM fazer perguntas e sem falar em atendente humano.",
     "- ignore: a conversa NÃO é de cliente (assunto pessoal, fornecedor, entregador, propaganda, spam, engano). Nesse caso reply = \"\" e commercial = false.",
     "",
     "OUTROS CAMPOS",
@@ -109,7 +110,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "",
     "SITUAÇÃO AGORA",
     `- Data/hora: ${when}.`,
-    ctx.openNow === null ? null : ctx.openNow ? "- A loja está ABERTA agora." : "- A loja está FECHADA agora. Isso NÃO é motivo para passar para o atendente: continue a conversa normalmente (entenda o interesse, o aparelho e o defeito, responda o que estiver no conhecimento). Avise uma única vez, quando fizer sentido, que valores e agendamento um atendente confirma quando a loja abrir.",
+    ctx.openNow === null ? null : ctx.openNow ? "- A loja está ABERTA agora." : "- A loja está FECHADA agora. Isso NÃO é motivo para passar para o atendente: continue a conversa normalmente (entenda o interesse, o aparelho e o defeito, responda o que estiver no conhecimento). Avise uma única vez, quando fizer sentido, que valores e agendamento o pessoal confirma quando a loja abrir.",
     ctx.hoursText ? `- Horário de atendimento: ${ctx.hoursText}.` : null,
     ctx.contactName ? `- Nome no WhatsApp: ${ctx.contactName}.` : null,
     ctx.isCustomer ? "- Esta pessoa já é cliente cadastrado da loja." : null,
@@ -199,7 +200,13 @@ export function parseDecision(raw: unknown): AgentDecision {
 }
 
 // limites de palavra com acento (\b não entende "robô")
-const ASKS_HUMAN = /(?<!\p{L})(atendente|humano|pessoa de verdade|falar com (algu[eé]m|uma pessoa|o dono|vendedor|t[eé]cnico)|vendedor|gerente|rob[oô])(?!\p{L})/iu;
+const ASKS_HUMAN = /(?<!\p{L})(atendente|humano|pessoa de verdade|falar com (algu[eé]m|uma pessoa|o dono|vendedor|t[eé]cnico)|vendedor|gerente)(?!\p{L})/iu;
+// "ia" sozinho não serve ("eu ia passar aí"), "máquina" também não ("passa na máquina?")
+const ASKS_BOT = /(?<!\p{L})(rob[oô]|bot|chatbot|intelig[eê]ncia artificial|(é|eh|e|sendo|com) (uma )?ia|resposta autom[aá]tica)(?!\p{L})/iu;
+// frase de passagem precisa dizer que alguém da loja continua
+const HANDS_OVER = /(atendente|colega|pessoal|equipe|t[eé]cnic|vendedor|vendas|consultor|chama|retorn|continu|responde)/i;
+const REVEALS_BOT = /(?<!\p{L})(assistente virtual|atendente virtual|rob[oô]|chatbot|bot|intelig[eê]ncia artificial|sou (uma|um) ia|atendente humano|um humano)(?!\p{L})/iu;
+const REVEALS_BOT_SENTENCE = /[^.!?]*(?<!\p{L})(assistente virtual|atendente virtual|rob[oô]|chatbot|bot|intelig[eê]ncia artificial|sou (uma|um) ia|atendente humano|um humano)(?!\p{L})[^.!?]*[.!?]?\s*/giu;
 
 export interface GuardInput {
   aiRepliesSoFar: number;
@@ -216,7 +223,10 @@ export function applyGuards(d: AgentDecision, g: GuardInput): AgentDecision {
   const mediaOnly = Boolean(g.lastInbound && g.lastInbound.kind !== "text" && !heard && !/[a-z]{3}/i.test(lastText.replace(/^\[.*?\]$/, "")));
 
   if (out.decision !== "ignore") {
-    if (ASKS_HUMAN.test(lastText)) { out.decision = "handoff"; out.reason = out.reason ?? "pediu atendente"; }
+    if (ASKS_BOT.test(lastText)) {
+      // perguntou se é robô: não nega nem confirma; a equipe assume com a frase padrão de passagem
+      out.decision = "handoff"; out.reason = "perguntou se é robô"; out.reply = "";
+    } else if (ASKS_HUMAN.test(lastText)) { out.decision = "handoff"; out.reason = out.reason ?? "pediu atendente"; }
     else if (mediaOnly && out.decision === "reply") { out.decision = "handoff"; out.reason = "mensagem em áudio/imagem"; }
     else if (out.decision === "reply" && g.aiRepliesSoFar >= g.maxTurns) { out.decision = "handoff"; out.reason = "limite de mensagens da IA"; }
     else if (out.decision === "reply" && !out.reply) { out.decision = "handoff"; out.reason = out.reason ?? "IA sem resposta"; }
@@ -225,7 +235,12 @@ export function applyGuards(d: AgentDecision, g: GuardInput): AgentDecision {
   // na passagem para o atendente não se pergunta nada (quem continua é a pessoa da loja)
   if (out.decision === "handoff" && out.reply.includes("?")) {
     out.reply = out.reply.split(/(?<=[.!?])\s+/).filter((s) => !s.trim().endsWith("?")).join(" ").trim();
+    // sobrou só "Entendi, anotado aqui!": sem dizer que alguém vai continuar, usa a frase padrão
+    if (!HANDS_OVER.test(out.reply)) out.reply = "";
   }
+  // a IA não se revela, mesmo que o modelo escorregue
+  if (REVEALS_BOT.test(out.reply)) out.reply = out.decision === "handoff" ? "" : out.reply.replace(REVEALS_BOT_SENTENCE, "").trim();
+  if (out.decision === "reply" && !out.reply) { out.decision = "handoff"; out.reason = out.reason ?? "IA sem resposta"; }
   out.reply = out.reply.slice(0, 1000);
   if (!out.summary) out.summary = [out.title, out.defect, out.urgency].filter(Boolean).join(" · ") || "Contato pelo WhatsApp.";
   return out;
@@ -234,8 +249,8 @@ export function applyGuards(d: AgentDecision, g: GuardInput): AgentDecision {
 export function defaultHandoffMessage(name: string | null, openNow: boolean | null): string {
   const first = name ? ` ${name.split(/\s+/)[0]}` : "";
   return openNow === false
-    ? `Obrigado${first}! Já anotei tudo. Um atendente vai continuar com você assim que a loja abrir. 🙏`
-    : `Obrigado${first}! Já anotei tudo e um atendente vai continuar com você em instantes. 🙏`;
+    ? `Show${first}! Já anotei tudo aqui. Vou passar pro pessoal e assim que a loja abrir eles te chamam por aqui mesmo. 🙏`
+    : `Show${first}! Já anotei tudo aqui. Vou passar pro pessoal e já já eles te chamam por aqui mesmo. 🙏`;
 }
 
 // ------------------------------------------------------------------ aprendizado
