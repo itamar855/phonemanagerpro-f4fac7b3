@@ -18,6 +18,7 @@ const IMPORT = read("20261114200100_crm_import_legacy_leads.sql");
 const INBOX = read("20261115000000_crm_inbox.sql");
 const PIPELINE = read("20261115030000_crm_pipeline.sql");
 const TASKS = read("20261116000000_crm_tasks_automations.sql");
+const REPORTS = read("20261116010000_crm_reports.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -68,10 +69,12 @@ beforeAll(async () => {
     create table public.customers (id uuid primary key default gen_random_uuid(), name text, phone text, store_id uuid, created_at timestamptz default now());
     create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid, order_number serial, customer_id uuid,
       customer_name text, customer_phone text, device_brand text, device_model text, status text default 'open', completed_at timestamptz,
-      delivered_at timestamptz, warranty_end_date timestamptz, updated_at timestamptz default now());
+      delivered_at timestamptz, warranty_end_date timestamptz, updated_at timestamptz default now(), created_at timestamptz default now(),
+      final_price numeric, estimated_price numeric);
     create table public.products (id uuid primary key default gen_random_uuid(), store_id uuid, name text, brand text, model text);
     create table public.sales (id uuid primary key default gen_random_uuid(), store_id uuid, product_id uuid, customer_id uuid,
-      customer_name text, customer_phone text, warranty_days integer, seller_id uuid, created_by uuid, created_at timestamptz default now());
+      customer_name text, customer_phone text, warranty_days integer, seller_id uuid, created_by uuid, created_at timestamptz default now(),
+      sale_price numeric);
     create table public.leads (id uuid primary key default gen_random_uuid(), name text, phone text, email text, source text, status text,
       notes text, store_id uuid, created_at timestamptz default now(), instagram_user_id text, instagram_username text, avatar_url text);
     create table public.lead_messages (id uuid primary key default gen_random_uuid(), lead_id uuid, content text, sender text,
@@ -105,6 +108,7 @@ beforeAll(async () => {
   await db.exec(INBOX);
   await db.exec(PIPELINE);
   await db.exec(TASKS);
+  await db.exec(REPORTS);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -421,5 +425,46 @@ describe("CRM — tarefas e automações", () => {
     expect(c.overdue).toBeGreaterThanOrEqual(1);
     const b = await asUser(U2, () => val<any>(`select crm_task_counts(null)`));
     expect(b.open).toBe(0);
+  });
+});
+
+describe("CRM — relatórios e vínculo com Vendas/OS", () => {
+  const period = `now() - interval '7 days', now() + interval '1 minute'`;
+
+  it("resume o funil, ganhos, origem e tempo de resposta da loja", async () => {
+    const r = await asUser(U1, () => val<any>(`select crm_report($1, ${period})`, [A]));
+    expect(r.totals).toMatchObject({ deals_created: 2, won: 2, lost: 0 });
+    expect(Number(r.totals.won_value)).toBe(5200);
+    expect(r.funnel.map((f: any) => f.name)).toEqual(["Em atendimento", "Orçamento / negociação", "Ganho"]);
+    expect(r.funnel.map((f: any) => f.deals)).toEqual([2, 2, 2]);
+    expect(r.by_origin.find((o: any) => o.origin === "instagram")).toMatchObject({ created: 1, won: 1 });
+    expect(r.totals.conversations).toBeGreaterThan(0);
+    expect(r.totals.answered).toBeGreaterThanOrEqual(1);
+    expect(r.series).toHaveLength(8);
+  });
+
+  it("perdas entram com o motivo; outra loja não vê nada", async () => {
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+    const contact = await val<string>(`select id from crm_contacts where phone = '5511900000003'`);
+    await db.query(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, lost_reason) values ($1, $2, $3, $4, 'Capinha', 'Achou mais barato')`,
+      [A, pipe, await stage(A, "sales", "lost"), contact]);
+    const r = await asUser(U1, () => val<any>(`select crm_report($1, ${period})`, [A]));
+    expect(r.lost_reasons).toEqual([{ reason: "Achou mais barato", count: 1 }]);
+    const b = await asUser(U2, () => val<any>(`select crm_report(null, ${period})`));
+    expect(b.totals.deals_created).toBe(0);
+    expect(b.totals.conversations).toBe(0);
+  });
+
+  it("sugere a venda e a OS do mesmo cliente para vincular ao negócio", async () => {
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+    const maria = await val<string>(`select id from crm_contacts where store_id = $1 and phone = '5587999112233'`, [A]);
+    const deal = await val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title) values ($1, $2, $3, $4, 'Tela A54') returning id`,
+      [A, pipe, await stage(A, "sales", "proposal"), maria]);
+    const rows = await asUser(U1, () => db.query<any>(`select * from crm_deal_link_candidates($1)`, [deal]));
+    expect(rows.rows.map((r) => r.kind).sort()).toEqual(["sale", "service_order"]);
+    expect(rows.rows.find((r) => r.kind === "service_order").label).toMatch(/^OS #\d+ · Samsung A54$/);
+    await asUser(U2, async () => {
+      expect(await errorOf(`select * from crm_deal_link_candidates($1)`, [deal])).toMatch(/Sem acesso/);
+    });
   });
 });
