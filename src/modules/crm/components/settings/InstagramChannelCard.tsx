@@ -215,8 +215,9 @@ export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
 
           <Step n={3} title="Conectar a conta da loja">
             <p className="text-xs text-muted-foreground">
-              Abre uma janelinha do Instagram: entre com a conta da loja e autorize. Se o Instagram da loja estiver logado em outro
-              navegador ou no celular, copie o link e abra lá.
+              Abre uma janelinha do Instagram para autorizar. Dica: entre antes em instagram.com com a <strong>conta da loja</strong> neste
+              navegador (sem VPN) — aí a janelinha só pede "Autorizar". Se o Instagram da loja estiver logado em outro navegador ou no
+              celular, copie o link e abra lá.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" disabled={!appReady || busy !== null} onClick={openPopup}>

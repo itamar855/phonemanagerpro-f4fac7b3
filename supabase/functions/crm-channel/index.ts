@@ -60,7 +60,8 @@ async function handleInstagram(action: Action, admin: any, userId: string, store
 
     const url = new URL("https://www.instagram.com/oauth/authorize");
     url.searchParams.set("enable_fb_login", "0");
-    url.searchParams.set("force_authentication", "1");
+    // Sem force_authentication: se o Instagram da loja já estiver logado no navegador,
+    // vai direto para "Autorizar" (forçar login novo dispara o captcha da Meta com frequência).
     url.searchParams.set("client_id", sec.secrets.app_id);
     url.searchParams.set("redirect_uri", oauthRedirect);
     url.searchParams.set("response_type", "code");
