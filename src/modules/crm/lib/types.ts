@@ -170,6 +170,8 @@ export interface CrmAutomationSettings {
   os_ready: boolean;
   review_after_days: number | null;
   warranty_alert_days: number | null;
+  ig_first_message: string;
+  ig_followup_hours: number;
 }
 
 export interface CrmActivity {

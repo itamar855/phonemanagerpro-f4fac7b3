@@ -12,6 +12,9 @@ import { shortTime } from "../../lib/format";
 import type { CrmConversationWithContact } from "../../lib/types";
 import { EmptyState } from "../shared/EmptyState";
 import { ContactAvatar } from "../shared/ContactAvatar";
+import { ChannelIcon } from "../shared/ChannelIcon";
+import { Button } from "@/components/ui/button";
+import { IgLeadDialog } from "./IgLeadDialog";
 
 const FILTERS: { value: InboxFilter; label: string }[] = [
   { value: "open", label: "Abertas" },
@@ -43,6 +46,7 @@ function useDebounced<T>(value: T, ms = 300) {
 
 export function ConversationList({ storeId, userId, selectedId, onSelect, channel, onChannelChange, filter, onFilterChange }: Props) {
   const [searchInput, setSearchInput] = useState("");
+  const [igOpen, setIgOpen] = useState(false);
   const search = useDebounced(searchInput);
   const query: ConversationQuery = useMemo(() => ({ storeId, channel, filter, search, userId }), [storeId, channel, filter, search, userId]);
   const { data, isLoading, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useConversations(query);
@@ -72,6 +76,11 @@ export function ConversationList({ storeId, userId, selectedId, onSelect, channe
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="space-y-2 border-b border-border/50 p-3">
+        <Button variant="outline" size="sm" className="h-10 w-full justify-center gap-2 border-pink-500/30 hover:bg-pink-500/10" onClick={() => setIgOpen(true)}>
+          <ChannelIcon channel="instagram" className="h-4 w-4" /> Lead do Instagram
+          <span className="text-xs font-normal text-muted-foreground">· pegou o número na DM</span>
+        </Button>
+        <IgLeadDialog open={igOpen} onOpenChange={setIgOpen} />
         <div role="tablist" aria-label="Canal" className="grid grid-cols-3 gap-1 rounded-lg bg-muted/50 p-1">
           {tabs.map((t) => (
             <button
