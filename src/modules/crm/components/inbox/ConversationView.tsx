@@ -221,7 +221,7 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
         })}
       </div>
 
-      <Composer disabledReason={disabledReason} quickReplies={quickReplies} onSend={handleSend} />
+      <Composer channel={conv.channel} disabledReason={disabledReason} quickReplies={quickReplies} onSend={handleSend} />
     </div>
   );
 }

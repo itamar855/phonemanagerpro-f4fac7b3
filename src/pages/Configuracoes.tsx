@@ -9,11 +9,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Webhook, Trash2, Plus, Send, ExternalLink, Info, MessageSquare, ShieldCheck, Globe, Camera, Brain, Activity, AlertCircle, CheckCircle2, Clock, QrCode } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { format } from "date-fns";
-import { WhatsAppConnectModal } from "@/components/features/crm/WhatsAppConnectModal";
 
 const eventLabels: Record<string, string> = {
   os_status_changed: "Mudança de Status na OS (WhatsApp / N8N)",
@@ -350,100 +350,20 @@ export default function Configuracoes() {
           </Card>
 
           <Card className="border-border/50 shadow-sm overflow-hidden">
-            <div className="h-1 bg-gradient-to-r from-emerald-500 to-green-600" />
-            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3">
-              <CardTitle className="font-display text-lg flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-emerald-500" />
-                Configuração WhatsApp Profissional
-              </CardTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setWhatsappModalOpen(true)}
-                className="h-8 text-xs gap-1.5 border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
-              >
-                <QrCode className="h-3.5 w-3.5" />
-                Conectar via QR Code & Testar
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSaveWhatsappConfig} className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold flex items-center gap-1">
-                      <Globe className="h-3 w-3" /> URL da API
-                    </Label>
-                    <Input value={whatsappConfig.api_url} onChange={e => setWhatsappConfig({ ...whatsappConfig, api_url: e.target.value })} placeholder="https://sua-api.com" className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold flex items-center gap-1">
-                      <ShieldCheck className="h-3 w-3" /> API Key
-                    </Label>
-                    <Input type="password" value={whatsappConfig.api_key} onChange={e => setWhatsappConfig({ ...whatsappConfig, api_key: e.target.value })} placeholder="Seu Token" className="h-10 text-sm" />
-                  </div>
-                </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Nome da Instância</Label>
-                    <Input value={whatsappConfig.instance_name} onChange={e => setWhatsappConfig({ ...whatsappConfig, instance_name: e.target.value })} placeholder="ex: LeadManager" className="h-10 text-sm" />
-                  </div>
-                  <div className="flex items-center gap-3 pt-6">
-                    <Switch checked={whatsappConfig.is_active} onCheckedChange={v => setWhatsappConfig({ ...whatsappConfig, is_active: v })} />
-                    <Label className="text-sm font-medium">Integração Ativa</Label>
-                  </div>
-                </div>
-                <Button type="submit" className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold" disabled={loading}>
-                  Salvar WhatsApp
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <WhatsAppConnectModal
-            open={whatsappModalOpen}
-            onOpenChange={(open) => {
-              setWhatsappModalOpen(open);
-              if (!open) fetchData();
-            }}
-            storeId={activeStoreId}
-          />
-
-          <Card className="border-border/50 shadow-sm overflow-hidden">
-            <div className="h-1 bg-gradient-to-r from-pink-500 to-purple-600" />
+            <div className="h-1 bg-gradient-to-r from-emerald-500 via-primary to-pink-500" />
             <CardHeader>
               <CardTitle className="font-display text-lg flex items-center gap-2">
-                <Camera className="h-5 w-5 text-pink-500" /> Captura de Leads Instagram
+                <MessageSquare className="h-5 w-5 text-primary" /> WhatsApp e Instagram
               </CardTitle>
+              <CardDescription>
+                A conexão dos canais agora fica no CRM: status real, QR Code, webhook com segredo e conexão do Instagram.
+                As chaves ficam só no servidor.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSaveInstagramConfig} className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Page ID (Facebook)</Label>
-                    <Input value={instagramConfig.page_id} onChange={e => setInstagramConfig({ ...instagramConfig, page_id: e.target.value })} className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Instagram Business ID</Label>
-                    <Input value={instagramConfig.instagram_business_account_id} onChange={e => setInstagramConfig({ ...instagramConfig, instagram_business_account_id: e.target.value })} className="h-10 text-sm" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Page Access Token</Label>
-                    <Input type="password" value={instagramConfig.page_access_token} onChange={e => setInstagramConfig({ ...instagramConfig, page_access_token: e.target.value })} className="h-10 text-sm" />
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg border bg-primary/5 border-primary/20">
-                    <div className="space-y-0.5">
-                      <Label className="text-sm font-bold flex items-center gap-2">
-                        <Brain className="h-4 w-4 text-primary" /> Atendimento IA
-                      </Label>
-                    </div>
-                    <Switch checked={instagramConfig.ai_active} onCheckedChange={val => setInstagramConfig({ ...instagramConfig, ai_active: val })} />
-                  </div>
-                  <Button type="submit" className="w-full h-11 bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold" disabled={loading}>
-                    Salvar Instagram
-                  </Button>
-                </div>
-              </form>
+              <Button asChild className="w-full h-11 font-bold">
+                <Link to="/crm/config">Abrir CRM → Configurações → Canais</Link>
+              </Button>
             </CardContent>
           </Card>
           

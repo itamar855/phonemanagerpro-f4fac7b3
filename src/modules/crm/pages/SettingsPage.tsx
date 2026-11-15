@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { createQuickReply, deleteQuickReply } from "../api/inbox";
 import { WhatsAppChannelCard } from "../components/settings/WhatsAppChannelCard";
-import { ChannelIcon } from "../components/shared/ChannelIcon";
+import { InstagramChannelCard } from "../components/settings/InstagramChannelCard";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext, useQuickReplies } from "../hooks/useInbox";
 
@@ -25,20 +25,7 @@ export default function SettingsPage() {
           </TabsList>
           <TabsContent value="canais" className="space-y-4 pt-2">
             <WhatsAppChannelCard storeId={storeId} />
-            <div className="space-y-2 rounded-xl border border-border/60 bg-card p-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-pink-500/10 p-2"><ChannelIcon channel="instagram" className="h-5 w-5" /></div>
-                <div>
-                  <h3 className="font-semibold">Instagram Direct</h3>
-                  <p className="text-sm text-muted-foreground">Ainda não conectado.</p>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Para ligar, a conta do Instagram precisa ser Profissional e estar vinculada a uma Página do Facebook, com um app Meta
-                autorizado a enviar mensagens. Assim que o acesso existir, as DMs entram na aba Instagram e o funil começa em
-                "Novo no Instagram".
-              </p>
-            </div>
+            <InstagramChannelCard storeId={storeId} />
           </TabsContent>
           <TabsContent value="respostas" className="pt-2">
             <QuickRepliesSettings />
