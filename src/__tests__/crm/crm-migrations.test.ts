@@ -22,6 +22,7 @@ const REPORTS = read("20261116010000_crm_reports.sql");
 const AVATARS = read("20261116020000_crm_contact_avatars.sql");
 const AI = read("20261116030000_crm_ai_agent.sql");
 const TRANSCRIPT = read("20261116040000_crm_audio_transcript.sql");
+const LEARNING = read("20261116050000_crm_ai_learning.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -115,6 +116,7 @@ beforeAll(async () => {
   await db.exec(AVATARS);
   await db.exec(AI);
   await db.exec(TRANSCRIPT);
+  await db.exec(LEARNING);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -537,5 +539,43 @@ describe("CRM — agente de IA", () => {
       await db.query(`select crm_set_conversation_handler($1, 'human')`, [conv]);
     });
     expect(await val(`select handler from crm_conversations where id = $1`, [conv])).toBe("human");
+  });
+});
+
+describe("CRM — o agente aprende", () => {
+  const add = (q: string, a: string, status = "approved", kind = "qa") =>
+    val<string | null>(`select crm_ai_add_example($1, $2, null, $3, $4, 'history', $5)`, [A, kind, q, a, status]);
+
+  it("biblioteca não guarda repetido e marca resposta com preço", async () => {
+    expect(await add("vocês trocam tela de iphone 11?", "Trocamos sim! Fica pronto no mesmo dia.")).not.toBeNull();
+    expect(await add("voces trocam tela do iphone 11", "Trocamos sim, fica pronto no mesmo dia.")).toBeNull();
+    const id = await add("quanto custa a película 3D?", "A película 3D sai por R$ 30.");
+    expect(await val(`select has_price from crm_ai_examples where id = $1`, [id])).toBe(true);
+    expect(await add("", "Garantia de 90 dias nos consertos.", "pending", "fact")).not.toBeNull();
+    expect(await add("", "Garantia de 90 dias em todos os consertos.", "pending", "fact")).toBeNull();
+  });
+
+  it("acha exemplos aprovados parecidos com a mensagem (pendentes ficam de fora)", async () => {
+    await add("tem capinha pro A54?", "Temos várias! Quer ver fotos?", "pending");
+    const rows = (await db.query<{ question: string }>(`select question from crm_ai_similar_examples($1, 'oi, troca tela de iphone 11 ai?')`, [A])).rows;
+    expect(rows[0]?.question).toBe("vocês trocam tela de iphone 11?");
+    const capa = (await db.query(`select * from crm_ai_similar_examples($1, 'tem capinha pro A54?')`, [A])).rows;
+    expect(capa).toHaveLength(0);
+  });
+
+  it("vendedor só lê a biblioteca; gerência aprova", async () => {
+    const pend = await val<string>(`select id from crm_ai_examples where question = 'tem capinha pro A54?'`);
+    await asUser(U1, async () => {
+      expect(await val<number>(`select count(*)::int from crm_ai_examples`)).toBeGreaterThan(0);
+      await db.query(`update crm_ai_examples set status = 'approved' where id = $1`, [pend]);
+    });
+    expect(await val(`select status from crm_ai_examples where id = $1`, [pend])).toBe("pending");
+    await asUser(ADM, async () => {
+      await db.query(`update crm_ai_examples set status = 'approved' where id = $1`, [pend]);
+    });
+    expect(await val(`select status from crm_ai_examples where id = $1`, [pend])).toBe("approved");
+    const s = await asUser(U1, () => val<any>(`select crm_ai_stats($1, 30)`, [A]));
+    expect(s.library).toBeGreaterThanOrEqual(3);
+    expect(await asUser(U2, () => val<any>(`select crm_ai_stats(null, 30)`)).then((x: any) => x.library)).toBe(0);
   });
 });

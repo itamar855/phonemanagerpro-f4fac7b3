@@ -38,14 +38,14 @@ serve(async (req) => {
 
     if (mediaPath && !mediaPath.startsWith(`${conv.store_id}/`)) throw new HttpError(403, "Arquivo de outra loja.");
 
-    let suggestion: { id: string } | null = null;
+    let suggestion: { id: string; body: string } | null = null;
     if (body.ai_suggestion_id) {
-      const { data: sg } = await admin.from("crm_ai_suggestions").select("id, status, conversation_id")
+      const { data: sg } = await admin.from("crm_ai_suggestions").select("id, status, conversation_id, body")
         .eq("id", String(body.ai_suggestion_id)).maybeSingle();
       if (!sg || sg.conversation_id !== conv.id) throw new HttpError(404, "Sugestão não encontrada.");
       if (sg.status !== "pending") throw new HttpError(409, "Esta sugestão já foi usada ou descartada.");
       if (kind !== "text") throw new HttpError(400, "Sugestão da IA é só texto.");
-      suggestion = { id: sg.id };
+      suggestion = { id: sg.id, body: sg.body };
     }
 
     let externalId: string | null = null;
@@ -86,7 +86,28 @@ serve(async (req) => {
 
     // Sugestão da IA aprovada por uma pessoa: registra como IA (a conversa continua com ela)
     if (suggestion) {
-      await admin.from("crm_ai_suggestions").update({ status: "sent", decided_by: user.id, decided_at: new Date().toISOString() }).eq("id", suggestion.id);
+      const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+      const edited = norm(text) !== norm(suggestion.body);
+      await admin.from("crm_ai_suggestions").update({
+        status: "sent", decided_by: user.id, decided_at: new Date().toISOString(), final_body: text, edited,
+      }).eq("id", suggestion.id);
+      // A equipe corrigiu a IA: a versão corrigida vira exemplo aprovado na biblioteca
+      if (edited) {
+        try {
+          const { data: lastIn } = await admin.from("crm_messages").select("kind, body, transcript")
+            .eq("conversation_id", conv.id).eq("direction", "in").order("created_at", { ascending: false }).limit(3);
+          const question = (lastIn ?? []).reverse()
+            .map((m: any) => (m.kind === "audio" ? m.transcript : m.body) ?? "").filter((t: string) => t && !/^\[.*\]$/.test(t)).join(" ").slice(0, 500);
+          if (question) {
+            await admin.rpc("crm_ai_add_example", {
+              p_store_id: conv.store_id, p_kind: "qa", p_topic: null, p_question: question, p_answer: text,
+              p_source: "correction", p_status: "approved", p_ref: conv.id,
+            });
+          }
+        } catch (e) {
+          console.error("[crm-send] aprendizado:", (e as Error).message);
+        }
+      }
     }
 
     const { data: saved, error: saveError } = await admin.rpc("crm_ingest_message", {

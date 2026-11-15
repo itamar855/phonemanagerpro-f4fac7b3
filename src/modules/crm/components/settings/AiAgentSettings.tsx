@@ -16,6 +16,7 @@ import { INTEREST_LABEL } from "../../lib/constants";
 import { relative } from "../../lib/format";
 import type { CrmAiDecision, CrmAiSettings, CrmBusinessHours } from "../../lib/types";
 import { EmptyState } from "../shared/EmptyState";
+import { AiLearning } from "./AiLearning";
 
 type Form = Omit<CrmAiSettings, "store_id" | "enabled_channels">;
 const DEFAULTS: Form = {
@@ -196,6 +197,15 @@ export function AiAgentSettings() {
       )}
 
       {canEdit && <AiSimulator storeId={storeId} form={form} />}
+      <AiLearning
+        storeId={storeId}
+        userId={userId}
+        canEdit={canEdit}
+        onUseDraft={(text) => {
+          set({ knowledge: form.knowledge?.trim() ? `${form.knowledge.trim()}\n\n${text}` : text });
+          document.getElementById("ai-knowledge")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }}
+      />
       <AiRunsList storeId={storeId} />
     </div>
   );

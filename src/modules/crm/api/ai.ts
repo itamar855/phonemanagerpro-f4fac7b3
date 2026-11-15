@@ -52,6 +52,88 @@ export async function setConversationHandler(conversationId: string, handler: "a
   throwIf(error);
 }
 
+// ------------------------------------------------------------ aprendizado
+
+export interface AiExample {
+  id: string;
+  store_id: string;
+  kind: "qa" | "fact";
+  topic: string | null;
+  question: string | null;
+  answer: string;
+  source: "history" | "correction" | "manual";
+  status: "pending" | "approved" | "rejected";
+  has_price: boolean;
+  created_at: string;
+}
+
+export interface AiLearningJob {
+  id: string;
+  store_id: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  months: number;
+  cursor: number;
+  total: number;
+  processed: number;
+  skipped: number;
+  examples: number;
+  facts: number;
+  knowledge_draft: string | null;
+  error: string | null;
+  heartbeat_at: string;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface AiStats {
+  sent_as_is: number; sent_edited: number; discarded: number; pending: number;
+  handoffs: number; handoff_won: number; library: number; to_review: number;
+}
+
+export async function aiStats(storeId: string): Promise<AiStats> {
+  const { data, error } = await crmDb.rpc("crm_ai_stats", { p_store_id: storeId, p_days: 30 });
+  throwIf(error);
+  return data as AiStats;
+}
+
+export async function listExamples(storeId: string, status: AiExample["status"]): Promise<AiExample[]> {
+  const { data, error } = await crmDb.from("crm_ai_examples").select("*").eq("store_id", storeId).eq("kind", "qa").eq("status", status)
+    .order("created_at", { ascending: false }).limit(200);
+  throwIf(error);
+  return (data ?? []) as AiExample[];
+}
+
+export async function updateExample(id: string, userId: string, patch: Partial<Pick<AiExample, "status" | "answer" | "question">>) {
+  const { error } = await crmDb.from("crm_ai_examples").update({ ...patch, decided_by: userId, decided_at: new Date().toISOString() }).eq("id", id);
+  throwIf(error);
+}
+
+export async function approveExamples(ids: string[], userId: string) {
+  if (!ids.length) return;
+  const { error } = await crmDb.from("crm_ai_examples").update({ status: "approved", decided_by: userId, decided_at: new Date().toISOString() }).in("id", ids);
+  throwIf(error);
+}
+
+export async function createExample(storeId: string, userId: string, question: string, answer: string) {
+  const { error } = await crmDb.from("crm_ai_examples").insert({
+    store_id: storeId, kind: "qa", question, answer, source: "manual", status: "approved", decided_by: userId, decided_at: new Date().toISOString(),
+  });
+  throwIf(error);
+}
+
+export async function latestLearningJob(storeId: string): Promise<AiLearningJob | null> {
+  const { data, error } = await crmDb.from("crm_ai_learning_jobs")
+    .select("id, store_id, status, months, cursor, total, processed, skipped, examples, facts, knowledge_draft, error, heartbeat_at, created_at, finished_at")
+    .eq("store_id", storeId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  throwIf(error);
+  return (data ?? null) as AiLearningJob | null;
+}
+
+export const startLearning = (storeId: string, months: number) =>
+  invokeFn<{ job_id: string; total: number }>("crm-ai-learn", { action: "start", store_id: storeId, months });
+export const resumeLearning = (jobId: string) => invokeFn("crm-ai-learn", { action: "resume", job_id: jobId });
+export const cancelLearning = (jobId: string) => invokeFn("crm-ai-learn", { action: "cancel", job_id: jobId });
+
 export async function listAiRuns(storeId: string | null, limit = 40): Promise<CrmAiRun[]> {
   let q = crmDb.from("crm_ai_runs").select("*, conversation:crm_conversations(id, contact:crm_contacts(name))")
     .order("created_at", { ascending: false }).limit(limit);

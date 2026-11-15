@@ -5,7 +5,7 @@
 // O atendimento automático (mensagem chegando) roda dentro do whatsapp-webhook.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, corsHeaders, errorResponse, HttpError, json, requireManager, requireMember, requireUser } from "../_shared/http.ts";
-import { decide, runAgent, type AiSettings } from "../_shared/ai-agent.ts";
+import { decide, runAgent, similarExamples, type AiSettings } from "../_shared/ai-agent.ts";
 import type { TranscriptMessage } from "../_shared/ai-agent-core.ts";
 import { loadMessageAudio, transcribeMessage } from "../_shared/transcribe.ts";
 
@@ -49,11 +49,15 @@ serve(async (req) => {
       } as AiSettings;
 
       const aiReplies = messages.filter((m) => m.direction === "out").length;
+      const examples = await similarExamples(admin, storeId, messages);
       const r = await decide({
         settings, storeName: store?.name ?? "loja", contact: { name: typeof body.contact_name === "string" ? body.contact_name : null },
-        messages, serviceOrders: [], aiRepliesSoFar: aiReplies,
+        messages, serviceOrders: [], aiRepliesSoFar: aiReplies, examples,
       });
-      return json({ decision: r.decision, model: r.llm.model, latency_ms: r.llm.latencyMs, open_now: r.openNow, fallback_errors: r.llm.fallbackErrors ?? [] });
+      return json({
+        decision: r.decision, model: r.llm.model, latency_ms: r.llm.latencyMs, open_now: r.openNow, fallback_errors: r.llm.fallbackErrors ?? [],
+        examples_used: examples.map((e) => ({ question: e.question, answer: e.answer })),
+      });
     }
 
     // Diagnóstico (gerência): nomes dos modelos que as chaves configuradas aceitam. Nunca devolve chaves.

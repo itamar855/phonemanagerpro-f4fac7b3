@@ -43,6 +43,8 @@ export interface PromptContext {
   hoursText: string | null;
   serviceOrders: ServiceOrderInfo[];
   handoffMessage: string | null;
+  /** Exemplos reais aprovados, parecidos com a mensagem atual */
+  examples?: { question: string | null; answer: string; has_price?: boolean }[];
 }
 
 /** Esquema da resposta (formato do Gemini: OpenAPI 3 em maiúsculas). */
@@ -118,6 +120,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   }
 
   lines.push("", "CONHECIMENTO DA LOJA (única fonte de informações):", ctx.knowledge?.trim() || "(a loja ainda não cadastrou informações: não informe preços, endereço nem horários além do que está acima)");
+  if (ctx.examples?.length) {
+    lines.push("", "EXEMPLOS REAIS DE COMO A LOJA RESPONDE (siga o jeito de falar e as informações de serviço; NÃO repita preços dos exemplos, eles podem estar desatualizados: preço só se estiver no CONHECIMENTO):");
+    for (const e of ctx.examples.slice(0, 5)) {
+      lines.push(`- Cliente: "${(e.question ?? "").slice(0, 300)}"`, `  Loja: "${e.answer.slice(0, 500)}"`);
+    }
+  }
   if (ctx.handoffMessage) lines.push("", `Frase de transição preferida pela loja: "${ctx.handoffMessage}"`);
   lines.push("", "Responda SOMENTE com o JSON pedido.");
   return lines.filter((l): l is string => l !== null).join("\n").replace(/\n{3,}/g, "\n\n");
@@ -218,6 +226,75 @@ export function defaultHandoffMessage(name: string | null, openNow: boolean | nu
   return openNow === false
     ? `Obrigado${first}! Já anotei tudo. Um atendente vai continuar com você assim que a loja abrir. 🙏`
     : `Obrigado${first}! Já anotei tudo e um atendente vai continuar com você em instantes. 🙏`;
+}
+
+// ------------------------------------------------------------------ aprendizado
+
+/** Esconde telefone, e-mail e CPF antes de mandar texto para a IA. */
+export function maskPersonalData(text: string): string {
+  return text
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[email]")
+    .replace(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, "[cpf]")
+    .replace(/(\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/g, "[telefone]")
+    .replace(/\b\d{10,14}\b/g, "[número]"); // qualquer sequência longa que sobrar (CPF sem pontos, etc.)
+}
+
+export interface HistoryLine { fromMe: boolean; text: string; at: number }
+
+/** Conversa antiga → texto compacto para extração (só texto, mascarado, últimas linhas). */
+export function historyTranscript(lines: HistoryLine[], opts: { maxLines?: number; maxChars?: number } = {}): string | null {
+  const maxLines = opts.maxLines ?? 60;
+  const maxChars = opts.maxChars ?? 6000;
+  const clean = lines
+    .filter((l) => l.text && l.text.trim())
+    .sort((a, b) => a.at - b.at)
+    .map((l) => `${l.fromMe ? "Loja" : "Cliente"}: ${maskPersonalData(l.text.trim().replace(/\s+/g, " ")).slice(0, 400)}`);
+  const fromStore = lines.filter((l) => l.fromMe && l.text?.trim()).length;
+  const fromClient = lines.filter((l) => !l.fromMe && l.text?.trim()).length;
+  if (fromStore < 1 || fromClient < 1 || clean.length < 3) return null; // sem troca real, nada a aprender
+  let out = clean.slice(-maxLines);
+  while (out.join("\n").length > maxChars && out.length > 3) out = out.slice(1);
+  return out.join("\n");
+}
+
+export const LEARN_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    commercial: { type: "BOOLEAN" },
+    pairs: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { topic: { type: "STRING" }, question: { type: "STRING" }, answer: { type: "STRING" } },
+        required: ["question", "answer"],
+      },
+    },
+    facts: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { topic: { type: "STRING" }, fact: { type: "STRING" } }, required: ["fact"] },
+    },
+  },
+  required: ["commercial", "pairs", "facts"],
+};
+
+export function learnSystemPrompt(storeName: string): string {
+  return [
+    `Você analisa conversas antigas de WhatsApp da loja "${storeName}" (celulares, acessórios e assistência técnica) para treinar o atendente virtual.`,
+    "Extraia SOMENTE o que for útil e reaproveitável em outros atendimentos:",
+    "- pairs: perguntas típicas de cliente e a resposta que a LOJA deu (reescreva de forma genérica, sem nomes, sem dados pessoais, sem combinados específicos daquele cliente). No máximo 4 por conversa. Ignore cumprimentos soltos.",
+    "- facts: informações da loja ditas pela equipe (endereço, horário, formas de pagamento, parcelamento, garantia, prazos de conserto, serviços que faz ou não faz, entrega, preços com o produto/serviço). Uma frase curta por fato.",
+    "- commercial = false se a conversa não for com cliente (pessoal, fornecedor, entregador, spam). Nesse caso pairs e facts vazios.",
+    "Nunca invente nada que não esteja na conversa. Responda só com o JSON.",
+  ].join("\n");
+}
+
+export function knowledgeDraftPrompt(storeName: string): string {
+  return [
+    `Organize os fatos abaixo, extraídos de conversas da loja "${storeName}", num texto curto de "conhecimento da loja" para o atendente virtual.`,
+    "Agrupe por tema (Endereço, Horário, Pagamento, Garantia, Serviços, Prazos, Entrega, Preços). Quando houver fatos contraditórios, fique com o mais frequente e marque com (confirmar).",
+    "Preços: liste à parte em \"Preços citados nas conversas (confirmar antes de usar)\".",
+    "Não invente nada. Responda em texto simples, em português, sem markdown pesado.",
+  ].join("\n");
 }
 
 export interface BusinessHours { enabled?: boolean; start?: string; end?: string; days?: number[] }

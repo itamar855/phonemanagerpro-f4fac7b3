@@ -99,6 +99,16 @@ export function evolution(cfg: EvolutionConfig) {
       const d = must(await call("POST", path, body, 30000), "Enviar mídia");
       return { externalId: d?.key?.id ?? null, raw: d };
     },
+    /** Todas as conversas da instância (para o aprendizado com o histórico). */
+    async findChats(): Promise<any[]> {
+      const d = must(await call("POST", `/chat/findChats/${instance}`, {}, 30000), "Listar conversas");
+      return Array.isArray(d) ? d : [];
+    },
+    /** Mensagens de uma conversa (página de até 100). */
+    async findMessages(remoteJid: string, page = 1, limit = 100): Promise<{ records: any[]; pages: number }> {
+      const d = must(await call("POST", `/chat/findMessages/${instance}`, { where: { key: { remoteJid } }, page, limit }, 30000), "Ler mensagens");
+      return { records: d?.messages?.records ?? [], pages: Number(d?.messages?.pages ?? 1) };
+    },
     /** Link da foto de perfil (null se a pessoa não tem foto ou esconde). */
     async profilePicture(number: string): Promise<string | null> {
       const r = await call("POST", `/chat/fetchProfilePictureUrl/${instance}`, { number }, 6000);
