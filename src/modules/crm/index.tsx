@@ -23,8 +23,9 @@ function PageFallback() {
 export default function CrmModule() {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-col gap-2 border-b border-border/50 px-3 pb-2 pt-3 md:px-6 md:pt-5">
-        <div className="flex items-center gap-2">
+      <header className="flex flex-col gap-2 border-b border-border/50 px-1.5 pb-1.5 pt-1.5 sm:px-3 sm:pb-2 sm:pt-3 md:px-6 md:pt-5">
+        {/* no celular o título some: o cabeçalho do app já mostra onde a pessoa está */}
+        <div className="hidden items-center gap-2 sm:flex">
           <MessagesSquare className="h-5 w-5 text-primary" aria-hidden="true" />
           <h1 className="font-display text-lg font-bold tracking-tight md:text-xl">CRM</h1>
         </div>

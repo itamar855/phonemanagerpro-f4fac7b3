@@ -202,7 +202,7 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
                 } catch (err) { toast.error((err as Error).message); }
               }}
             >
-              <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={1} placeholder="Anotar algo sobre o negócio…" aria-label="Nova anotação" className="min-h-[40px]" />
+              <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={1} placeholder="Anotar algo sobre o negócio…" aria-label="Nova anotação" className="min-h-[40px] text-base md:text-sm" />
               <Button type="submit" size="sm" variant="outline" disabled={!note.trim()}>Anotar</Button>
             </form>
             <ol className="space-y-2">

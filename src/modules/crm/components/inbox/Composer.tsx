@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Loader2, Paperclip, Send, StickyNote, X, Zap } from "lucide-react";
+import { Loader2, Mic, Paperclip, Send, StickyNote, Trash2, X, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { CrmQuickReply } from "../../lib/types";
+import { formatDuration, useAudioRecorder } from "../../hooks/useAudioRecorder";
 
 export type ComposerMode = "reply" | "note";
 
@@ -17,7 +18,7 @@ interface Props {
   initialText?: string;
 }
 
-const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
+const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,audio/ogg,audio/mpeg,audio/mp4,audio/aac,audio/webm,.ogg,.mp3,.m4a,.opus";
 const MAX_FILE = 16 * 1024 * 1024;
 
 export function Composer({ channel, disabledReason, quickReplies, onSend, initialText }: Props) {
@@ -36,6 +37,9 @@ export function Composer({ channel, disabledReason, quickReplies, onSend, initia
 
   const blocked = mode === "reply" && Boolean(disabledReason);
   const canSend = !sending && !blocked && (text.trim().length > 0 || (mode === "reply" && file !== null));
+  const recorder = useAudioRecorder((f) => void sendAudio(f));
+  // Como no WhatsApp: campo vazio mostra o microfone no lugar do enviar
+  const showMic = channel === "whatsapp" && mode === "reply" && !blocked && !file && text.trim().length === 0;
 
   async function submit() {
     if (!canSend) return;
@@ -64,6 +68,29 @@ export function Composer({ channel, disabledReason, quickReplies, onSend, initia
     formRef.current?.requestSubmit();
   }
 
+  async function sendAudio(f: File | null) {
+    if (!f) return;
+    setSending(true);
+    try {
+      await onSend({ mode: "reply", text: "", file: f });
+    } catch (e) {
+      toast.error((e as Error).message || "Não foi possível enviar o áudio.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function startRecording() {
+    try { await recorder.start(); }
+    catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function sendRecording() {
+    const f = await recorder.stop();
+    if (!f || f.size < 1200) { toast.info("Áudio muito curto."); return; }
+    await sendAudio(f);
+  }
+
   function pickFile(f: File | undefined) {
     if (!f) return;
     if (f.size > MAX_FILE) { toast.error("Arquivo acima de 16 MB."); return; }
@@ -74,7 +101,7 @@ export function Composer({ channel, disabledReason, quickReplies, onSend, initia
     <form
       ref={formRef}
       onSubmit={(e) => { e.preventDefault(); void submit(); }}
-      className={cn("border-t border-border/50 p-2 md:p-3", mode === "note" && "bg-amber-500/5")}
+      className={cn("border-t border-border/50 p-2 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))] md:p-3", mode === "note" && "bg-amber-500/5")}
     >
       <div className="mb-2 flex items-center gap-1" role="radiogroup" aria-label="Tipo de mensagem">
         {(["reply", "note"] as const).map((m) => (
@@ -132,11 +159,26 @@ export function Composer({ channel, disabledReason, quickReplies, onSend, initia
         </div>
       )}
 
+      {recorder.state === "recording" ? (
+        <div className="flex items-center gap-2" role="group" aria-label="Gravando áudio">
+          <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0 text-destructive hover:text-destructive" onClick={recorder.cancel} aria-label="Descartar áudio">
+            <Trash2 className="h-5 w-5" />
+          </Button>
+          <div className="flex h-11 flex-1 items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 text-sm" aria-live="polite">
+            <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-destructive" aria-hidden="true" />
+            <span className="font-medium tabular-nums">{formatDuration(recorder.seconds)}</span>
+            <span className="truncate text-xs text-muted-foreground">Gravando… toque em enviar quando terminar</span>
+          </div>
+          <Button type="button" size="icon" className="h-11 w-11 shrink-0" onClick={sendRecording} aria-label="Enviar áudio">
+            <Send className="h-5 w-5" />
+          </Button>
+        </div>
+      ) : (
       <div className="flex items-end gap-2">
         {mode === "reply" && (
           <>
             <input ref={fileRef} type="file" accept={channel === "instagram" ? "image/jpeg,image/png,image/webp" : ACCEPT} className="hidden" onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ""; }} />
-            <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => fileRef.current?.click()} disabled={blocked || sending} aria-label={channel === "instagram" ? "Anexar imagem" : "Anexar imagem ou PDF"}>
+            <Button type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0" onClick={() => fileRef.current?.click()} disabled={blocked || sending} aria-label={channel === "instagram" ? "Anexar imagem" : "Anexar imagem, PDF ou áudio"}>
               <Paperclip className="h-5 w-5" />
             </Button>
           </>
@@ -149,13 +191,21 @@ export function Composer({ channel, disabledReason, quickReplies, onSend, initia
           disabled={blocked}
           placeholder={mode === "note" ? "Nota visível só para a equipe…" : file ? "Legenda (opcional)…" : "Escreva uma mensagem…"}
           aria-label={mode === "note" ? "Nota interna" : "Mensagem"}
-          className="max-h-40 min-h-[44px] flex-1 resize-none"
+          className="max-h-40 min-h-[44px] flex-1 resize-none text-base md:text-sm"
           style={{ fieldSizing: "content" } as React.CSSProperties}
+          enterKeyHint={mode === "note" ? "done" : "send"}
         />
-        <Button type="submit" size="icon" className="h-11 w-11 shrink-0" disabled={!canSend} aria-label={mode === "note" ? "Salvar nota" : "Enviar"}>
-          {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : mode === "note" ? <StickyNote className="h-5 w-5" /> : <Send className="h-5 w-5" />}
-        </Button>
+        {showMic ? (
+          <Button type="button" size="icon" className="h-11 w-11 shrink-0" onClick={startRecording} disabled={sending} aria-label="Gravar áudio">
+            {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mic className="h-5 w-5" />}
+          </Button>
+        ) : (
+          <Button type="submit" size="icon" className="h-11 w-11 shrink-0" disabled={!canSend} aria-label={mode === "note" ? "Salvar nota" : "Enviar"}>
+            {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : mode === "note" ? <StickyNote className="h-5 w-5" /> : <Send className="h-5 w-5" />}
+          </Button>
+        )}
       </div>
+      )}
     </form>
   );
 }
