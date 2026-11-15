@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { adminClient, corsHeaders, json } from "../_shared/http.ts"
 import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/evolution.ts"
+import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { checkWebhookAuth } from "./auth.ts"
 import { mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
@@ -171,6 +172,16 @@ serve(async (req) => {
       p_created_at: at,
     })
     if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
+
+    // Foto de perfil: busca em segundo plano quando o contato não tem ou o link venceu
+    if (!fromMe && crm?.contact_id && !crm.ignored) {
+      const job = (async () => {
+        const { data: c } = await admin.from('crm_contacts').select('id, phone, avatar_url, avatar_checked_at').eq('id', crm.contact_id).maybeSingle()
+        if (c) await refreshAvatars(admin, cfg, [c])
+      })().catch((e) => console.error('[WhatsApp Webhook] foto:', (e as Error).message))
+      const rt = (globalThis as any).EdgeRuntime
+      if (rt?.waitUntil) rt.waitUntil(job); else await job
+    }
 
     // Mensagem que o próprio CRM enviou (crm-send já gravou): não repete nas tabelas antigas
     if (crm?.duplicate) return json({ status: 'duplicate' })

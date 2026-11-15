@@ -181,7 +181,7 @@ export function TaskDialog({ open, onOpenChange, task, preset, fallbackStoreId, 
 
           <div className="space-y-1.5">
             <Label htmlFor="tk-notes">Observações</Label>
-            <Textarea id="tk-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} maxLength={1000} />
+            <Textarea id="tk-notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} maxLength={1000} className="text-base md:text-sm" />
           </div>
         </form>
         <DialogFooter>

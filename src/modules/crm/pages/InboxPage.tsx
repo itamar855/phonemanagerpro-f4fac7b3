@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { MessagesSquare } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { cn } from "@/lib/utils";
 import type { ChannelTab, InboxFilter } from "../api/inbox";
+import { MobileFullscreen } from "../components/shared/MobileFullscreen";
+import { useIsMobile } from "../hooks/useViewport";
 import { ContactPanel } from "../components/contact/ContactPanel";
 import { ConversationList } from "../components/inbox/ConversationList";
 import { ConversationView } from "../components/inbox/ConversationView";
@@ -19,6 +20,7 @@ export default function InboxPage() {
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const { data: conv } = useConversation(conversationId);
+  const isMobile = useIsMobile();
 
   useCrmRealtime(storeId, conversationId);
 
@@ -28,14 +30,22 @@ export default function InboxPage() {
     else setSheetOpen(true);
   };
 
+  const view = conversationId ? (
+    <ConversationView
+      key={conversationId}
+      conversationId={conversationId}
+      userId={userId}
+      onBack={() => navigate("/crm/inbox")}
+      onToggleDetails={toggleDetails}
+      detailsOpen={detailsOpen}
+    />
+  ) : null;
+
   return (
     <div className="flex h-full min-h-0">
-      {/* Lista: sempre no desktop; no celular só quando nenhuma conversa está aberta */}
+      {/* Lista: no celular continua montada por baixo da conversa (volta na mesma posição) */}
       <aside
-        className={cn(
-          "h-full min-h-0 w-full border-r border-border/50 md:w-[340px] md:shrink-0 lg:w-[360px]",
-          conversationId ? "hidden md:block" : "block",
-        )}
+        className="block h-full min-h-0 w-full border-r border-border/50 md:w-[340px] md:shrink-0 lg:w-[360px]"
         aria-label="Lista de conversas"
       >
         <ConversationList
@@ -50,20 +60,14 @@ export default function InboxPage() {
         />
       </aside>
 
-      <section className={cn("h-full min-h-0 min-w-0 flex-1", conversationId ? "block" : "hidden md:block")} aria-label="Conversa">
-        {conversationId ? (
-          <ConversationView
-            key={conversationId}
-            conversationId={conversationId}
-            userId={userId}
-            onBack={() => navigate("/crm/inbox")}
-            onToggleDetails={toggleDetails}
-            detailsOpen={detailsOpen}
-          />
-        ) : (
+      <section className="hidden h-full min-h-0 min-w-0 flex-1 md:block" aria-label="Conversa">
+        {!isMobile && (view ?? (
           <EmptyState icon={MessagesSquare} title="Selecione uma conversa" description="Escolha uma conversa na lista para responder, anotar ou atribuir." />
-        )}
+        ))}
       </section>
+
+      {/* Celular: conversa em tela cheia, como no WhatsApp */}
+      {isMobile && view && <MobileFullscreen label="Conversa">{view}</MobileFullscreen>}
 
       {/* Painel do contato: coluna fixa em telas largas, gaveta nas demais */}
       {conv && detailsOpen && (

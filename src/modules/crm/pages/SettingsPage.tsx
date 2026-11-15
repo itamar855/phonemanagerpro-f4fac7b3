@@ -77,7 +77,7 @@ function QuickRepliesSettings() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="qr-body">Mensagem</Label>
-            <Textarea id="qr-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="Estamos na Rua…, aberto de segunda a sábado das 8h às 18h." required />
+            <Textarea id="qr-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="Estamos na Rua…, aberto de segunda a sábado das 8h às 18h." required className="text-base md:text-sm" />
           </div>
         </div>
         <Button type="submit" size="sm" disabled={saving || !writeStoreId}>

@@ -131,7 +131,8 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
     let res;
     if (file) {
       const up = await uploadMedia(conv!.store_id, file);
-      res = await sendMessage({ conversationId: conv!.id, kind: file.type.startsWith("image/") ? "image" : "document", body: text, mediaPath: up.path, mime: up.mime });
+      const kind = file.type.startsWith("image/") ? "image" : file.type.startsWith("audio/") ? "audio" : "document";
+      res = await sendMessage({ conversationId: conv!.id, kind, body: kind === "audio" ? "" : text, mediaPath: up.path, mime: up.mime });
     } else {
       res = await sendMessage({ conversationId: conv!.id, kind: "text", body: text });
     }
@@ -143,7 +144,7 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-2 border-b border-border/50 px-2 py-2 md:px-4">
+      <header className="flex items-center gap-2 border-b border-border/50 bg-card/60 px-2 py-2 max-md:pt-[max(0.5rem,env(safe-area-inset-top))] md:bg-transparent md:px-4">
         <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 md:hidden" onClick={onBack} aria-label="Voltar para a lista">
           <ArrowLeft className="h-5 w-5" />
         </Button>

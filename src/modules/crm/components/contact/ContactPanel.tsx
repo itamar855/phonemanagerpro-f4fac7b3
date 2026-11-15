@@ -183,7 +183,7 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
 
       <section aria-labelledby="ct-notas" className="space-y-1.5">
         <Label id="ct-notas" htmlFor="ct-notes" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anotações</Label>
-        <Textarea id="ct-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Preferências, aparelho atual, observações…" />
+        <Textarea id="ct-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Preferências, aparelho atual, observações…" className="text-base md:text-sm" />
         {notes !== (contact.notes ?? "") && (
           <Button size="sm" onClick={() => save({ notes: notes.trim() || null }, "Anotações salvas.")} disabled={saving}>
             {saving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Salvar anotações
