@@ -70,12 +70,15 @@ export async function generateJson(opts: { system: string; turns: ChatTurn[]; sc
   const gKey = Deno.env.get("GEMINI_API_KEY");
   if (gKey) {
     const models = [...new Set([opts.model || DEFAULT_GEMINI_MODEL, ...FALLBACK_GEMINI_MODELS])];
-    for (const m of models) {
+    for (const [i, m] of models.entries()) {
+      // o Gemini às vezes demora 20 s numa resposta que normalmente sai em 2 s:
+      // no 1º modelo espera pouco e tenta logo o reserva (a pessoa está esperando no WhatsApp)
+      const t = i === 0 ? Math.min(timeout, 8_000) : Math.min(timeout, 12_000);
       try {
-        const text = await withTimeout(timeout, (s) => gemini(m, gKey, opts.system, opts.turns, opts.schema, s));
+        const text = await withTimeout(t, (s) => gemini(m, gKey, opts.system, opts.turns, opts.schema, s));
         return { text, model: m, latencyMs: Date.now() - t0, fallbackErrors: errors.length ? errors : undefined };
       } catch (e) {
-        const msg = (e as Error).name === "AbortError" ? `${m}: demorou mais de ${timeout / 1000}s` : (e as Error).message;
+        const msg = (e as Error).name === "AbortError" ? `${m}: demorou mais de ${t / 1000}s` : (e as Error).message;
         errors.push(msg.slice(0, 300));
       }
     }

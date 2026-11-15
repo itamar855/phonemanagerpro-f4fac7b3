@@ -91,6 +91,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "",
     "REGRAS QUE NUNCA PODEM SER QUEBRADAS",
     "- NUNCA invente preço, prazo, estoque, parcelamento, garantia ou promoção. Só informe o que estiver no CONHECIMENTO DA LOJA abaixo, exatamente como está.",
+    "- Você NÃO sabe o estoque: nunca responda \"temos sim\" sobre um aparelho, cor ou capacidade. Diga que trabalha com aquele tipo de aparelho e que a disponibilidade um atendente confirma.",
     "- Se perguntarem algo que não está no conhecimento (preço, orçamento, disponibilidade), diga que um atendente vai confirmar e faça a passagem (handoff).",
     "- Não negocie, não prometa nada e não trate reclamação: passe para o atendente.",
     "- Não peça dados sensíveis (CPF, cartão, senha).",
@@ -108,7 +109,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "",
     "SITUAÇÃO AGORA",
     `- Data/hora: ${when}.`,
-    ctx.openNow === null ? null : ctx.openNow ? "- A loja está ABERTA agora." : "- A loja está FECHADA agora: avise que um atendente responde no próximo horário de atendimento.",
+    ctx.openNow === null ? null : ctx.openNow ? "- A loja está ABERTA agora." : "- A loja está FECHADA agora. Isso NÃO é motivo para passar para o atendente: continue a conversa normalmente (entenda o interesse, o aparelho e o defeito, responda o que estiver no conhecimento). Avise uma única vez, quando fizer sentido, que valores e agendamento um atendente confirma quando a loja abrir.",
     ctx.hoursText ? `- Horário de atendimento: ${ctx.hoursText}.` : null,
     ctx.contactName ? `- Nome no WhatsApp: ${ctx.contactName}.` : null,
     ctx.isCustomer ? "- Esta pessoa já é cliente cadastrado da loja." : null,
@@ -119,12 +120,17 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     for (const o of ctx.serviceOrders) lines.push(`- OS #${o.number} · ${o.device || "aparelho"} · ${OS_STATUS_PT[o.status] ?? o.status}`);
   }
 
-  lines.push("", "CONHECIMENTO DA LOJA (única fonte de informações):", ctx.knowledge?.trim() || "(a loja ainda não cadastrou informações: não informe preços, endereço nem horários além do que está acima)");
+  // exemplos ANTES do conhecimento: o modelo pesa mais o que lê por último,
+  // e o conhecimento é que manda (os exemplos podem estar velhos ou contradizer)
   if (ctx.examples?.length) {
-    lines.push("", "EXEMPLOS REAIS DE COMO A LOJA RESPONDE (siga o jeito de falar e as informações de serviço; NÃO repita preços dos exemplos, eles podem estar desatualizados: preço só se estiver no CONHECIMENTO):");
+    lines.push("", "EXEMPLOS REAIS DE COMO A LOJA RESPONDE (use SÓ para o jeito de falar. NÃO tire deles nenhuma informação: endereço, unidades, garantia, prazos, preços e condições vêm SOMENTE do CONHECIMENTO DA LOJA; os exemplos podem estar desatualizados ou ser de outra unidade):");
     for (const e of ctx.examples.slice(0, 5)) {
       lines.push(`- Cliente: "${(e.question ?? "").slice(0, 300)}"`, `  Loja: "${e.answer.slice(0, 500)}"`);
     }
+  }
+  lines.push("", "CONHECIMENTO DA LOJA (única fonte de informações; se um exemplo acima disser diferente, vale o que está aqui):", ctx.knowledge?.trim() || "(a loja ainda não cadastrou informações: não informe preços, endereço nem horários além do que está acima)");
+  if (ctx.knowledge?.trim()) {
+    lines.push("- Pergunta sobre endereço, horário, pagamento, garantia ou prazo: responda com os dados exatos do conhecimento acima (endereço completo, números exatos). Não acrescente nada que não esteja escrito nele.");
   }
   if (ctx.handoffMessage) lines.push("", `Frase de transição preferida pela loja: "${ctx.handoffMessage}"`);
   lines.push("", "Responda SOMENTE com o JSON pedido.");
@@ -216,6 +222,10 @@ export function applyGuards(d: AgentDecision, g: GuardInput): AgentDecision {
     else if (out.decision === "reply" && !out.reply) { out.decision = "handoff"; out.reason = out.reason ?? "IA sem resposta"; }
   }
   if (out.decision === "ignore") out.reply = "";
+  // na passagem para o atendente não se pergunta nada (quem continua é a pessoa da loja)
+  if (out.decision === "handoff" && out.reply.includes("?")) {
+    out.reply = out.reply.split(/(?<=[.!?])\s+/).filter((s) => !s.trim().endsWith("?")).join(" ").trim();
+  }
   out.reply = out.reply.slice(0, 1000);
   if (!out.summary) out.summary = [out.title, out.defect, out.urgency].filter(Boolean).join(" · ") || "Contato pelo WhatsApp.";
   return out;
