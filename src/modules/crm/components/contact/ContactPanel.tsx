@@ -17,13 +17,14 @@ import { formatPhone } from "../../lib/phone";
 import { CHANNEL_LABEL, ORIGIN_LABEL } from "../../lib/constants";
 import { ChannelIcon } from "../shared/ChannelIcon";
 import { ContactAvatar } from "../shared/ContactAvatar";
+import { ContactDeals } from "./ContactDeals";
 
 const OS_STATUS: Record<string, string> = {
   aguardando: "Aguardando", em_analise: "Em análise", aguardando_aprovacao: "Aguard. aprovação", aprovado: "Aprovado",
   em_reparo: "Em reparo", pronto: "Pronto", entregue: "Entregue", cancelado: "Cancelado",
 };
 
-export function ContactPanel({ contactId, onOpenConversation }: { contactId: string; onOpenConversation?: (id: string) => void }) {
+export function ContactPanel({ contactId, onOpenConversation, showDeals = true }: { contactId: string; onOpenConversation?: (id: string) => void; showDeals?: boolean }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: crmKeys.contact(contactId), queryFn: () => getContactDetail(contactId), staleTime: 30_000 });
   const [name, setName] = useState("");
@@ -109,6 +110,8 @@ export function ContactPanel({ contactId, onOpenConversation }: { contactId: str
           ))}
         </section>
       )}
+
+      {showDeals && !contact.ignored && <ContactDeals contact={contact} />}
 
       <section aria-labelledby="ct-cliente" className="space-y-1.5">
         <h3 id="ct-cliente" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cadastro de cliente</h3>

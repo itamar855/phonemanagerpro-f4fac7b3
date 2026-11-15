@@ -44,6 +44,11 @@ export default defineConfig(({ mode }) => ({
             if (id.includes("@supabase")) {
               return "vendor-supabase";
             }
+            // Arrastar-e-soltar só é usado no funil do CRM: fica num chunk próprio,
+            // baixado junto com o funil e não no vendor global.
+            if (id.includes("@dnd-kit")) {
+              return "vendor-dndkit";
+            }
             return "vendor";
           }
         },

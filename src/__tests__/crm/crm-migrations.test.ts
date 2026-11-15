@@ -16,6 +16,7 @@ const read = (f: string) => readFileSync(path.join(MIGRATIONS, f), "utf8");
 const FOUNDATION = read("20261114200000_crm_foundation.sql");
 const IMPORT = read("20261114200100_crm_import_legacy_leads.sql");
 const INBOX = read("20261115000000_crm_inbox.sql");
+const PIPELINE = read("20261115030000_crm_pipeline.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -96,6 +97,7 @@ beforeAll(async () => {
   await db.exec(FOUNDATION);
   await db.exec(IMPORT);
   await db.exec(INBOX);
+  await db.exec(PIPELINE);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -245,6 +247,17 @@ describe("CRM — regras do negócio", () => {
     expect(won.won_at).not.toBeNull();
     expect(won.lost_reason).toBeNull();
     expect(await val<number>(`select count(*)::int from crm_activities where deal_id = $1`, [dealId])).toBeGreaterThanOrEqual(5);
+  });
+
+  it("etapas do Instagram ficam ocultas e o resumo soma por etapa", async () => {
+    const hidden = (await db.query<{ code: string }>(`select code from crm_stages where store_id = $1 and hidden order by code`, [A])).rows.map((r) => r.code);
+    expect(hidden).toEqual(["ig_new", "wa_invited"]);
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+    const won = (await db.query<{ deals: number; total: string }>(
+      `select s.deals, s.total from crm_pipeline_summary($1) s join crm_stages st on st.id = s.stage_id where st.code = 'won'`, [pipe],
+    )).rows[0];
+    expect(won.deals).toBe(1);
+    expect(Number(won.total)).toBe(5200);
   });
 
   it("negócio não vai para funil de outra loja", async () => {

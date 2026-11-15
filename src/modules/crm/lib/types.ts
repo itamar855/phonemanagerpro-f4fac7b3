@@ -98,6 +98,11 @@ export interface CrmStage {
   kind: StageKind;
   sla_hours: number | null;
   color: string | null;
+  hidden: boolean;
+}
+
+export interface CrmDealWithContact extends CrmDeal {
+  contact: Pick<CrmContact, "id" | "name" | "phone" | "avatar_url" | "origin_channel">;
 }
 
 export interface CrmDeal {
