@@ -237,10 +237,16 @@ export interface InstagramStatus {
   token_expires_at: string | null;
   webhook_subscribed: boolean;
   has_app_secret: boolean;
+  app_id: string | null;
+  oauth_redirect_url: string | null;
   can_manage: boolean;
   webhook_url: string | null;
   verify_token: string | null;
 }
+export const igAppSave = (storeId: string | null, app_id: string, app_secret?: string) =>
+  invokeFn("crm-channel", { action: "ig-app-save", storeId, app_id, app_secret });
+export const igAuthUrl = (storeId: string | null, return_to: string) =>
+  invokeFn<{ url: string }>("crm-channel", { action: "ig-auth-url", storeId, return_to });
 export const igStatus = (storeId: string | null) => invokeFn<InstagramStatus>("crm-channel", { action: "ig-status", storeId });
 export const igSave = (storeId: string | null, access_token: string, app_secret?: string) =>
   invokeFn<{ username: string; subscribed: boolean; subscribe_error: string | null }>("crm-channel", { action: "ig-save", storeId, access_token, app_secret });

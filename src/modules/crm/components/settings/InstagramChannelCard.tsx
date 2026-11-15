@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { AlertTriangle, Check, CheckCircle2, Copy, Loader2, LogOut, RefreshCw, Save } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { AlertTriangle, Check, CheckCircle2, Copy, Loader2, LogIn, LogOut, RefreshCw, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { igDisconnect, igSave, igStatus } from "../../api/inbox";
+import { igAppSave, igAuthUrl, igDisconnect, igSave, igStatus } from "../../api/inbox";
 import { relative } from "../../lib/format";
 import { ChannelIcon } from "../shared/ChannelIcon";
 
@@ -35,30 +36,55 @@ function CopyField({ id, label, value }: { id: string; label: string; value: str
   );
 }
 
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3 rounded-lg border border-border/50 bg-muted/30 p-3" aria-labelledby={`ig-step-${n}`}>
+      <h4 id={`ig-step-${n}`} className="flex items-center gap-2 text-sm font-semibold">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs text-primary">{n}</span>
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
   const key = ["crm", "ig-channel", storeId];
   const status = useQuery({ queryKey: key, queryFn: () => igStatus(storeId), staleTime: 30_000, retry: false });
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
   const [token, setToken] = useState("");
-  const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const s = status.data;
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy("save");
-    try {
-      const r = await igSave(storeId, token.trim(), secret.trim() || undefined);
-      setToken(""); setSecret("");
-      if (r.subscribed) toast.success(`Instagram @${r.username} conectado e inscrito no webhook.`);
-      else toast.warning(`@${r.username} conectado, mas a inscrição no webhook falhou: ${r.subscribe_error ?? "erro desconhecido"}. Confira o webhook no painel da Meta e salve de novo.`);
-      qc.invalidateQueries({ queryKey: key });
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setBusy(null);
+  useEffect(() => { if (s?.app_id && !appId) setAppId(s.app_id); }, [s?.app_id, appId]);
+
+  // Volta do login do Instagram: ?ig=ok|error
+  useEffect(() => {
+    const ig = params.get("ig");
+    if (!ig) return;
+    if (ig === "ok") {
+      const user = params.get("user");
+      if (params.get("sub") === "1") toast.success(`Instagram${user ? ` @${user}` : ""} conectado ao CRM!`);
+      else toast.warning(`Instagram${user ? ` @${user}` : ""} conectado, mas a inscrição no webhook falhou. Confira o webhook na Meta e conecte de novo.`);
+    } else {
+      toast.error(params.get("msg") || "Não foi possível conectar o Instagram.");
     }
+    const next = new URLSearchParams(params);
+    ["ig", "user", "sub", "msg"].forEach((k) => next.delete(k));
+    setParams(next, { replace: true });
+    qc.invalidateQueries({ queryKey: key });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function run(name: string, fn: () => Promise<unknown>) {
+    setBusy(name);
+    try { await fn(); } catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
   }
+
+  const appReady = Boolean(s?.app_id && s?.has_app_secret);
 
   return (
     <div className="space-y-4 rounded-xl border border-border/60 bg-card p-4">
@@ -81,7 +107,7 @@ export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
             </p>
           )}
           {s?.connected && s.token_expires_at && (
-            <p className="mt-0.5 text-xs text-muted-foreground">Token renova sozinho; vence {relative(s.token_expires_at)} se não for renovado.</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">O acesso renova sozinho; vence {relative(s.token_expires_at)} se não for renovado.</p>
           )}
         </div>
         <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => status.refetch()} aria-label="Atualizar status">
@@ -90,53 +116,99 @@ export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
       </div>
 
       {s?.can_manage && (
-        <>
-          <div className="space-y-3 rounded-lg border border-border/50 bg-muted/30 p-3">
-            <p className="text-sm font-medium">1. No painel da Meta → Instagram → Configuração da API → Configurar webhooks, cole:</p>
-            {s.webhook_url && <CopyField id="ig-cb" label="URL de callback" value={s.webhook_url} />}
-            {s.verify_token ? (
-              <CopyField id="ig-vt" label="Verificar token" value={s.verify_token} />
-            ) : (
-              <p className="text-xs text-destructive">Token de verificação ainda não configurado no servidor.</p>
-            )}
-            <p className="text-xs text-muted-foreground">Depois clique em "Verificar e salvar" na Meta e ative o campo <code>messages</code>.</p>
-          </div>
+        <div className="space-y-3">
+          <Step n={1} title="No painel da Meta, cole estes endereços">
+            <p className="text-xs text-muted-foreground">Casos de uso → Instagram → Configuração da API com login do Instagram.</p>
+            {s.webhook_url && <CopyField id="ig-cb" label="Webhook · URL de callback" value={s.webhook_url} />}
+            {s.verify_token && <CopyField id="ig-vt" label="Webhook · Verificar token" value={s.verify_token} />}
+            {s.oauth_redirect_url && <CopyField id="ig-redir" label="Login da empresa · URI de redirecionamento do OAuth" value={s.oauth_redirect_url} />}
+          </Step>
 
-          <form onSubmit={save} className="space-y-3">
-            <p className="text-sm font-medium">2. Cole aqui o token gerado ("Gerar token") e a chave secreta do app do Instagram:</p>
-            <div className="space-y-1.5">
-              <Label htmlFor="ig-token">Token de acesso</Label>
-              <Input id="ig-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={s.connected ? "•••••• (cole um novo para trocar)" : "IGAA…"} autoComplete="off" required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ig-secret">Chave secreta do app do Instagram</Label>
-              <Input id="ig-secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={s.has_app_secret ? "•••••• (mantida se ficar em branco)" : "Em Configuração da API → Chave secreta do app do Instagram"} autoComplete="off" required={!s.has_app_secret} />
-              <p className="text-xs text-muted-foreground">Ficam só no servidor e nunca são mostrados de volta. A chave secreta confere que as mensagens vieram mesmo da Meta.</p>
-            </div>
+          <Step n={2} title="Dados do app do Instagram">
+            <form
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run("app", async () => {
+                  await igAppSave(storeId, appId.trim(), appSecret.trim() || undefined);
+                  setAppSecret("");
+                  toast.success("Dados do app salvos.");
+                  qc.invalidateQueries({ queryKey: key });
+                });
+              }}
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="ig-appid">ID do app do Instagram</Label>
+                <Input id="ig-appid" value={appId} onChange={(e) => setAppId(e.target.value.replace(/\D/g, ""))} inputMode="numeric" placeholder="1428409599038852" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ig-secret">Chave secreta do app do Instagram</Label>
+                <Input id="ig-secret" type="password" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} autoComplete="off"
+                  placeholder={s.has_app_secret ? "•••••• (mantida se ficar em branco)" : "Clique em Mostrar na Meta e cole aqui"} required={!s.has_app_secret} />
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2">Não é a "Chave Secreta do Aplicativo" do Facebook: é a do Instagram, ao lado do ID do app do Instagram. Fica só no servidor.</p>
+              <div className="sm:col-span-2">
+                <Button type="submit" size="sm" variant="outline" disabled={busy !== null || !appId}>
+                  {busy === "app" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />} Salvar dados do app
+                </Button>
+              </div>
+            </form>
+          </Step>
+
+          <Step n={3} title="Conectar a conta da loja">
+            <p className="text-xs text-muted-foreground">Você vai para o Instagram, entra com a conta da loja e autoriza o CRM a ler e responder as mensagens.</p>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" size="sm" disabled={busy !== null || !token.trim()}>
-                {busy === "save" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />} {s.connected ? "Atualizar conexão" : "Conectar Instagram"}
+              <Button
+                size="sm"
+                disabled={!appReady || busy !== null}
+                onClick={() => run("oauth", async () => {
+                  const { url } = await igAuthUrl(storeId, window.location.href);
+                  window.location.assign(url);
+                })}
+              >
+                {busy === "oauth" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <LogIn className="mr-1.5 h-4 w-4" />}
+                {s.connected ? "Reconectar com Instagram" : "Conectar com Instagram"}
               </Button>
               {s.connected && (
                 <Button
-                  type="button"
                   size="sm"
                   variant="outline"
                   disabled={busy !== null}
-                  onClick={async () => {
+                  onClick={() => {
                     if (!confirm("Desconectar o Instagram? As DMs param de chegar no CRM.")) return;
-                    setBusy("off");
-                    try { await igDisconnect(storeId); toast.success("Instagram desconectado."); qc.invalidateQueries({ queryKey: key }); }
-                    catch (err) { toast.error((err as Error).message); }
-                    finally { setBusy(null); }
+                    void run("off", async () => { await igDisconnect(storeId); toast.success("Instagram desconectado."); qc.invalidateQueries({ queryKey: key }); });
                   }}
                 >
                   <LogOut className="mr-1.5 h-4 w-4" /> Desconectar
                 </Button>
               )}
             </div>
-          </form>
-        </>
+            {!appReady && <p className="text-xs text-amber-600 dark:text-amber-400">Salve primeiro os dados do app (passo 2).</p>}
+          </Step>
+
+          <details className="rounded-lg border border-border/50 p-3 text-sm">
+            <summary className="cursor-pointer font-medium text-muted-foreground">Alternativa: conectar colando um token gerado no painel</summary>
+            <form
+              className="mt-3 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run("token", async () => {
+                  const r = await igSave(storeId, token.trim(), appSecret.trim() || undefined);
+                  setToken("");
+                  if (r.subscribed) toast.success(`Instagram @${r.username} conectado.`);
+                  else toast.warning(`@${r.username} conectado, mas a inscrição no webhook falhou: ${r.subscribe_error ?? "erro desconhecido"}.`);
+                  qc.invalidateQueries({ queryKey: key });
+                });
+              }}
+            >
+              <Label htmlFor="ig-token">Token de acesso (Gerar token)</Label>
+              <Input id="ig-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="IGAA…" autoComplete="off" required />
+              <Button type="submit" size="sm" variant="outline" disabled={busy !== null || !token.trim() || (!s.has_app_secret && !appSecret.trim())}>
+                {busy === "token" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />} Conectar com token
+              </Button>
+            </form>
+          </details>
+        </div>
       )}
       {s && !s.can_manage && <p className="text-xs text-muted-foreground">Somente admin, dono ou gerente altera a conexão.</p>}
     </div>

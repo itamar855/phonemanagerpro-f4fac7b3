@@ -5,3 +5,8 @@ verify_jwt = false
 
 [functions.whatsapp-webhook]
 verify_jwt = false
+
+# Retorno do login do Instagram (a Meta redireciona o navegador sem token do Supabase;
+# a função valida um "state" de uso único criado pela crm-channel)
+[functions.instagram-oauth]
+verify_jwt = false

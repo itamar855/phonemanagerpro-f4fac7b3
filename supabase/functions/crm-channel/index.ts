@@ -7,13 +7,57 @@ import {
 import { evolution, loadWhatsAppConfig } from "../_shared/evolution.ts";
 import { IG_TOKEN_TTL_DAYS, igMe, igRefreshToken, igSubscribe } from "../_shared/instagram.ts";
 
-const ACTIONS = ["status", "connect", "logout", "configure-webhook", "save-config", "ig-status", "ig-save", "ig-disconnect"] as const;
+const ACTIONS = ["status", "connect", "logout", "configure-webhook", "save-config", "ig-status", "ig-save", "ig-disconnect", "ig-app-save", "ig-auth-url"] as const;
 const DAY = 24 * 60 * 60 * 1000;
+// Para onde o login do Instagram pode devolver o usuário
+const ALLOWED_RETURN_ORIGINS = ["https://cellpro360.vercel.app", "https://cellpromanager.vercel.app", "http://localhost:8080"];
+const IG_SCOPES = "instagram_business_basic,instagram_business_manage_messages";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- linhas do PostgREST sem tipos gerados */
 async function handleInstagram(action: Action, admin: any, userId: string, storeId: string, body: any) {
   const canManage = await isManager(admin, userId);
   const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-webhook`;
+  const oauthRedirect = `${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-oauth`;
+
+  if (action === "ig-app-save") {
+    await requireManager(admin, userId);
+    const appId = String(body.app_id || "").trim();
+    const appSecret = String(body.app_secret || "").trim();
+    if (!/^\d{6,20}$/.test(appId)) throw new HttpError(400, "ID do app do Instagram inválido (só números).");
+    const { data: prev } = await admin.from("crm_channel_secrets").select("secrets").eq("store_id", storeId).eq("channel", "instagram").maybeSingle();
+    const secret = appSecret || prev?.secrets?.app_secret;
+    if (!secret) throw new HttpError(400, "Cole a chave secreta do app do Instagram.");
+    const { error } = await admin.from("crm_channel_secrets").upsert(
+      { store_id: storeId, channel: "instagram", secrets: { ...(prev?.secrets ?? {}), app_id: appId, app_secret: secret }, updated_at: new Date().toISOString() },
+      { onConflict: "store_id,channel" },
+    );
+    if (error) throw new HttpError(500, error.message);
+    return { status: "saved" };
+  }
+
+  if (action === "ig-auth-url") {
+    await requireManager(admin, userId);
+    const { data: sec } = await admin.from("crm_channel_secrets").select("secrets").eq("store_id", storeId).eq("channel", "instagram").maybeSingle();
+    if (!sec?.secrets?.app_id || !sec?.secrets?.app_secret) throw new HttpError(400, "Salve antes o ID e a chave secreta do app do Instagram.");
+    let origin: string;
+    try { origin = new URL(String(body.return_to || "")).origin; } catch { throw new HttpError(400, "Endereço de retorno inválido."); }
+    if (!ALLOWED_RETURN_ORIGINS.includes(origin)) throw new HttpError(400, "Endereço de retorno não permitido.");
+
+    const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    await admin.from("crm_oauth_states").delete().lt("created_at", new Date(Date.now() - DAY).toISOString()); // limpeza
+    const { error } = await admin.from("crm_oauth_states").insert({ state, store_id: storeId, user_id: userId, provider: "instagram", return_to: `${origin}/crm/config` });
+    if (error) throw new HttpError(500, error.message);
+
+    const url = new URL("https://www.instagram.com/oauth/authorize");
+    url.searchParams.set("enable_fb_login", "0");
+    url.searchParams.set("force_authentication", "1");
+    url.searchParams.set("client_id", sec.secrets.app_id);
+    url.searchParams.set("redirect_uri", oauthRedirect);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("scope", IG_SCOPES);
+    url.searchParams.set("state", state);
+    return { url: url.toString() };
+  }
 
   if (action === "ig-save") {
     await requireManager(admin, userId);
@@ -38,7 +82,7 @@ async function handleInstagram(action: Action, admin: any, userId: string, store
     const { error: cfgErr } = await admin.from("instagram_config").upsert(row, { onConflict: "store_id" });
     if (cfgErr) throw new HttpError(500, cfgErr.message);
     const { error: secErr } = await admin.from("crm_channel_secrets").upsert(
-      { store_id: storeId, channel: "instagram", secrets: { access_token: token, app_secret: secret }, updated_at: now.toISOString() },
+      { store_id: storeId, channel: "instagram", secrets: { ...(prevSec?.secrets ?? {}), access_token: token, app_secret: secret }, updated_at: now.toISOString() },
       { onConflict: "store_id,channel" },
     );
     if (secErr) throw new HttpError(500, secErr.message);
@@ -88,6 +132,8 @@ async function handleInstagram(action: Action, admin: any, userId: string, store
     token_expires_at: expiresAt,
     webhook_subscribed: Boolean(cfg?.webhook_subscribed_at),
     has_app_secret: Boolean(sec?.secrets?.app_secret),
+    app_id: sec?.secrets?.app_id ?? null, // público
+    oauth_redirect_url: canManage ? oauthRedirect : null,
     can_manage: canManage,
     // dados para colar no painel da Meta (só para quem administra)
     webhook_url: canManage ? webhookUrl : null,
