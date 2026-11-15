@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ArrowLeft, CheckCircle2, Loader2, MessageSquareDashed, PanelRight, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +31,9 @@ interface Props {
 
 export function ConversationView({ conversationId, userId, onBack, onToggleDetails, detailsOpen }: Props) {
   const qc = useQueryClient();
+  // rascunho vindo de uma tarefa ("Abrir conversa" com mensagem sugerida)
+  const location = useLocation();
+  const draft = (location.state as { draft?: string } | null)?.draft;
   const { data: conv, isLoading: convLoading } = useConversation(conversationId);
   const messagesQ = useMessages(conversationId);
   const { data: team = [] } = useTeam(conv?.store_id ?? null);
@@ -221,7 +225,14 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
         })}
       </div>
 
-      <Composer channel={conv.channel} disabledReason={disabledReason} quickReplies={quickReplies} onSend={handleSend} />
+      <Composer
+        key={`${conversationId}:${draft ?? ""}`}
+        channel={conv.channel}
+        disabledReason={disabledReason}
+        quickReplies={quickReplies}
+        onSend={handleSend}
+        initialText={draft}
+      />
     </div>
   );
 }

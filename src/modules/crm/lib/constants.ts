@@ -22,6 +22,16 @@ export const STAGE_DOT: Record<string, string> = {
   emerald: "bg-emerald-600", slate: "bg-slate-400", violet: "bg-violet-500",
 };
 
+export const TASK_KIND_LABEL: Record<string, string> = {
+  follow_up: "Retorno",
+  call: "Ligação",
+  reply: "Sem resposta",
+  stale_deal: "Negócio parado",
+  os_ready: "OS pronta",
+  review: "Avaliação",
+  warranty: "Garantia",
+};
+
 export const CHANNEL_LABEL: Record<Channel, string> = { whatsapp: "WhatsApp", instagram: "Instagram" };
 
 export const ORIGIN_LABEL: Record<OriginChannel, string> = {

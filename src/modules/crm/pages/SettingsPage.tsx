@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { createQuickReply, deleteQuickReply } from "../api/inbox";
 import { WhatsAppChannelCard } from "../components/settings/WhatsAppChannelCard";
 import { InstagramChannelCard } from "../components/settings/InstagramChannelCard";
+import { AutomationSettingsCard } from "../components/settings/AutomationSettingsCard";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext, useQuickReplies } from "../hooks/useInbox";
 
@@ -22,6 +23,7 @@ export default function SettingsPage() {
           <TabsList>
             <TabsTrigger value="canais">Canais</TabsTrigger>
             <TabsTrigger value="respostas">Respostas rápidas</TabsTrigger>
+            <TabsTrigger value="automacoes">Automações</TabsTrigger>
           </TabsList>
           <TabsContent value="canais" className="space-y-4 pt-2">
             <WhatsAppChannelCard storeId={storeId} />
@@ -29,6 +31,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="respostas" className="pt-2">
             <QuickRepliesSettings />
+          </TabsContent>
+          <TabsContent value="automacoes" className="pt-2">
+            <AutomationSettingsCard />
           </TabsContent>
         </Tabs>
       </div>

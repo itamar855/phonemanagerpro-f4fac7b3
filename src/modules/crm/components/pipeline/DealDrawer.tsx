@@ -15,6 +15,7 @@ import { useDealActivities, useInvalidateDeals } from "../../hooks/usePipeline";
 import { INTEREST_LABEL } from "../../lib/constants";
 import { relative } from "../../lib/format";
 import type { CrmActivity, CrmDealWithContact, CrmStage, Interest } from "../../lib/types";
+import { EntityTasks } from "../tasks/EntityTasks";
 import { LostReasonDialog } from "./LostReasonDialog";
 
 const NONE = "__none__";
@@ -177,6 +178,12 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
               </Button>
             )}
           </form>
+
+          <EntityTasks
+            byDeal
+            userId={userId}
+            preset={{ storeId: deal.store_id, contact: deal.contact ? { id: deal.contact.id, name: deal.contact.name } : null, dealId: deal.id, dealTitle: deal.title }}
+          />
 
           <section className="space-y-2" aria-labelledby="dl-hist">
             <h3 id="dl-hist" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h3>
