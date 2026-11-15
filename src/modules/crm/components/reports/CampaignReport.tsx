@@ -63,8 +63,14 @@ export function CampaignReport({ storeId, from, to }: { storeId: string | null; 
   const qc = useQueryClient();
   const { userRole } = useCrmContext();
   const canEdit = MANAGER.has(String(userRole ?? ""));
+  const [kind, setKind] = useState<"repair" | "sales" | null>(null);
   const key = [storeId, from.toISOString(), to.toISOString()];
-  const { data: rows = [] } = useQuery({ queryKey: ["crm", "report-campaigns", ...key], queryFn: () => trackingReport(storeId, from, to), staleTime: 60_000 });
+  const { data: rows = [] } = useQuery({
+    queryKey: ["crm", "report-campaigns", ...key, kind],
+    queryFn: () => trackingReport(storeId, from, to, kind),
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+  });
   const { data: spend = new Map<string, number>() } = useQuery({ queryKey: ["crm", "report-spend", ...key], queryFn: () => spendReport(storeId, from, to), staleTime: 60_000 });
   const sources = useMemo(() => bySource(rows), [rows]);
   const camps = useMemo(() => byCampaign(rows, spend), [rows, spend]);
@@ -72,11 +78,25 @@ export function CampaignReport({ storeId, from, to }: { storeId: string | null; 
   const [editing, setEditing] = useState<string | null>(null);
   const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
+  const filter = (
+    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Tipo de negócio">
+      {([[null, "Tudo"], ["sales", "Aparelho / acessório"], ["repair", "Conserto"]] as const).map(([v, l]) => (
+        <button key={l} role="radio" aria-checked={kind === v} onClick={() => setKind(v)}
+          className={cn("min-h-[36px] rounded-full border px-3 text-xs font-medium", kind === v ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+
   if (!rows.length) {
     return (
-      <section className="rounded-xl border border-border/50 bg-card p-4">
-        <h2 className="mb-1 text-sm font-semibold">Campanhas e funis</h2>
-        <p className="text-sm text-muted-foreground">Ainda sem origem rastreada no período. Cadastre os códigos de anúncio em Ajustes → Rastreamento e use o “Lead do Instagram”.</p>
+      <section className="space-y-2 rounded-xl border border-border/50 bg-card p-4">
+        <h2 className="text-sm font-semibold">Campanhas e funis</h2>
+        {filter}
+        <p className="text-sm text-muted-foreground">
+          {kind ? "Nada deste tipo no período." : "Ainda sem origem rastreada no período. Cadastre os códigos de anúncio em Ajustes → Rastreamento e use o “Lead do Instagram”."}
+        </p>
       </section>
     );
   }
@@ -100,7 +120,10 @@ export function CampaignReport({ storeId, from, to }: { storeId: string | null; 
   return (
     <section className="space-y-4 rounded-xl border border-border/50 bg-card p-4" aria-label="Campanhas e funis">
       <div>
-        <h2 className="mb-2 text-sm font-semibold">Funis comparados (contatos novos no período)</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Funis comparados (contatos novos no período)</h2>
+          {filter}
+        </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {sources.map((s) => (
             <div key={s.source} className="rounded-lg border border-border/50 p-3 text-sm">
@@ -108,7 +131,10 @@ export function CampaignReport({ storeId, from, to }: { storeId: string | null; 
               <p className="mt-1 text-xs text-muted-foreground tabular-nums">
                 {s.contacts} leads · {pct(s.replied, s.contacts) ?? 0}% responderam · {s.won} vendas ({pct(s.won, s.contacts) ?? 0}%)
               </p>
-              <p className="mt-0.5 text-sm font-semibold tabular-nums">{brl(s.revenue)}</p>
+              <p className="mt-0.5 text-sm font-semibold tabular-nums">
+                {brl(s.revenue)}
+                {s.won > 0 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">ticket médio {brl(s.revenue / s.won)}</span>}
+              </p>
             </div>
           ))}
         </div>

@@ -16,7 +16,7 @@ export async function listStages(pipelineId: string): Promise<CrmStage[]> {
   return (data ?? []) as CrmStage[];
 }
 
-const DEAL_SELECT = "*, contact:crm_contacts!inner(id, name, phone, avatar_url, origin_channel)";
+const DEAL_SELECT = "*, contact:crm_contacts!inner(id, name, phone, avatar_url, origin_channel, customer_id)";
 
 /** Negócios do quadro: abertos + ganhos/perdidos nos últimos 30 dias. */
 export async function listBoardDeals(pipelineId: string, ownerId?: string | null): Promise<CrmDealWithContact[]> {

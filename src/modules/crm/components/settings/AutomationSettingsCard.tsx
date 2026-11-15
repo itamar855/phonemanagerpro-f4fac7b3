@@ -19,7 +19,7 @@ type Form = Omit<CrmAutomationSettings, "store_id">;
 const DEFAULTS: Form = {
   round_robin: false, round_robin_members: [], unanswered_minutes: 30, stale_deals: true,
   os_ready: true, review_after_days: 3, warranty_alert_days: 7,
-  ig_first_message: DEFAULT_IG_MESSAGE, ig_followup_hours: 2,
+  ig_first_message: DEFAULT_IG_MESSAGE, ig_followup_hours: 2, os_sync: true,
 };
 const MANAGER = new Set(["admin", "gerente", "dono"]);
 
@@ -29,7 +29,7 @@ function pick(d: CrmAutomationSettings | null | undefined): Form {
   return {
     round_robin: d.round_robin, round_robin_members: d.round_robin_members ?? [], unanswered_minutes: d.unanswered_minutes,
     stale_deals: d.stale_deals, os_ready: d.os_ready, review_after_days: d.review_after_days, warranty_alert_days: d.warranty_alert_days,
-    ig_first_message: d.ig_first_message || DEFAULT_IG_MESSAGE, ig_followup_hours: d.ig_followup_hours ?? 2,
+    ig_first_message: d.ig_first_message || DEFAULT_IG_MESSAGE, ig_followup_hours: d.ig_followup_hours ?? 2, os_sync: d.os_sync ?? true,
   };
 }
 
@@ -141,6 +141,9 @@ export function AutomationSettingsCard() {
 
         <Row id="au-ready" title="OS pronta" help="Quando a OS fica “Pronta p/ retirada”, sugere avisar o cliente com uma mensagem pronta."
           checked={form.os_ready} onChange={(v) => set({ os_ready: v })} disabled={off} />
+
+        <Row id="au-ossync" title="Funil de assistência acompanha a OS" help="OS aberta para o cliente → negócio vai para “Aprovado / em reparo”; entregue → “Concluído” com o valor da OS (vai para a Meta como compra); cancelada → “Perdido”. Só lê as OS, não altera nada nelas."
+          checked={form.os_sync} onChange={(v) => set({ os_sync: v })} disabled={off} />
 
         <Row id="au-review" title="Pedir avaliação" help="Alguns dias depois da entrega da OS ou da venda, sugere pedir uma avaliação."
           checked={form.review_after_days !== null} onChange={(v) => set({ review_after_days: v ? 3 : null })} disabled={off}>

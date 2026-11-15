@@ -105,7 +105,7 @@ export interface CrmStage {
 }
 
 export interface CrmDealWithContact extends CrmDeal {
-  contact: Pick<CrmContact, "id" | "name" | "phone" | "avatar_url" | "origin_channel">;
+  contact: Pick<CrmContact, "id" | "name" | "phone" | "avatar_url" | "origin_channel"> & { customer_id?: string | null };
 }
 
 export interface CrmDeal {
@@ -172,6 +172,7 @@ export interface CrmAutomationSettings {
   warranty_alert_days: number | null;
   ig_first_message: string;
   ig_followup_hours: number;
+  os_sync: boolean;
 }
 
 export interface CrmActivity {

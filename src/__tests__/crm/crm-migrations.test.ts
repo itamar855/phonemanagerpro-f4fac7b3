@@ -26,6 +26,7 @@ const LEARNING = read("20261116050000_crm_ai_learning.sql");
 const TRACKING = read("20261116060000_crm_tracking.sql");
 const IG_MANUAL = read("20261116070000_crm_ig_manual_lead.sql");
 const AD_CODES = read("20261116080000_crm_ad_codes.sql");
+const OS_SYNC = read("20261116090000_crm_os_sync.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -123,6 +124,7 @@ beforeAll(async () => {
   await db.exec(TRACKING);
   await db.exec(IG_MANUAL);
   await db.exec(AD_CODES);
+  await db.exec(OS_SYNC);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -739,5 +741,63 @@ describe("CRM — códigos de anúncio e investimento", () => {
     expect(Number(r.spend)).toBe(1000);
     const rows = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where source = 'Anúncio (código)'`, [A]));
     expect(rows.rows[0]).toMatchObject({ campaign: "Tela Novembro", adset: "Público 25-45", ad: "Vídeo 1", contacts: 1, replied: 1 });
+  });
+});
+
+describe("CRM — assistência acompanha a OS", () => {
+  const svcDeal = async (phone: string, id: string) => {
+    const c = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "tela quebrou", p_phone: phone, p_external_id: id })).contact_id;
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'service'`, [A]);
+    const deal = await val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, interest) values ($1, $2, $3, $4, 'Tela iPhone 11', 'repair') returning id`,
+      [A, pipe, await stage(A, "service", "svc_new"), c]);
+    return { c, deal };
+  };
+  const dealState = (id: string) => one(`select d.status, d.value, d.service_order_id, s.code from crm_deals d join crm_stages s on s.id = d.stage_id where d.id = $1`, [id]);
+
+  it("OS aberta liga ao negócio e move para em reparo; entregue vira Concluído com o valor e Purchase", async () => {
+    const { c, deal } = await svcDeal("5511922220001", "OS1");
+    const os = await val<string>(`insert into service_orders (store_id, customer_name, customer_phone, device_model, status, estimated_price) values ($1, 'Rafa', '(11) 92222-0001', 'iPhone 11', 'repairing', 400) returning id`, [A]);
+    expect(await val<any>(`select crm_sync_service_orders()`)).toMatchObject({ linked: 1 });
+    expect(await dealState(deal)).toMatchObject({ status: "open", code: "svc_approved", service_order_id: os });
+    await db.query(`update service_orders set status = 'delivered', final_price = 350, delivered_at = now() where id = $1`, [os]);
+    expect(await val<any>(`select crm_sync_service_orders()`)).toMatchObject({ won: 1 });
+    const d = await dealState(deal);
+    expect(d).toMatchObject({ status: "won", code: "won" });
+    expect(Number(d.value)).toBe(350);
+    const ev = await one(`select event_name, value from crm_meta_events where deal_id = $1 and event_name = 'Purchase'`, [deal]);
+    expect(Number(ev.value)).toBe(350);
+    // rodar de novo não muda nada
+    expect(await val<any>(`select crm_sync_service_orders()`)).toEqual({ linked: 0, won: 0, lost: 0 });
+    expect(c).toBeTruthy();
+  });
+
+  it("OS cancelada vira Perdido; OS de balcão sem negócio não cria nada; dá para desligar", async () => {
+    const { deal } = await svcDeal("5511922220002", "OS2");
+    const os = await val<string>(`insert into service_orders (store_id, customer_phone, status) values ($1, '11922220002', 'open') returning id`, [A]);
+    await db.query(`select crm_sync_service_orders()`);
+    await db.query(`update service_orders set status = 'cancelled' where id = $1`, [os]);
+    expect(await val<any>(`select crm_sync_service_orders()`)).toMatchObject({ lost: 1 });
+    expect(await one(`select status, lost_reason from crm_deals where id = $1`, [deal])).toEqual({ status: "lost", lost_reason: "OS cancelada" });
+
+    const before = await val<number>(`select count(*)::int from crm_deals`);
+    await db.query(`insert into service_orders (store_id, customer_phone, status) values ($1, '11955550000', 'open')`, [A]);
+    await db.query(`select crm_sync_service_orders()`);
+    expect(await val(`select count(*)::int from crm_deals`)).toBe(before);
+
+    await db.query(`update crm_automation_settings set os_sync = false where store_id = $1`, [A]);
+    const { deal: d3 } = await svcDeal("5511922220003", "OS3");
+    await db.query(`insert into service_orders (store_id, customer_phone, status) values ($1, '11922220003', 'open')`, [A]);
+    await db.query(`select crm_sync_service_orders()`);
+    expect((await dealState(d3)).code).toBe("svc_new");
+    await db.query(`update crm_automation_settings set os_sync = true where store_id = $1`, [A]);
+  });
+
+  it("relatório por campanha separa conserto de aparelho", async () => {
+    const all = await asUser(U1, () => db.query<any>(`select sum(contacts)::int n from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute')`, [A]));
+    const repair = await asUser(U1, () => db.query<any>(`select sum(contacts)::int n from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute', 'repair')`, [A]));
+    const sales = await asUser(U1, () => db.query<any>(`select sum(contacts)::int n, sum(revenue) r from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute', 'sales')`, [A]));
+    expect(repair.rows[0].n).toBeGreaterThan(0);
+    expect(repair.rows[0].n).toBeLessThan(all.rows[0].n);
+    expect(Number(sales.rows[0].r)).toBe(450); // a venda do "Tela A54" do teste de rastreamento (funil de Vendas)
   });
 });

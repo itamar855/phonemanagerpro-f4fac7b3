@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Loader2, MessageSquare, Save, Trash2, Trophy, XCircle } from "lucide-react";
+import { Bot, Loader2, MessageSquare, Save, Trash2, Trophy, Wrench, XCircle } from "lucide-react";
+import { formatPhone } from "../../lib/phone";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,8 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
   const who = (id: string | null) => (id ? names.get(id) ?? "Alguém" : "Sistema");
   const stageName = (id: unknown) => stages.find((s) => s.id === id)?.name ?? "outra etapa";
   const wonStage = stages.find((s) => s.kind === "won");
+  // conserto: funil de Assistência (etapas svc_*) ou interesse "Conserto"
+  const isRepair = deal.interest === "repair" || stages.some((s) => s.code?.startsWith("svc_"));
   const lostStage = stages.find((s) => s.kind === "lost");
 
   async function save(patch: DealPatch, msg?: string, key = "save") {
@@ -102,6 +105,16 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
         <div className="space-y-5 p-4">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={openConversation}><MessageSquare className="mr-1.5 h-4 w-4" /> Conversa</Button>
+            {isRepair && !deal.service_order_id && deal.status === "open" && (
+              <Button size="sm" variant="outline" onClick={() => {
+                const q = new URLSearchParams({ novaOs: "1", nome: deal.contact?.name ?? "", servico: deal.title });
+                if (deal.contact?.phone) q.set("telefone", formatPhone(deal.contact.phone));
+                if (deal.contact?.customer_id) q.set("cliente", deal.contact.customer_id);
+                navigate(`/ordens-servico?${q.toString()}`);
+              }}>
+                <Wrench className="mr-1.5 h-4 w-4" /> Abrir OS
+              </Button>
+            )}
             {deal.status !== "won" && wonStage && (
               <Button size="sm" disabled={saving !== null}
                 onClick={() => (Number(deal.value) > 0 || value > 0 ? save({ stage_id: wonStage.id, ...(value > 0 ? { value } : {}) }, "Negócio ganho! 🎉", "won") : setAskWon(true))}>
