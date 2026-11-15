@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { checkWebhookAuth, safeEqual, WEBHOOK_SECRET_HEADER } from "../../../supabase/functions/whatsapp-webhook/auth.ts";
-import { isDirectChat, parseMessageBody, resolveTimestamp } from "../../../supabase/functions/whatsapp-webhook/parse.ts";
+import { isDirectChat, mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "../../../supabase/functions/whatsapp-webhook/parse.ts";
 
 const headers = (h: Record<string, string>) => new Headers(h);
 
@@ -65,6 +65,21 @@ describe("whatsapp-webhook — interpretação da mensagem", () => {
     expect(isDirectChat({ remoteJid: "status@broadcast" })).toBe(false);
     expect(isDirectChat({ remoteJid: "123@newsletter" })).toBe(false);
     expect(isDirectChat({ remoteJid: "5587999999999@s.whatsapp.net", participant: "x" })).toBe(false);
+  });
+
+  it("conta com identificador oculto (@lid) usa o número alternativo", () => {
+    expect(resolveContactJid({ remoteJid: "123456789@lid", remoteJidAlt: "5587999112233@s.whatsapp.net" })).toBe("5587999112233@s.whatsapp.net");
+    expect(resolveContactJid({ remoteJid: "123456789@lid", senderPn: "5587999112233@s.whatsapp.net" })).toBe("5587999112233@s.whatsapp.net");
+    expect(resolveContactJid({ remoteJid: "123456789@lid" })).toBeNull();
+    expect(resolveContactJid({ remoteJid: "1203630@g.us", participant: "5587999112233@s.whatsapp.net" })).toBeNull();
+  });
+
+  it("status de entrega", () => {
+    expect(mapAckStatus("SERVER_ACK")).toBe("sent");
+    expect(mapAckStatus("DELIVERY_ACK")).toBe("delivered");
+    expect(mapAckStatus("READ")).toBe("read");
+    expect(mapAckStatus(4)).toBe("read");
+    expect(mapAckStatus("PENDING")).toBeNull();
   });
 
   it("timestamp em segundos, Long e inválido", () => {

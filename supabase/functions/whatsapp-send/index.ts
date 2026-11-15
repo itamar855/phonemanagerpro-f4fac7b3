@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
@@ -26,7 +27,7 @@ function getServiceRoleKey(): string {
       if (typeof key === "string" && key.startsWith("sb_secret_")) {
         return key;
       }
-    } catch {}
+    } catch { /* formato antigo da variável */ }
   }
   const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (legacy) return legacy;
@@ -203,7 +204,7 @@ serve(async (req) => {
                   const mediaData = await mediaResp.json()
                   base64 = mediaData?.base64 || mediaData?.data
                 }
-              } catch (_) {}
+              } catch (_) { /* mídia opcional: segue sem ela */ }
             }
             if (base64) {
               try {
@@ -220,7 +221,7 @@ serve(async (req) => {
                 if (!upErr && upData?.path) {
                   mMediaUrl = supabaseClient.storage.from('chat_media').getPublicUrl(upData.path).data.publicUrl
                 }
-              } catch (_) {}
+              } catch (_) { /* mídia opcional: segue sem ela */ }
             }
           }
 

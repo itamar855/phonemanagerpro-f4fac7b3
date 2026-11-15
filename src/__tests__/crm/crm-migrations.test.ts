@@ -1,0 +1,296 @@
+// @vitest-environment node
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
+/**
+ * Testa as migrations do CRM num Postgres real em memória (PGlite),
+ * com stubs mínimos do Supabase (auth.uid, papéis, member_stores...).
+ * Os testes dependem uns dos outros (mesmo banco), na ordem em que aparecem.
+ */
+import { describe, it, expect, beforeAll } from "vitest";
+import { PGlite } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+const MIGRATIONS = path.resolve(__dirname, "../../../supabase/migrations");
+const read = (f: string) => readFileSync(path.join(MIGRATIONS, f), "utf8");
+const FOUNDATION = read("20261114200000_crm_foundation.sql");
+const IMPORT = read("20261114200100_crm_import_legacy_leads.sql");
+
+const A = "00000000-0000-0000-0000-00000000000a";
+const B = "00000000-0000-0000-0000-00000000000b";
+const U1 = "00000000-0000-0000-0000-0000000000a1"; // vendedor loja A
+const U2 = "00000000-0000-0000-0000-0000000000b1"; // vendedor loja B
+const ADM = "00000000-0000-0000-0000-0000000000ad"; // admin das duas
+
+let db: PGlite;
+const val = async <T = any>(sql: string, params: any[] = []): Promise<T> => {
+  const r = await db.query<Record<string, T>>(sql, params);
+  return r.rows[0] ? Object.values(r.rows[0])[0] : (undefined as T);
+};
+const one = async (sql: string, params: any[] = []) => (await db.query<any>(sql, params)).rows[0];
+const errorOf = async (sql: string, params: any[] = []) => {
+  try { await db.query(sql, params); return null; } catch (e: any) { return String(e.message); }
+};
+const ingest = async (args: Record<string, unknown>) => {
+  const keys = Object.keys(args);
+  const r = await db.query<{ r: any }>(
+    `select crm_ingest_message(${keys.map((k, i) => `${k} => $${i + 1}`).join(", ")}) as r`,
+    Object.values(args),
+  );
+  return r.rows[0].r;
+};
+const asUser = async <T>(uid: string, fn: () => Promise<T>) => {
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${uid}', false);`);
+  try { return await fn(); } finally { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false);`); }
+};
+const stage = (store: string, kind: "sales" | "service", code: string) =>
+  val<string>(`select s.id from crm_stages s join crm_pipelines p on p.id = s.pipeline_id where p.store_id = $1 and p.kind = $2 and s.code = $3`, [store, kind, code]);
+
+beforeAll(async () => {
+  db = new PGlite({ extensions: { pg_trgm } });
+  await db.exec(`
+    create schema auth; create schema extensions;
+    create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
+    grant usage on schema public, auth, extensions to anon, authenticated, service_role;
+    alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+    alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+    create table auth.users (id uuid primary key);
+    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    grant select on auth.users to authenticated, service_role;
+    create type public.app_role as enum ('admin','gerente','vendedor','tecnico','dono');
+    create table public.stores (id uuid primary key default gen_random_uuid(), name text, created_at timestamptz default now());
+    create table public.member_stores (id uuid primary key default gen_random_uuid(), user_id uuid, store_id uuid, created_at timestamptz default now());
+    create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role);
+    create table public.customers (id uuid primary key default gen_random_uuid(), name text, phone text, store_id uuid, created_at timestamptz default now());
+    create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid);
+    create table public.leads (id uuid primary key default gen_random_uuid(), name text, phone text, email text, source text, status text,
+      notes text, store_id uuid, created_at timestamptz default now(), instagram_user_id text, instagram_username text, avatar_url text);
+    create table public.lead_messages (id uuid primary key default gen_random_uuid(), lead_id uuid, content text, sender text,
+      created_at timestamptz default now(), sender_user_id uuid, message_type text, media_url text, store_id uuid not null);
+    create publication supabase_realtime;
+    grant select on all tables in schema public to authenticated;
+
+    insert into auth.users values ('${U1}'), ('${U2}'), ('${ADM}');
+    insert into public.stores (id, name) values ('${A}', 'Loja A'), ('${B}', 'Loja B');
+    insert into public.member_stores (user_id, store_id) values ('${U1}', '${A}'), ('${U2}', '${B}'), ('${ADM}', '${A}'), ('${ADM}', '${B}');
+    insert into public.user_roles (user_id, role) values ('${U1}', 'vendedor'), ('${U2}', 'vendedor'), ('${ADM}', 'admin');
+    insert into public.customers (name, phone, store_id) values ('Maria Cliente', '(87) 99911-2233', '${A}');
+
+    insert into public.leads (id, name, phone, source, store_id, created_at) values
+      ('10000000-0000-0000-0000-000000000001', 'Lead WhatsApp', '558799112233',    'whatsapp',  '${A}', now() - interval '9 days'),
+      ('10000000-0000-0000-0000-000000000002', 'Maria',         '5587999112233',   'whatsapp',  '${A}', now() - interval '8 days'),
+      ('10000000-0000-0000-0000-000000000003', 'João',          '(81) 98888-7777', 'os_vendas', '${A}', now() - interval '7 days'),
+      ('10000000-0000-0000-0000-000000000004', 'Grupo Família', '558791234567-1600000000', 'whatsapp', '${A}', now()),
+      ('10000000-0000-0000-0000-000000000005', 'Grupo novo',    '120363012345678901', 'whatsapp', '${A}', now()),
+      ('10000000-0000-0000-0000-000000000006', 'Maria',         '5587999112233',   'whatsapp',  '${B}', now()),
+      ('10000000-0000-0000-0000-000000000007', 'Sem telefone',  null,              'manual',    '${A}', now());
+    insert into public.lead_messages (lead_id, content, sender, message_type, store_id, created_at) values
+      ('10000000-0000-0000-0000-000000000001', 'Oi, tem iPhone 13?', 'lead',     'text', '${A}', now() - interval '9 days'),
+      ('10000000-0000-0000-0000-000000000002', 'Ainda tem?',         'lead',     'text', '${A}', now() - interval '8 days'),
+      ('10000000-0000-0000-0000-000000000002', 'Tem sim!',           'vendedor', 'text', '${A}', now() - interval '8 days' + interval '5 minutes'),
+      ('10000000-0000-0000-0000-000000000004', 'msg do grupo',       'lead',     'text', '${A}', now());
+  `);
+  await db.exec(FOUNDATION);
+  await db.exec(IMPORT);
+}, 60_000);
+
+describe("CRM — fundação", () => {
+  it("cria 2 funis por loja, Vendas com a jornada Instagram → WhatsApp", async () => {
+    expect(await val(`select count(*)::int from crm_pipelines`)).toBe(4);
+    const codes = (await db.query<{ code: string }>(
+      `select s.code from crm_stages s join crm_pipelines p on p.id = s.pipeline_id where p.store_id = $1 and p.kind = 'sales' order by s.position`, [A],
+    )).rows.map((r) => r.code);
+    expect(codes).toEqual(["ig_new", "wa_invited", "wa_active", "proposal", "won", "lost"]);
+  });
+
+  it("normaliza telefone e casa com/sem o 9º dígito", async () => {
+    expect(await val(`select crm_normalize_phone('5587999112233')`)).toBe("87999112233");
+    expect(await val(`select crm_normalize_phone('(87) 99911-2233')`)).toBe("87999112233");
+    expect(await val(`select crm_normalize_phone('087999112233')`)).toBe("87999112233");
+    expect(await val(`select crm_phone_key('558799112233') = crm_phone_key('5587999112233')`)).toBe(true);
+    expect(await val(`select crm_normalize_phone('120363012345678901')`)).toBeNull();
+    expect(await val(`select crm_normalize_phone('558791234567-1600000000')`)).toBeNull();
+  });
+
+  it("loja nova já nasce com os funis", async () => {
+    await db.exec(`insert into public.stores (name) values ('Loja Nova')`);
+    expect(await val(`select count(*)::int from crm_pipelines p join stores s on s.id = p.store_id where s.name = 'Loja Nova'`)).toBe(2);
+  });
+});
+
+describe("CRM — importação dos leads antigos", () => {
+  it("junta duplicatas por telefone, sem misturar lojas, e mantém lead sem telefone", async () => {
+    expect(await val(`select count(*)::int from crm_contacts where store_id = $1`, [A])).toBe(3);
+    expect(await val(`select count(*)::int from crm_contacts where store_id = $1`, [B])).toBe(1);
+    const maria = await one(`select * from crm_contacts where store_id = $1 and phone_key = crm_phone_key('5587999112233')`, [A]);
+    expect(maria.name).toBe("Maria");
+    expect(maria.phone).toBe("5587999112233");
+    expect(maria.legacy_lead_ids).toHaveLength(2);
+    expect(maria.customer_id).not.toBeNull();
+  });
+
+  it("não importa grupos de WhatsApp", async () => {
+    expect(await val(`select count(*)::int from crm_contacts where name like 'Grupo%'`)).toBe(0);
+    expect(await val(`select count(*)::int from crm_messages`)).toBe(3);
+  });
+
+  it("conversas antigas entram resolvidas, sem negócios", async () => {
+    expect(await val(`select count(*)::int from crm_conversations where status <> 'resolved'`)).toBe(0);
+    expect(await val(`select last_message_preview from crm_conversations`)).toBe("Tem sim!");
+    expect(await val(`select count(*)::int from crm_deals`)).toBe(0);
+    expect(await val(`select origin_channel from crm_contacts where name = 'João'`)).toBe("os_vendas");
+  });
+
+  it("rodar de novo não duplica", async () => {
+    await db.exec(IMPORT);
+    expect(await val(`select count(*)::int from crm_messages`)).toBe(3);
+    expect(await val(`select count(*)::int from crm_contacts`)).toBe(4);
+  });
+});
+
+describe("CRM — ingestão de mensagens", () => {
+  let carlosConv: string;
+
+  it("cria contato e conversa com a 1ª mensagem; id externo repetido é ignorado", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "Quero trocar a tela", p_phone: "5511988887777", p_name: "Carlos", p_external_id: "WA1" });
+    expect(r.contact_created).toBe(true);
+    carlosConv = r.conversation_id;
+    const dup = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "Quero trocar a tela", p_phone: "5511988887777", p_external_id: "WA1" });
+    expect(dup.duplicate).toBe(true);
+  });
+
+  it("número sem o 9º dígito cai no mesmo contato e soma não lidas", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi de novo", p_phone: "551188887777", p_external_id: "WA2" });
+    expect(r.contact_created).toBe(false);
+    expect(await val(`select unread_count from crm_conversations where id = $1`, [carlosConv])).toBe(2);
+  });
+
+  it("resposta de pessoa zera não lidas, marca 1ª resposta e devolve ao humano", async () => {
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "user", p_body: "Bom dia!", p_phone: "5511988887777", p_external_id: "WA3" });
+    const c = await one(`select unread_count, first_response_at, handler from crm_conversations where id = $1`, [carlosConv]);
+    expect(c.unread_count).toBe(0);
+    expect(c.first_response_at).not.toBeNull();
+    expect(c.handler).toBe("human");
+  });
+
+  it("envio do celular da loja para desconhecido não cria contato", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "user", p_body: "pedido ao fornecedor", p_phone: "5511900001111", p_external_id: "WA4" });
+    expect(r.skipped).toBe(true);
+  });
+
+  it("conversa resolvida reabre quando a pessoa escreve", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "voltei", p_phone: "5587999112233", p_external_id: "WA5" });
+    expect(r.contact_created).toBe(false);
+    expect(await val(`select status from crm_conversations where id = $1`, [r.conversation_id])).toBe("open");
+  });
+
+  it("status de entrega só avança", async () => {
+    await db.query(`select crm_update_message_status($1, 'WA3', 'read')`, [A]);
+    await db.query(`select crm_update_message_status($1, 'WA3', 'delivered')`, [A]);
+    expect(await val(`select status from crm_messages where external_id = 'WA3'`)).toBe("read");
+  });
+});
+
+describe("CRM — jornada Instagram → WhatsApp", () => {
+  let ana: string;
+  let code: string;
+
+  it("lead do Instagram recebe código estável e negócio em 'Chamado para o WhatsApp'", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "instagram", p_direction: "in", p_sender_kind: "contact", p_body: "Quanto o 15 Pro?", p_instagram_user_id: "IG777", p_instagram_username: "ana.cel", p_external_id: "IGM1" });
+    ana = r.contact_id;
+    expect(await val(`select origin_channel from crm_contacts where id = $1`, [ana])).toBe("instagram");
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+    await db.query(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, origin_channel) values ($1, $2, $3, $4, 'iPhone 15 Pro', 'instagram')`, [A, pipe, await stage(A, "sales", "ig_new"), ana]);
+    code = await val<string>(`select crm_ensure_handoff_code($1)`, [ana]);
+    expect(code).toMatch(/^IG-[A-Z0-9]{4}$/);
+    expect(await val(`select crm_ensure_handoff_code($1)`, [ana])).toBe(code);
+    await db.query(`update crm_deals set stage_id = $1, handoff_sent_at = now() where contact_id = $2`, [await stage(A, "sales", "wa_invited"), ana]);
+  });
+
+  it("mensagem no WhatsApp com o código junta no mesmo contato e move o negócio", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: `Olá! Vim do Instagram · ref ${code.toLowerCase()}`, p_phone: "5521977776666", p_name: "Ana", p_external_id: "WA6" });
+    expect(r).toMatchObject({ handoff: true, contact_id: ana, deals_moved: 1 });
+    const d = await one(`select s.code, d.handoff_completed_at, d.origin_channel from crm_deals d join crm_stages s on s.id = d.stage_id where d.contact_id = $1`, [ana]);
+    expect(d.code).toBe("wa_active");
+    expect(d.handoff_completed_at).not.toBeNull();
+    expect(d.origin_channel).toBe("instagram");
+    expect(await val(`select count(*)::int from crm_conversations where contact_id = $1`, [ana])).toBe(2);
+    expect(await val(`select phone from crm_contacts where id = $1`, [ana])).toBe("5521977776666");
+  });
+
+  it("se a pessoa já tinha contato pelo WhatsApp, os dois são juntados sem perder mensagens", async () => {
+    const bia = (await ingest({ p_store_id: A, p_channel: "instagram", p_direction: "in", p_sender_kind: "contact", p_body: "oi", p_instagram_user_id: "IG888", p_external_id: "IGM2" })).contact_id;
+    const biaWa = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi antes", p_phone: "5531966665555", p_external_id: "WA7" })).contact_id;
+    const code2 = await val<string>(`select crm_ensure_handoff_code($1)`, [bia]);
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: `ref ${code2}`, p_phone: "5531966665555", p_external_id: "WA8" });
+    expect(r.contact_id).toBe(bia);
+    expect(await val(`select count(*)::int from crm_contacts where id = $1`, [biaWa])).toBe(0);
+    expect(await val(`select count(*)::int from crm_messages where contact_id = $1`, [bia])).toBe(3);
+  });
+});
+
+describe("CRM — regras do negócio", () => {
+  it("perder exige motivo; ganhar limpa o motivo; histórico registra tudo", async () => {
+    const dealId = await val<string>(`select d.id from crm_deals d join crm_contacts c on c.id = d.contact_id where c.instagram_user_id = 'IG777'`);
+    expect(await errorOf(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "lost"), dealId])).toMatch(/motivo da perda/);
+    await db.query(`update crm_deals set stage_id = $1, lost_reason = 'Achou mais barato' where id = $2`, [await stage(A, "sales", "lost"), dealId]);
+    expect(await val(`select status from crm_deals where id = $1`, [dealId])).toBe("lost");
+    await db.query(`update crm_deals set stage_id = $1, value = 5200 where id = $2`, [await stage(A, "sales", "won"), dealId]);
+    const won = await one(`select status, won_at, lost_reason from crm_deals where id = $1`, [dealId]);
+    expect(won.status).toBe("won");
+    expect(won.won_at).not.toBeNull();
+    expect(won.lost_reason).toBeNull();
+    expect(await val<number>(`select count(*)::int from crm_activities where deal_id = $1`, [dealId])).toBeGreaterThanOrEqual(5);
+  });
+
+  it("negócio não vai para funil de outra loja", async () => {
+    const dealId = await val<string>(`select id from crm_deals limit 1`);
+    const pipeB = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [B]);
+    expect(await errorOf(`update crm_deals set pipeline_id = $1 where id = $2`, [pipeB, dealId])).toMatch(/não pertence|outra loja/);
+  });
+});
+
+describe("CRM — segurança (RLS)", () => {
+  it("vendedor só enxerga e cria na própria loja", async () => {
+    await asUser(U1, async () => {
+      expect(await val(`select count(*)::int from crm_contacts where store_id = $1`, [B])).toBe(0);
+      expect(await val<number>(`select count(*)::int from crm_contacts where store_id = $1`, [A])).toBeGreaterThan(0);
+      expect(await errorOf(`insert into crm_contacts (store_id, name) values ($1, 'x')`, [B])).not.toBeNull();
+    });
+  });
+
+  it("pelo app só grava nota interna; envio de mensagem passa pelo servidor", async () => {
+    await asUser(U1, async () => {
+      const conv = await one(`select id, contact_id from crm_conversations where store_id = $1 limit 1`, [A]);
+      const ins = (kind: string) => errorOf(
+        `insert into crm_messages (store_id, conversation_id, contact_id, direction, sender_kind, sender_user_id, kind, body) values ($1,$2,$3,'out','user',$4,$5,'x')`,
+        [A, conv.id, conv.contact_id, U1, kind],
+      );
+      expect(await ins("text")).not.toBeNull();
+      expect(await ins("note")).toBeNull();
+      expect(await errorOf(`select crm_ingest_message(p_store_id => $1, p_channel => 'whatsapp', p_direction => 'in', p_sender_kind => 'contact', p_phone => '5511911112222')`, [A])).not.toBeNull();
+    });
+  });
+
+  it("vendedor não altera etapas nem apaga contatos; admin altera etapas", async () => {
+    await asUser(U1, async () => {
+      await db.query(`update crm_stages set name = 'x' where store_id = $1`, [A]);
+      await db.query(`delete from crm_contacts where store_id = $1`, [A]);
+    });
+    expect(await val(`select count(*)::int from crm_stages where name = 'x'`)).toBe(0);
+    expect(await val<number>(`select count(*)::int from crm_contacts where store_id = $1`, [A])).toBeGreaterThan(0);
+    await asUser(ADM, async () => {
+      await db.query(`update crm_stages set sla_hours = 12 where store_id = $1 and code = 'wa_invited'`, [A]);
+    });
+    expect(await val(`select sla_hours from crm_stages where store_id = $1 and code = 'wa_invited'`, [A])).toBe(12);
+  });
+
+  it("funções do app checam a loja", async () => {
+    const ana = await val<string>(`select id from crm_contacts where instagram_user_id = 'IG777'`);
+    const bia = await val<string>(`select id from crm_contacts where instagram_user_id = 'IG888'`);
+    await asUser(U2, async () => {
+      expect(await errorOf(`select crm_ensure_handoff_code($1)`, [ana])).toMatch(/Sem acesso/);
+      expect(await errorOf(`select crm_merge_contacts($1, $2)`, [ana, bia])).toMatch(/Sem acesso/);
+    });
+  });
+});

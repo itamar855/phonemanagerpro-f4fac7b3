@@ -1,248 +1,190 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { adminClient, corsHeaders, json } from "../_shared/http.ts"
+import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/evolution.ts"
 import { checkWebhookAuth } from "./auth.ts"
-import { isDirectChat, parseMessageBody, resolveTimestamp } from "./parse.ts"
+import { mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-evolution-webhook-secret',
+/** Config pela instância do evento; sem ela, o número ativo. */
+async function resolveConfig(admin: SupabaseClient, instance: unknown): Promise<EvolutionConfig | null> {
+  if (typeof instance === 'string' && instance) {
+    const { data } = await admin.from('whatsapp_config').select('*').eq('instance_name', instance).limit(1).maybeSingle()
+    if (data) return data as EvolutionConfig
+  }
+  return loadWhatsAppConfig(admin, null)
 }
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+// ---------------------------------------------------------------------------
+// Tabelas antigas (leads/lead_messages): mantidas até a Fase 2 substituir a tela /leads.
+// ---------------------------------------------------------------------------
+async function writeLegacy(admin: SupabaseClient, args: {
+  storeId: string; phone: string; pushName: string; fromMe: boolean; at: string;
+  content: string; kind: string; mediaUrl: string | null;
+}): Promise<{ leadId: string | null; storeId: string }> {
+  const { storeId, phone, fromMe, at } = args
+  let lead: any = null
+  {
+    const { data } = await admin.from('leads').select('*').eq('phone', phone).eq('store_id', storeId)
+      .order('created_at', { ascending: true }).limit(1)
+    lead = data?.[0] ?? null
+  }
+  if (!lead) {
+    const { data } = await admin.from('leads').select('*').eq('phone', phone)
+      .order('created_at', { ascending: true }).limit(1)
+    lead = data?.[0] ?? null
+  }
+  if (!lead) {
+    if (fromMe) return { leadId: null, storeId }
+    const { data, error } = await admin.from('leads').insert({
+      name: args.pushName, phone, source: 'whatsapp', status: 'novo', store_id: storeId,
+      has_unread: true, last_message_at: at,
+    }).select().single()
+    if (error) throw error
+    lead = data
+  }
+
+  const { data: dup } = await admin.from('lead_messages').select('id')
+    .eq('lead_id', lead.id).eq('created_at', at).eq('content', args.content).limit(1)
+  if (dup && dup.length > 0) return { leadId: lead.id, storeId: lead.store_id || storeId }
+
+  // Eco do que a tela antiga enviou (whatsapp-send já gravou em lead_messages)
+  if (fromMe) {
+    const since = new Date(new Date(at).getTime() - 3 * 60 * 1000).toISOString()
+    const { data: echo } = await admin.from('lead_messages').select('id')
+      .eq('lead_id', lead.id).eq('sender', 'vendedor').eq('content', args.content).gte('created_at', since).limit(1)
+    if (echo && echo.length > 0) return { leadId: lead.id, storeId: lead.store_id || storeId }
+  }
+
+  const { error: msgErr } = await admin.from('lead_messages').insert({
+    lead_id: lead.id, store_id: lead.store_id || storeId, content: args.content,
+    sender: fromMe ? 'vendedor' : 'lead', sender_user_id: null,
+    message_type: args.kind === 'image' || args.kind === 'audio' ? args.kind : 'text',
+    media_url: args.mediaUrl, created_at: at,
   })
+  if (msgErr) throw msgErr
 
-function getServiceRoleKey(): string {
-  const raw = Deno.env.get("SUPABASE_SECRET_KEYS");
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      const key = parsed?.["default"];
-      if (typeof key === "string" && key.startsWith("sb_secret_")) {
-        return key;
-      }
-    } catch {}
-  }
-  const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (legacy) return legacy;
-  throw new Error("Supabase privileged credential unavailable.");
+  await admin.from('leads').update(fromMe
+    ? { last_message_at: at, has_unread: false, unread_count: 0 }
+    : { last_message_at: at, has_unread: true, unread_count: (Number(lead.unread_count) || 0) + 1 }
+  ).eq('id', lead.id)
+  return { leadId: lead.id, storeId: lead.store_id || storeId }
 }
 
-async function fetchMediaBase64(cfg: any, messageId: string | undefined): Promise<string | undefined> {
-  if (!cfg?.api_url || !cfg?.api_key || !cfg?.instance_name || !messageId) return undefined
-  try {
-    const resp = await fetch(
-      `${String(cfg.api_url).replace(/\/+$/, '')}/chat/getBase64FromMediaMessage/${encodeURIComponent(cfg.instance_name)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: cfg.api_key },
-        body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
-      }
-    )
-    if (!resp.ok) return undefined
-    const data = await resp.json()
-    return data?.base64 || data?.data || undefined
-  } catch (err) {
-    console.error('[WhatsApp Webhook] Erro ao buscar mídia na Evolution:', err)
-    return undefined
+async function uploadMedia(admin: SupabaseClient, folder: string, messageId: string | undefined, base64: string, mimeType: string, kind: string) {
+  const ext = kind === 'audio' ? 'ogg' : mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
+  const fileName = `whatsapp/${folder}/${Date.now()}_${messageId || crypto.randomUUID()}.${ext}`
+  const clean = base64.replace(/^data:.*?;base64,/, '')
+  const bin = atob(clean)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  const { data, error } = await admin.storage.from('chat_media').upload(fileName, bytes, { contentType: mimeType, upsert: true })
+  if (error || !data?.path) {
+    console.error('[WhatsApp Webhook] Falha no upload da mídia:', error?.message)
+    return null
   }
+  return admin.storage.from('chat_media').getPublicUrl(data.path).data.publicUrl
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   // Autenticação obrigatória (fail-closed): sem EVOLUTION_WEBHOOK_SECRET nada é aceito.
-  const auth = checkWebhookAuth(req.headers, Deno.env.get("EVOLUTION_WEBHOOK_SECRET"))
+  const auth = checkWebhookAuth(req.headers, Deno.env.get('EVOLUTION_WEBHOOK_SECRET'))
   if (!auth.ok) {
     if (auth.status === 500) console.error('[WhatsApp Webhook] EVOLUTION_WEBHOOK_SECRET não configurado — webhook recusando eventos.')
     return json({ error: auth.error }, auth.status)
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      getServiceRoleKey()
-    )
-
+    const admin = adminClient()
     const payload = await req.json()
-
-    // 1. Só eventos de mensagem
     const eventName = String(payload.event || '').toLowerCase().replace(/_/g, '.')
-    if (eventName !== 'messages.upsert') {
+
+    if (eventName !== 'messages.upsert' && eventName !== 'messages.update') {
       return json({ status: 'ignored', event: payload.event })
     }
 
+    const cfg = await resolveConfig(admin, payload.instance)
+    if (!cfg) throw new Error('Nenhuma configuração de WhatsApp encontrada para associar a mensagem.')
+    const storeId = cfg.store_id
+
+    // ---- Status de entrega/leitura ----
+    if (eventName === 'messages.update') {
+      const items = Array.isArray(payload.data) ? payload.data : [payload.data]
+      let updated = 0
+      for (const it of items) {
+        const externalId = it?.keyId ?? it?.key?.id ?? it?.id
+        const status = mapAckStatus(it?.status ?? it?.update?.status)
+        if (!externalId || !status) continue
+        const { data, error } = await admin.rpc('crm_update_message_status', { p_store_id: storeId, p_external_id: externalId, p_status: status })
+        if (error) console.error('[WhatsApp Webhook] status:', error.message)
+        else updated += Number(data) || 0
+      }
+      return json({ status: 'success', updated })
+    }
+
+    // ---- Mensagem ----
     const message = payload.data
     const key = message?.key || {}
     const fromMe = Boolean(key.fromMe)
-    const remoteJid: string = key.remoteJid || ''
 
-    // 2. Só conversas privadas (sem grupos, transmissões, canais, status)
-    if (!isDirectChat(key)) {
-      return json({ status: 'ignored', reason: 'not_direct_chat' })
-    }
+    const jid = resolveContactJid(key)
+    if (!jid) return json({ status: 'ignored', reason: 'not_direct_chat' })
 
-    // 3. Conteúdo: eventos sem conteúdo de conversa (reação, protocolo...) não criam lead
     const parsed = parseMessageBody(message, payload)
-    if (!parsed) {
-      return json({ status: 'ignored', reason: 'unsupported_message' })
-    }
+    if (!parsed) return json({ status: 'ignored', reason: 'unsupported_message' })
 
-    const phone = remoteJid.split('@')[0]
+    const phone = jid.split('@')[0]
     const pushName = message.pushName || 'Lead WhatsApp'
-    const messageCreatedAt = resolveTimestamp(message?.messageTimestamp)
+    const at = resolveTimestamp(message?.messageTimestamp)
 
-    // 4. Loja e configuração pela instância
-    let storeId: string | null = null
-    let activeConfig: any = null
-    if (payload.instance) {
-      const { data: cfg } = await supabaseClient
-        .from('whatsapp_config')
-        .select('*')
-        .eq('instance_name', payload.instance)
-        .limit(1)
-        .maybeSingle()
-      if (cfg) { storeId = cfg.store_id; activeConfig = cfg }
-    }
-    if (!storeId) {
-      const { data: cfg } = await supabaseClient
-        .from('whatsapp_config')
-        .select('*')
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle()
-      if (cfg) { storeId = cfg.store_id; activeConfig = cfg }
-    }
-    if (!storeId) throw new Error('Nenhuma configuração de WhatsApp encontrada para associar a mensagem.')
-
-    // 5. Lead: prefere o da mesma loja; nunca usa maybeSingle sobre telefone duplicado
-    //    (com duplicatas ele retornava erro e o código criava mais um lead).
-    let lead: any = null
-    {
-      const { data } = await supabaseClient
-        .from('leads').select('*')
-        .eq('phone', phone).eq('store_id', storeId)
-        .order('created_at', { ascending: true }).limit(1)
-      lead = data?.[0] ?? null
-    }
-    if (!lead) {
-      const { data } = await supabaseClient
-        .from('leads').select('*')
-        .eq('phone', phone)
-        .order('created_at', { ascending: true }).limit(1)
-      lead = data?.[0] ?? null
-    }
-
-    if (!lead) {
-      // Mensagem enviada pelo celular da loja para alguém que não é lead: não cria lead.
-      if (fromMe) return json({ status: 'ignored', reason: 'outgoing_to_unknown_contact' })
-
-      const { data: newLead, error: createError } = await supabaseClient
-        .from('leads')
-        .insert({
-          name: pushName,
-          phone,
-          source: 'whatsapp',
-          status: 'novo',
-          store_id: storeId,
-          has_unread: true,
-          last_message_at: messageCreatedAt,
-        })
-        .select()
-        .single()
-      if (createError) throw createError
-      lead = newLead
-    }
-
-    const finalStoreId = lead.store_id || storeId
-
-    // 6. Idempotência: a Evolution pode reenviar o mesmo evento
-    {
-      const { data: dup } = await supabaseClient
-        .from('lead_messages').select('id')
-        .eq('lead_id', lead.id)
-        .eq('created_at', messageCreatedAt)
-        .eq('content', parsed.content)
-        .limit(1)
-      if (dup && dup.length > 0) return json({ status: 'duplicate' })
-    }
-
-    // 6b. Eco de envio: o que o CRM manda (whatsapp-send já gravou) volta aqui como fromMe.
-    if (fromMe) {
-      const windowStart = new Date(new Date(messageCreatedAt).getTime() - 3 * 60 * 1000).toISOString()
-      const { data: echo } = await supabaseClient
-        .from('lead_messages').select('id')
-        .eq('lead_id', lead.id)
-        .eq('sender', 'vendedor')
-        .eq('content', parsed.content)
-        .gte('created_at', windowStart)
-        .limit(1)
-      if (echo && echo.length > 0) return json({ status: 'echo_ignored' })
-    }
-
-    // 7. Mídia (imagem/áudio) → storage
+    // Mídia (imagem/áudio)
     let mediaUrl: string | null = null
     if (parsed.kind === 'image' || parsed.kind === 'audio') {
-      const base64 = parsed.base64 || await fetchMediaBase64(activeConfig, key.id)
+      let base64 = parsed.base64
+      if (!base64 && key.id) {
+        try { base64 = await evolution(cfg).mediaBase64(key.id) } catch (e) { console.error('[WhatsApp Webhook] mídia:', (e as Error).message) }
+      }
       if (base64) {
         try {
-          const mimeType = parsed.mimeType || (parsed.kind === 'image' ? 'image/jpeg' : 'audio/ogg')
-          const ext = parsed.kind === 'audio'
-            ? 'ogg'
-            : mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
-          const fileName = `whatsapp/${lead.id}/${Date.now()}_${key.id || crypto.randomUUID()}.${ext}`
-          const cleanBase64 = base64.replace(/^data:.*?;base64,/, '')
-          const binaryStr = atob(cleanBase64)
-          const bytes = new Uint8Array(binaryStr.length)
-          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-
-          const { data: uploadData, error: uploadErr } = await supabaseClient.storage
-            .from('chat_media')
-            .upload(fileName, bytes, { contentType: mimeType, upsert: true })
-          if (!uploadErr && uploadData?.path) {
-            mediaUrl = supabaseClient.storage.from('chat_media').getPublicUrl(uploadData.path).data.publicUrl
-          } else if (uploadErr) {
-            console.error('[WhatsApp Webhook] Falha no upload da mídia:', uploadErr.message)
-          }
-        } catch (mediaErr) {
-          console.error('[WhatsApp Webhook] Erro ao salvar mídia:', mediaErr)
-        }
+          mediaUrl = await uploadMedia(admin, phone, key.id, base64, parsed.mimeType || (parsed.kind === 'image' ? 'image/jpeg' : 'audio/ogg'), parsed.kind)
+        } catch (e) { console.error('[WhatsApp Webhook] upload:', e) }
       }
     }
 
-    // 8. Grava a mensagem (somente colunas que existem em lead_messages)
-    const { error: msgInsertError } = await supabaseClient
-      .from('lead_messages')
-      .insert({
-        lead_id: lead.id,
-        store_id: finalStoreId,
-        content: parsed.content,
-        sender: fromMe ? 'vendedor' : 'lead',
-        sender_user_id: null,
-        message_type: parsed.kind === 'image' || parsed.kind === 'audio' ? parsed.kind : 'text',
-        media_url: mediaUrl,
-        created_at: messageCreatedAt,
-      })
-    if (msgInsertError) throw msgInsertError
+    // 1. CRM novo: contato + conversa + mensagem numa transação (idempotente pelo id do WhatsApp)
+    const { data: crm, error: crmError } = await admin.rpc('crm_ingest_message', {
+      p_store_id: storeId,
+      p_channel: 'whatsapp',
+      p_direction: fromMe ? 'out' : 'in',
+      p_sender_kind: fromMe ? 'user' : 'contact',
+      p_kind: parsed.kind,
+      p_body: parsed.content,
+      p_phone: phone,
+      p_name: fromMe ? null : pushName,
+      p_external_thread_id: jid,
+      p_media_url: mediaUrl,
+      p_media_mime: parsed.mimeType ?? null,
+      p_external_id: key.id ?? null,
+      p_created_at: at,
+    })
+    if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
 
-    // 9. Atualiza o lead só depois de a mensagem estar salva
-    const leadUpdate: Record<string, unknown> = { last_message_at: messageCreatedAt }
-    if (fromMe) {
-      leadUpdate.has_unread = false
-      leadUpdate.unread_count = 0
-    } else {
-      leadUpdate.has_unread = true
-      leadUpdate.unread_count = (Number(lead.unread_count) || 0) + 1
+    // Mensagem que o próprio CRM enviou (crm-send já gravou): não repete nas tabelas antigas
+    if (crm?.duplicate) return json({ status: 'duplicate' })
+
+    // 2. Tabelas antigas (tela /leads atual)
+    try {
+      await writeLegacy(admin, { storeId, phone, pushName, fromMe, at, content: parsed.content, kind: parsed.kind, mediaUrl })
+    } catch (legacyErr) {
+      console.error('[WhatsApp Webhook] legado:', (legacyErr as Error)?.message)
+      if (crmError) throw legacyErr // nada foi salvo em lugar nenhum
     }
-    const { error: leadUpdateError } = await supabaseClient.from('leads').update(leadUpdate).eq('id', lead.id)
-    if (leadUpdateError) console.error('[WhatsApp Webhook] Falha ao atualizar lead:', leadUpdateError.message)
 
-    return json({ status: 'success' })
+    if (crmError) return json({ status: 'partial', error: crmError.message }, 500)
+    return json({ status: 'success', crm })
   } catch (error) {
     console.error('[WhatsApp Webhook] Erro:', error)
     return json({ error: (error as Error)?.message || 'Erro interno' }, 500)
