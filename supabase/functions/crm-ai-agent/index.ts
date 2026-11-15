@@ -7,6 +7,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, corsHeaders, errorResponse, HttpError, json, requireManager, requireMember, requireUser } from "../_shared/http.ts";
 import { decide, runAgent, type AiSettings } from "../_shared/ai-agent.ts";
 import type { TranscriptMessage } from "../_shared/ai-agent-core.ts";
+import { loadMessageAudio, transcribeMessage } from "../_shared/transcribe.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -74,6 +75,19 @@ serve(async (req) => {
         out.groq = r.ok ? (d.data ?? []).map((m: any) => m.id) : `erro ${r.status}`;
       }
       return json(out);
+    }
+
+    // Transcrever um áudio já recebido (botão na conversa)
+    if (action === "transcribe") {
+      const messageId = String(body.message_id || "");
+      const { data: msg } = await admin.from("crm_messages").select("id, store_id, kind, media_path, media_url, media_mime")
+        .eq("id", messageId).maybeSingle();
+      if (!msg || msg.kind !== "audio") throw new HttpError(404, "Áudio não encontrado.");
+      await requireMember(admin, user.id, msg.store_id);
+      const { bytes, mime } = await loadMessageAudio(admin, msg);
+      const text = await transcribeMessage(admin, msg.id, bytes, mime);
+      if (text === null) throw new HttpError(502, "Não foi possível transcrever este áudio.");
+      return json({ transcript: text });
     }
 
     if (action === "suggest") {

@@ -6,6 +6,7 @@ import { adminClient, corsHeaders, json } from "../_shared/http.ts"
 import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/evolution.ts"
 import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
+import { base64ToBytes, transcribeMessage } from "../_shared/transcribe.ts"
 import { checkWebhookAuth } from "./auth.ts"
 import { mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
@@ -144,11 +145,13 @@ serve(async (req) => {
 
     // Mídia (imagem/áudio)
     let mediaUrl: string | null = null
+    let audioBase64: string | undefined
     if (parsed.kind === 'image' || parsed.kind === 'audio') {
       let base64 = parsed.base64
       if (!base64 && key.id) {
         try { base64 = await evolution(cfg).mediaBase64(key.id) } catch (e) { console.error('[WhatsApp Webhook] mídia:', (e as Error).message) }
       }
+      if (parsed.kind === 'audio') audioBase64 = base64
       if (base64) {
         try {
           mediaUrl = await uploadMedia(admin, phone, key.id, base64, parsed.mimeType || (parsed.kind === 'image' ? 'image/jpeg' : 'audio/ogg'), parsed.kind)
@@ -174,17 +177,24 @@ serve(async (req) => {
     })
     if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
 
-    // Segundo plano: foto de perfil e agente de IA (sem atrasar a resposta à Evolution)
+    // Segundo plano (sem atrasar a resposta à Evolution): transcrição do áudio, foto e agente de IA
+    const rt = (globalThis as any).EdgeRuntime
+    const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p)
+    let transcription: Promise<unknown> = Promise.resolve()
+    if (audioBase64 && crm?.message_id && !crm.duplicate && !crm.ignored) {
+      transcription = transcribeMessage(admin, crm.message_id, base64ToBytes(audioBase64), parsed.mimeType || 'audio/ogg')
+      background(transcription)
+    }
     if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
       const photo = (async () => {
         const { data: c } = await admin.from('crm_contacts').select('id, phone, avatar_url, avatar_checked_at').eq('id', crm.contact_id).maybeSingle()
         if (c) await refreshAvatars(admin, cfg, [c])
       })().catch((e) => console.error('[WhatsApp Webhook] foto:', (e as Error).message))
-      // espera 8 s: se a pessoa mandar outra mensagem, só a última aciona a IA
-      const agent = runAgent(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 })
+      // espera a transcrição (a IA "ouve" o áudio pelo texto) e mais 8 s para juntar mensagens picadas
+      const agent = transcription
+        .then(() => runAgent(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }))
         .then((r) => { if (r.status !== 'skipped') console.log('[WhatsApp Webhook] IA:', r.status, r.status === 'done' ? r.decision.decision : '') })
-      const rt = (globalThis as any).EdgeRuntime
-      if (rt?.waitUntil) { rt.waitUntil(photo); rt.waitUntil(agent) } else await Promise.all([photo, agent])
+      if (rt?.waitUntil) { background(photo); background(agent) } else await Promise.all([photo, agent, transcription])
     }
 
     // Mensagem que o próprio CRM enviou (crm-send já gravou): não repete nas tabelas antigas

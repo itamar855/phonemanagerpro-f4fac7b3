@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, StickyNote } from "lucide-react";
+import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, Loader2, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { transcribeMessage } from "../../api/ai";
 import { mediaSignedUrl } from "../../api/inbox";
 import type { CrmMessage } from "../../lib/types";
 
@@ -26,6 +27,40 @@ function StatusIcon({ status }: { status: CrmMessage["status"] }) {
     case "failed": return <AlertCircle className={cn(cls, "text-destructive")} aria-label="Falhou" />;
     default: return null;
   }
+}
+
+/** Texto do áudio (a IA lê isto). Áudio antigo ganha o botão "Transcrever". */
+function AudioTranscript({ m, hasFile }: { m: CrmMessage; hasFile: boolean }) {
+  const [text, setText] = useState<string | null>(m.transcript ?? null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(m.transcript_status === "failed");
+  useEffect(() => { setText(m.transcript ?? null); setFailed(m.transcript_status === "failed"); }, [m.transcript, m.transcript_status]);
+
+  if (text) {
+    return (
+      <p className="mb-1 max-w-60 border-l-2 border-primary/40 pl-2 text-xs italic text-muted-foreground">
+        <span className="sr-only">Transcrição: </span>“{text}”
+      </p>
+    );
+  }
+  if (m.transcript_status === "empty") return <p className="mb-1 text-[11px] text-muted-foreground">(áudio sem fala)</p>;
+  if (!hasFile) return null;
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try { setText((await transcribeMessage(m.id)).transcript || null); setFailed(false); }
+        catch { setFailed(true); }
+        finally { setBusy(false); }
+      }}
+      className="mb-1 inline-flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : <FileText className="h-3 w-3" aria-hidden="true" />}
+      {busy ? "Transcrevendo…" : failed ? "Tentar transcrever de novo" : "Transcrever"}
+    </button>
+  );
 }
 
 export function MessageBubble({ m, authorName }: { m: CrmMessage; authorName?: string }) {
@@ -74,6 +109,7 @@ export function MessageBubble({ m, authorName }: { m: CrmMessage; authorName?: s
         {m.kind === "audio" && (src ? (
           <audio controls preload="none" src={src} className="mb-1 h-10 w-60 max-w-full" aria-label="Áudio" />
         ) : <p className="italic text-muted-foreground">[Áudio indisponível]</p>)}
+        {m.kind === "audio" && <AudioTranscript m={m} hasFile={Boolean(src)} />}
 
         {(m.kind === "document" || m.kind === "video") && (
           src ? (

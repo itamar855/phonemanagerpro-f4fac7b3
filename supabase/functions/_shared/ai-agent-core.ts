@@ -26,6 +26,8 @@ export interface TranscriptMessage {
   kind: string;
   body: string | null;
   created_at?: string;
+  /** Transcrição do áudio, quando houver */
+  transcript?: string | null;
 }
 
 export interface ServiceOrderInfo { number: number | string; device: string; status: string }
@@ -93,7 +95,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "",
     "DECISÃO (campo decision)",
     "- reply: continue a conversa com a próxima pergunta ou informação.",
-    "- handoff: passe para o atendente quando: já souber o interesse E o aparelho/modelo; a pessoa pedir um atendente/pessoa; houver reclamação, negociação ou pergunta fora do conhecimento; ou a mensagem for áudio/imagem que você não consegue entender. No handoff, reply = frase curta de transição avisando que um atendente vai continuar, SEM fazer perguntas.",
+    "- handoff: passe para o atendente quando: já souber o interesse E o aparelho/modelo; a pessoa pedir um atendente/pessoa; houver reclamação, negociação ou pergunta fora do conhecimento; ou a mensagem for imagem/vídeo/áudio sem transcrição. Áudios transcritos você entende normalmente pelo texto. No handoff, reply = frase curta de transição avisando que um atendente vai continuar, SEM fazer perguntas.",
     "- ignore: a conversa NÃO é de cliente (assunto pessoal, fornecedor, entregador, propaganda, spam, engano). Nesse caso reply = \"\" e commercial = false.",
     "",
     "OUTROS CAMPOS",
@@ -132,7 +134,10 @@ export function toTurns(messages: TranscriptMessage[], limit = 30): { role: "use
   for (const m of messages.slice(-limit)) {
     if (m.kind === "note" || m.sender_kind === "system") continue;
     const role = m.direction === "in" ? "user" : "model";
-    const media = m.kind !== "text" ? MEDIA_LABEL[m.kind] ?? `[${m.kind}]` : null;
+    const heard = m.kind === "audio" && m.transcript?.trim() ? m.transcript.trim() : null;
+    const media = heard
+      ? (m.direction === "in" ? `[áudio da pessoa, transcrito]: ${heard}` : `[áudio enviado pela loja, transcrito]: ${heard}`)
+      : m.kind !== "text" ? MEDIA_LABEL[m.kind] ?? `[${m.kind}]` : null;
     const body = (m.body ?? "").trim();
     const text = [media, body && !/^\[(Imagem|Áudio|Vídeo|Documento|Figurinha)\]$/i.test(body) ? body : null].filter(Boolean).join(" ");
     if (!text) continue;
@@ -191,8 +196,10 @@ export interface GuardInput {
 /** Travas finais, independentes do que o modelo decidiu. */
 export function applyGuards(d: AgentDecision, g: GuardInput): AgentDecision {
   const out = { ...d };
-  const lastText = (g.lastInbound?.body ?? "").trim();
-  const mediaOnly = Boolean(g.lastInbound && g.lastInbound.kind !== "text" && !/[a-z]{3}/i.test(lastText.replace(/^\[.*?\]$/, "")));
+  const heard = g.lastInbound?.kind === "audio" ? (g.lastInbound.transcript ?? "").trim() : "";
+  const lastText = heard || (g.lastInbound?.body ?? "").trim();
+  // áudio transcrito conta como texto; só mídia que a IA não entende vai para o humano
+  const mediaOnly = Boolean(g.lastInbound && g.lastInbound.kind !== "text" && !heard && !/[a-z]{3}/i.test(lastText.replace(/^\[.*?\]$/, "")));
 
   if (out.decision !== "ignore") {
     if (ASKS_HUMAN.test(lastText)) { out.decision = "handoff"; out.reason = out.reason ?? "pediu atendente"; }

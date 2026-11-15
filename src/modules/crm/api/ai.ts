@@ -24,6 +24,10 @@ export function suggestReply(conversationId: string) {
   return invokeFn<{ status: string; reason?: string; decision?: CrmAiDecision }>("crm-ai-agent", { action: "suggest", conversation_id: conversationId });
 }
 
+export function transcribeMessage(messageId: string) {
+  return invokeFn<{ transcript: string }>("crm-ai-agent", { action: "transcribe", message_id: messageId });
+}
+
 export async function pendingSuggestion(conversationId: string): Promise<CrmAiSuggestion | null> {
   const { data, error } = await crmDb.from("crm_ai_suggestions").select("*").eq("conversation_id", conversationId).eq("status", "pending")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();

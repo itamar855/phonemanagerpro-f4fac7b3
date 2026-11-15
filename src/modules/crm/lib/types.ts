@@ -76,6 +76,8 @@ export interface CrmMessage {
   status: MessageStatus;
   error: string | null;
   created_at: string;
+  transcript?: string | null;
+  transcript_status?: "done" | "failed" | "empty" | null;
 }
 
 export interface CrmPipeline {
