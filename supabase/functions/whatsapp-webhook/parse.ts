@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 // Extração do conteúdo de uma mensagem da Evolution API.
 // Módulo puro (sem imports de Deno) para ser testado pelo Vitest.
 

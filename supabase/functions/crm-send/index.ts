@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 // Envio de mensagens do CRM (WhatsApp via Evolution; Instagram via Meta Graph).
 // O navegador só informa a conversa e o conteúdo; credenciais ficam no servidor.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";

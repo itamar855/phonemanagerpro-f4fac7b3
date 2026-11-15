@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2"

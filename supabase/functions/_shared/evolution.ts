@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 // Cliente da Evolution API (WhatsApp). A chave fica só no servidor.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { HttpError } from "./http.ts";

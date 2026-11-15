@@ -1,4 +1,5 @@
 // @vitest-environment node
+/* eslint-disable @typescript-eslint/no-explicit-any -- payloads JSON externos (Evolution/Meta/PostgREST) sem tipos */
 /**
  * Testa as migrations do CRM num Postgres real em memória (PGlite),
  * com stubs mínimos do Supabase (auth.uid, papéis, member_stores...).
