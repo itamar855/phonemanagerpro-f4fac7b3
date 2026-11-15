@@ -25,6 +25,7 @@ const TRANSCRIPT = read("20261116040000_crm_audio_transcript.sql");
 const LEARNING = read("20261116050000_crm_ai_learning.sql");
 const TRACKING = read("20261116060000_crm_tracking.sql");
 const IG_MANUAL = read("20261116070000_crm_ig_manual_lead.sql");
+const AD_CODES = read("20261116080000_crm_ad_codes.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -121,6 +122,7 @@ beforeAll(async () => {
   await db.exec(LEARNING);
   await db.exec(TRACKING);
   await db.exec(IG_MANUAL);
+  await db.exec(AD_CODES);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -683,6 +685,18 @@ describe("CRM — lead do Instagram (manual)", () => {
     expect(await val(`select a.kind || ':' || coalesce(a.utm_campaign, '') from crm_contacts c join crm_attributions a on a.id = c.attribution_id where c.id = $1`, [r.contact_id])).toBe("manual:Tela Novembro");
   });
 
+  it("código do anúncio preenche campanha › conjunto › anúncio; @ já cadastrado vira o mesmo contato", async () => {
+    await db.query(`insert into crm_ad_codes (store_id, code, campaign_name, adset_name, ad_name, ad_id) values ($1, 'T21', 'Tela Novembro', 'Público 25-45', 'Vídeo 1', '120210')`, [A]);
+    // contato antigo só com @ (sem telefone)
+    const old = await val<string>(`insert into crm_contacts (store_id, name, instagram_username, origin_channel) values ($1, '@carla.m', 'carla.m', 'instagram') returning id`, [A]);
+    const r = await asUser(U1, () => create({ p_store_id: A, p_phone: "81977776666", p_username: "Carla.M", p_source: "ad", p_ad_code: "t21" }));
+    expect(r.contact_id).toBe(old);
+    expect(r.existing).toBe(true);
+    const at = await one(`select a.* from crm_contacts c join crm_attributions a on a.id = c.attribution_id where c.id = $1`, [old]);
+    expect(at).toMatchObject({ utm_campaign: "Tela Novembro", utm_term: "Público 25-45", utm_content: "Vídeo 1", ad_id: "120210", ad_code: "T21" });
+    expect(await val(`select phone from crm_contacts where id = $1`, [old])).toBe("5581977776666");
+  });
+
   it("número inválido e loja de outra pessoa são recusados", async () => {
     expect(await asUser(U1, () => errorOf(`select crm_create_instagram_lead($1, '123')`, [A]))).toMatch(/inválido/);
     expect(await asUser(U2, () => errorOf(`select crm_create_instagram_lead($1, '81988776655')`, [A]))).toMatch(/Sem acesso/);
@@ -696,8 +710,34 @@ describe("CRM — lead do Instagram (manual)", () => {
     await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "Oi! Quero sim", p_phone: "5581988776655", p_external_id: "IGM-in" });
     expect(await val(`select count(*)::int from crm_tasks where conversation_id = $1 and kind = 'ig_followup' and done_at is null`, [conv])).toBe(0);
     const rep = await asUser(U1, () => val<any>(`select crm_ig_manual_report($1, now() - interval '1 day', now() + interval '1 minute')`, [A]));
-    expect(rep).toMatchObject({ leads: 1, from_ads: 1, replied: 1, won: 0 });
-    const camp = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where campaign = 'Tela Novembro'`, [A]));
-    expect(camp.rows[0]).toMatchObject({ source: "Anúncio Instagram", contacts: 1 });
+    // Bruna + Carla (teste anterior); só a Bruna respondeu
+    expect(rep).toMatchObject({ leads: 2, from_ads: 2, replied: 1, won: 0 });
+    const camp = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where campaign = 'Tela Novembro' and adset = '—'`, [A]));
+    expect(camp.rows[0].replied).toBe(1);
+    expect(camp.rows[0]).toMatchObject({ source: "Anúncio → Instagram", contacts: 1 });
+  });
+});
+
+describe("CRM — códigos de anúncio e investimento", () => {
+  it("mensagem do WhatsApp com #T21 liga o contato ao anúncio (código só se estiver cadastrado)", async () => {
+    const c = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "Quero orçamento da troca de tela 📱 #T21", p_phone: "5511933330001", p_external_id: "AD1" })).contact_id;
+    expect(await val<any>(`select crm_track_attach($1, 'T21', '{}', true)`, [c])).toMatchObject({ attached: true, kind: "code" });
+    expect(await val(`select a.utm_term from crm_contacts x join crm_attributions a on a.id = x.attribution_id where x.id = $1`, [c])).toBe("Público 25-45");
+    // repetir o mesmo código não cria outra origem
+    expect((await val<any>(`select crm_track_attach($1, 'T21', '{}', false)`, [c])).attached).toBe(false);
+    const other = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "#ZZ9", p_phone: "5511933330002", p_external_id: "AD2" })).contact_id;
+    expect((await val<any>(`select crm_track_attach($1, 'ZZ9', '{}', false)`, [other])).attached).toBe(false);
+  });
+
+  it("vendedor não cadastra código; investimento é proporcional aos dias do período", async () => {
+    await asUser(U1, async () => {
+      expect(await errorOf(`insert into crm_ad_codes (store_id, code, campaign_name) values ($1, 'X11', 'x')`, [A])).not.toBeNull();
+    });
+    await db.query(`insert into crm_campaign_spend (store_id, campaign, period_start, period_end, amount) values ($1, 'Tela Novembro', '2026-11-01', '2026-11-30', 3000)`, [A]);
+    const r = await asUser(U1, () => one(`select * from crm_campaign_spend_report($1, '2026-11-01', '2026-11-10')`, [A]));
+    expect(r).toMatchObject({ campaign: "Tela Novembro" });
+    expect(Number(r.spend)).toBe(1000);
+    const rows = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where source = 'Anúncio (código)'`, [A]));
+    expect(rows.rows[0]).toMatchObject({ campaign: "Tela Novembro", adset: "Público 25-45", ad: "Vídeo 1", contacts: 1, replied: 1 });
   });
 });

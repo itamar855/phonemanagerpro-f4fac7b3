@@ -7,7 +7,7 @@ import { ptBR } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { crmReport, type CrmReport } from "../api/reports";
-import { trackingReport } from "../api/tracking";
+import { CampaignReport } from "../components/reports/CampaignReport";
 import { igManualReport } from "../api/igLead";
 import { EmptyState } from "../components/shared/EmptyState";
 import { useCrmContext, useTeam } from "../hooks/useInbox";
@@ -108,52 +108,6 @@ function IgManualPanel({ storeId, from, to }: { storeId: string | null; from: Da
         <div><dt className="text-xs text-muted-foreground">Compraram</dt><dd className="text-lg font-semibold tabular-nums">{r.won}{pct(r.won, r.leads) !== null ? <span className="text-xs font-normal text-muted-foreground"> ({pct(r.won, r.leads)}%)</span> : null}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Receita</dt><dd className="text-lg font-semibold tabular-nums">{brl(r.revenue)}</dd></div>
       </dl>
-    </Panel>
-  );
-}
-
-/** Contatos novos do período por origem/campanha/anúncio, com qualificados, vendas e receita. */
-function CampaignPanel({ storeId, from, to }: { storeId: string | null; from: Date; to: Date }) {
-  const { data: rows = [] } = useQuery({
-    queryKey: ["crm", "report-campaigns", storeId, from.toISOString(), to.toISOString()],
-    queryFn: () => trackingReport(storeId, from, to),
-    staleTime: 60_000,
-  });
-  return (
-    <Panel title="Por campanha (contatos novos no período)">
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Ainda sem origem rastreada. Ligue em Ajustes → Rastreamento e use os links de rastreio nos anúncios.
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr>
-                <th className="py-1.5 font-medium">Origem / campanha / anúncio</th>
-                <th className="py-1.5 text-right font-medium">Contatos</th>
-                <th className="py-1.5 text-right font-medium">Qualificados</th>
-                <th className="py-1.5 text-right font-medium">Vendas</th>
-                <th className="py-1.5 text-right font-medium">Receita</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40 tabular-nums">
-              {rows.map((r, i) => (
-                <tr key={i}>
-                  <td className="py-2">
-                    <p className="font-medium">{r.campaign}</p>
-                    <p className="text-xs text-muted-foreground">{r.source}{r.ad !== "—" ? ` · ${r.ad}` : ""}</p>
-                  </td>
-                  <td className="py-2 text-right">{r.contacts}</td>
-                  <td className="py-2 text-right">{r.qualified}</td>
-                  <td className="py-2 text-right">{r.won}{pct(r.won, r.contacts) !== null ? <span className="text-muted-foreground"> ({pct(r.won, r.contacts)}%)</span> : null}</td>
-                  <td className="py-2 text-right">{brl(r.revenue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </Panel>
   );
 }
@@ -296,7 +250,7 @@ export default function ReportsPage() {
             </div>
 
             <IgManualPanel storeId={storeId} from={range.from} to={range.to} />
-            <CampaignPanel storeId={storeId} from={range.from} to={range.to} />
+            <CampaignReport storeId={storeId} from={range.from} to={range.to} />
 
             <div className="grid gap-4 lg:grid-cols-2">
               <Panel title="Tarefas">

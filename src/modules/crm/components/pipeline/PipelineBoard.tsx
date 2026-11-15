@@ -11,6 +11,7 @@ import { brl } from "../../lib/format";
 import type { CrmDealWithContact, CrmStage } from "../../lib/types";
 import { DealCardView, SortableDealCard } from "./DealCard";
 import { LostReasonDialog } from "./LostReasonDialog";
+import { WonValueDialog } from "./WonValueDialog";
 
 type Columns = Record<string, CrmDealWithContact[]>;
 const COL = "col:";
@@ -28,7 +29,7 @@ interface Props {
   summary?: Map<string, { deals: number; total: number }>;
   ownerNames: Map<string, string>;
   onOpen: (dealId: string) => void;
-  onMove: (dealId: string, toStageId: string, position: number, lostReason?: string) => Promise<void>;
+  onMove: (dealId: string, toStageId: string, position: number, lostReason?: string, value?: number) => Promise<void>;
 }
 
 function Column({ stage, deals, summary, ownerNames, onOpen }: {
@@ -68,10 +69,11 @@ export function PipelineBoard({ stages, deals, summary, ownerNames, onOpen, onMo
   const [cols, setCols] = useState<Columns>(() => group(stages, deals));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pendingLost, setPendingLost] = useState<{ dealId: string; stageId: string; position: number; title: string } | null>(null);
+  const [pendingWon, setPendingWon] = useState<{ dealId: string; stageId: string; position: number; title: string } | null>(null);
   const stageById = useMemo(() => new Map(stages.map((s) => [s.id, s])), [stages]);
 
   // Sincroniza com o servidor quando não há arraste em andamento
-  useEffect(() => { if (!activeId && !pendingLost) setCols(group(stages, deals)); }, [stages, deals, activeId, pendingLost]);
+  useEffect(() => { if (!activeId && !pendingLost && !pendingWon) setCols(group(stages, deals)); }, [stages, deals, activeId, pendingLost, pendingWon]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -127,6 +129,10 @@ export function PipelineBoard({ stages, deals, summary, ownerNames, onOpen, onMo
       setPendingLost({ dealId: original.id, stageId: to, position, title: original.title });
       return;
     }
+    if (stageById.get(to)?.kind === "won" && original.stage_id !== to && !(Number(original.value) > 0)) {
+      setPendingWon({ dealId: original.id, stageId: to, position, title: original.title });
+      return;
+    }
     try { await onMove(original.id, to, position); } catch { setCols(group(stages, deals)); }
   }
 
@@ -151,6 +157,16 @@ export function PipelineBoard({ stages, deals, summary, ownerNames, onOpen, onMo
           const p = pendingLost!;
           setPendingLost(null);
           try { await onMove(p.dealId, p.stageId, p.position, reason); } catch { setCols(group(stages, deals)); }
+        }}
+      />
+      <WonValueDialog
+        open={Boolean(pendingWon)}
+        dealTitle={pendingWon?.title}
+        onCancel={() => { setPendingWon(null); setCols(group(stages, deals)); }}
+        onConfirm={async (value) => {
+          const p = pendingWon!;
+          setPendingWon(null);
+          try { await onMove(p.dealId, p.stageId, p.position, undefined, value ?? undefined); } catch { setCols(group(stages, deals)); }
         }}
       />
     </>

@@ -59,12 +59,13 @@ export default function PipelinePage() {
     [shown, summary],
   );
 
-  async function move(dealId: string, toStageId: string, position: number, lostReason?: string) {
+  async function move(dealId: string, toStageId: string, position: number, lostReason?: string, value?: number) {
     const key = pipelineKeys.board(pipelineId!, ownerFilter);
     const prev = qc.getQueryData<CrmDealWithContact[]>(key);
-    qc.setQueryData<CrmDealWithContact[]>(key, (d) => d?.map((x) => (x.id === dealId ? { ...x, stage_id: toStageId, position } : x)));
+    qc.setQueryData<CrmDealWithContact[]>(key, (d) => d?.map((x) => (x.id === dealId ? { ...x, stage_id: toStageId, position, ...(value ? { value } : {}) } : x)));
     try {
-      await updateDeal(dealId, { stage_id: toStageId, position, ...(lostReason ? { lost_reason: lostReason } : {}) });
+      // valor e etapa no mesmo update: o evento Purchase para a Meta já sai com o valor
+      await updateDeal(dealId, { stage_id: toStageId, position, ...(lostReason ? { lost_reason: lostReason } : {}), ...(value ? { value } : {}) });
       const kind = stages.find((s) => s.id === toStageId)?.kind;
       if (kind === "won") toast.success("Negócio ganho! 🎉");
       invalidate();
