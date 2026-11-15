@@ -45,7 +45,7 @@ async function handleInstagram(action: Action, admin: any, userId: string, store
 
     const state = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
     await admin.from("crm_oauth_states").delete().lt("created_at", new Date(Date.now() - DAY).toISOString()); // limpeza
-    const { error } = await admin.from("crm_oauth_states").insert({ state, store_id: storeId, user_id: userId, provider: "instagram", return_to: `${origin}/crm/config` });
+    const { error } = await admin.from("crm_oauth_states").insert({ state, store_id: storeId, user_id: userId, provider: "instagram", return_to: `${origin}/integracao/instagram` });
     if (error) throw new HttpError(500, error.message);
 
     const url = new URL("https://www.instagram.com/oauth/authorize");
