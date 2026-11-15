@@ -23,6 +23,7 @@ const AVATARS = read("20261116020000_crm_contact_avatars.sql");
 const AI = read("20261116030000_crm_ai_agent.sql");
 const TRANSCRIPT = read("20261116040000_crm_audio_transcript.sql");
 const LEARNING = read("20261116050000_crm_ai_learning.sql");
+const TRACKING = read("20261116060000_crm_tracking.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -117,6 +118,7 @@ beforeAll(async () => {
   await db.exec(AI);
   await db.exec(TRANSCRIPT);
   await db.exec(LEARNING);
+  await db.exec(TRACKING);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -577,5 +579,68 @@ describe("CRM — o agente aprende", () => {
     const s = await asUser(U1, () => val<any>(`select crm_ai_stats($1, 30)`, [A]));
     expect(s.library).toBeGreaterThanOrEqual(3);
     expect(await asUser(U2, () => val<any>(`select crm_ai_stats(null, 30)`)).then((x: any) => x.library)).toBe(0);
+  });
+});
+
+describe("CRM — rastreamento de campanhas (Meta)", () => {
+  const newContact = async (phone: string, id: string) =>
+    (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "Olá! (cód. K7Q2M)", p_phone: phone, p_external_id: id })).contact_id as string;
+  const events = (contact: string) => db.query<any>(`select event_name, event_id, value, status from crm_meta_events where contact_id = $1 order by created_at`, [contact]).then((r) => r.rows);
+
+  it("liga o contato ao clique do link pelo código (com campanha, fbclid e IP)", async () => {
+    const link = await val<string>(`insert into crm_track_links (store_id, slug, name) values ($1, 'promo-tela', 'Promo tela') returning id`, [A]);
+    await db.query(
+      `insert into crm_track_clicks (store_id, link_id, code, fbclid, fbc, utm, campaign_id, ad_id, ip, user_agent)
+       values ($1, $2, 'K7Q2M', 'IwAR123', 'fb.1.1700000000000.IwAR123', '{"utm_source":"facebook","utm_campaign":"Tela A54","utm_content":"Video 1"}', '111', '333', '200.1.2.3', 'Mozilla')`,
+      [A, link],
+    );
+    const c = await newContact("5511944440001", "TRK1");
+    const r = await val<any>(`select crm_track_attach($1, 'k7q2m', '{}', true)`, [c]);
+    expect(r).toMatchObject({ attached: true, kind: "link" });
+    const at = await one(`select a.* from crm_contacts c join crm_attributions a on a.id = c.attribution_id where c.id = $1`, [c]);
+    expect(at).toMatchObject({ kind: "link", utm_campaign: "Tela A54", ad_id: "333", fbc: "fb.1.1700000000000.IwAR123", ip: "200.1.2.3" });
+    expect(await val(`select contact_id from crm_track_clicks where code = 'K7Q2M'`)).toBe(c);
+    // o mesmo código não liga outra pessoa
+    const other = await newContact("5511944440002", "TRK2");
+    expect((await val<any>(`select crm_track_attach($1, 'K7Q2M', '{}', true)`, [other])).attached).toBe(false);
+  });
+
+  it("anúncio que abre o WhatsApp direto e origem orgânica (só no 1º contato)", async () => {
+    const c = await newContact("5511944440003", "TRK3");
+    expect((await val<any>(`select crm_track_attach($1, null, '{"entry_point":"ctwa_ad","ad_source_id":"999","ad_title":"Tela em 1h"}', true)`, [c])).kind).toBe("ctwa");
+    const o = await newContact("5511944440004", "TRK4");
+    expect((await val<any>(`select crm_track_attach($1, null, '{"entry_point":"click_to_chat_link"}', false)`, [o])).attached).toBe(false);
+    expect((await val<any>(`select crm_track_attach($1, null, '{"entry_point":"click_to_chat_link"}', true)`, [o])).kind).toBe("organic");
+  });
+
+  it("fila da Meta: só com rastreamento ligado; Lead, qualificado e compra sem duplicar", async () => {
+    const c = await val<string>(`select id from crm_contacts where phone = '5511944440001'`);
+    expect(await val(`select crm_meta_enqueue($1, null, 'lead')`, [c])).toBeNull(); // desligado
+    await db.query(`update crm_tracking_settings set enabled = true, dataset_id = '123456' where store_id = $1`, [A]);
+    expect(await val(`select crm_meta_enqueue($1, null, 'lead')`, [c])).not.toBeNull();
+    expect(await val(`select crm_meta_enqueue($1, null, 'lead')`, [c])).toBeNull(); // já na fila
+
+    const pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+    const deal = await val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, value) values ($1, $2, $3, $4, 'Tela A54', 450) returning id`,
+      [A, pipe, await stage(A, "sales", "wa_active"), c]);
+    await db.query(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "proposal"), deal]);
+    await db.query(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "won"), deal]);
+    const ev = await events(c);
+    expect(ev.map((e: any) => e.event_name)).toEqual(["Lead", "QualifiedLead", "Purchase"]);
+    expect(Number(ev[2].value)).toBe(450);
+  });
+
+  it("modo só anúncio ignora contato sem origem rastreada; relatório por campanha", async () => {
+    await db.query(`update crm_tracking_settings set only_attributed = true where store_id = $1`, [A]);
+    const plain = await newContact("5511944440005", "TRK5");
+    expect(await val(`select crm_meta_enqueue($1, null, 'lead')`, [plain])).toBeNull();
+    await db.query(`update crm_tracking_settings set only_attributed = false where store_id = $1`, [A]);
+
+    const rows = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute')`, [A]));
+    const tela = rows.rows.find((r: any) => r.campaign === "Tela A54");
+    expect(tela).toMatchObject({ source: "Link de rastreio", ad: "Video 1", contacts: 1, won: 1 });
+    expect(Number(tela.revenue)).toBe(450);
+    const b = await asUser(U2, () => db.query(`select * from crm_tracking_report(null, now() - interval '1 day', now() + interval '1 minute')`));
+    expect(b.rows).toHaveLength(0);
   });
 });

@@ -15,3 +15,12 @@ verify_jwt = false
 # chamadas da tela continuam exigindo login (requireUser + gerência dentro da função)
 [functions.crm-ai-learn]
 verify_jwt = false
+
+# Link de rastreio público (/w/<slug> na Vercel): só grava o clique e redireciona ao WhatsApp
+[functions.crm-track]
+verify_jwt = false
+
+# Fila da API de Conversões: o cron chama com a senha interna (CRM_CRON_SECRET);
+# chamadas da tela continuam exigindo login de gerência dentro da função
+[functions.crm-meta]
+verify_jwt = false

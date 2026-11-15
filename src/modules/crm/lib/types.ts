@@ -31,6 +31,7 @@ export interface CrmContact {
   ignored_reason: string | null;
   notes: string | null;
   owner_id: string | null;
+  attribution_id?: string | null;
   created_at: string;
   updated_at: string;
 }

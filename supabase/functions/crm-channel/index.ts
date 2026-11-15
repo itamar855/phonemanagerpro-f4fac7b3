@@ -202,8 +202,10 @@ serve(async (req) => {
     if (action === "status") {
       let state = "unknown";
       let reachable = true;
+      let owner: string | null = null;
       try {
         state = await evolution(cfg).connectionState();
+        if (state === "open") owner = await evolution(cfg).ownerNumber().catch(() => null);
       } catch (e) {
         reachable = false;
         state = "unreachable";
@@ -221,6 +223,7 @@ serve(async (req) => {
         has_api_key: Boolean(cfg.api_key),
         state,             // open | connecting | close | not_found | unreachable | unknown
         reachable,
+        owner_number: owner, // número conectado (usado nos links de rastreio)
         can_manage: await isManager(admin, user.id),
       });
     }
