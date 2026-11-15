@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Save, Shuffle, Workflow } from "lucide-react";
+import { Loader2, Save, Shuffle, Workflow, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ const DEFAULTS: Form = {
   round_robin: false, round_robin_members: [], unanswered_minutes: 30, stale_deals: true,
   os_ready: true, review_after_days: 3, warranty_alert_days: 7,
   ig_first_message: DEFAULT_IG_MESSAGE, ig_followup_hours: 2, os_sync: true,
-  dispatch_enabled: false, dispatch_minutes: 5, dispatch_owner_id: null,
+  dispatch_enabled: false, dispatch_minutes: 5, dispatch_owner_id: null, service_members: [],
 };
 const NO_OWNER = "__auto__";
 const MANAGER = new Set(["admin", "gerente", "dono"]);
@@ -33,6 +33,7 @@ function pick(d: CrmAutomationSettings | null | undefined): Form {
     stale_deals: d.stale_deals, os_ready: d.os_ready, review_after_days: d.review_after_days, warranty_alert_days: d.warranty_alert_days,
     ig_first_message: d.ig_first_message || DEFAULT_IG_MESSAGE, ig_followup_hours: d.ig_followup_hours ?? 2, os_sync: d.os_sync ?? true,
     dispatch_enabled: d.dispatch_enabled ?? false, dispatch_minutes: d.dispatch_minutes ?? 5, dispatch_owner_id: d.dispatch_owner_id ?? null,
+    service_members: d.service_members ?? [],
   };
 }
 
@@ -93,8 +94,8 @@ export function AutomationSettingsCard() {
   async function save() {
     if (!storeId || !userId) return;
     if (form.round_robin && form.round_robin_members.length === 0) { toast.error("Escolha quem entra no rodízio."); return; }
-    if (form.dispatch_enabled && !form.round_robin_members.some((u) => phones?.[u])) {
-      toast.error("Na distribuição, marque no rodízio ao menos uma pessoa com telefone cadastrado."); return;
+    if (form.dispatch_enabled && ![...form.round_robin_members, ...form.service_members].some((u) => phones?.[u])) {
+      toast.error("Na distribuição, marque ao menos uma pessoa com telefone cadastrado (Rodízio ou Assistência)."); return;
     }
     setSaving(true);
     try {
@@ -158,8 +159,28 @@ export function AutomationSettingsCard() {
                 </SelectContent>
               </Select>
             </div>
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">Fila de Assistência (consertos)</legend>
+              <p className="text-xs text-muted-foreground">
+                Conserto vai primeiro para quem estiver marcado aqui (os técnicos desta loja). Se ninguém assumir, segue para o Rodízio de vendas e depois para quem fica com o atendimento. Sem ninguém marcado, conserto entra direto no Rodízio.
+              </p>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {team.map((t) => {
+                  const on = form.service_members.includes(t.user_id);
+                  return (
+                    <label key={t.user_id} className="flex min-h-[40px] cursor-pointer items-center gap-2 rounded-md border border-border/50 px-3 text-sm hover:bg-muted/40">
+                      <Checkbox checked={on} disabled={off}
+                        onCheckedChange={(v) => set({ service_members: v ? [...form.service_members, t.user_id] : form.service_members.filter((x) => x !== t.user_id) })} />
+                      <Wrench className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                      <span className="truncate">{t.display_name}{t.user_id === userId ? " (você)" : ""}</span>
+                      {phones && !phones[t.user_id] && <span className="ml-auto shrink-0 text-xs text-amber-700 dark:text-amber-400">sem telefone</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
             <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-              Recebe quem está marcado no <strong>Rodízio</strong> acima e tem telefone no cadastro (Equipe → editar). O aviso sai do WhatsApp da loja;
+              Vendas: recebe quem está marcado no <strong>Rodízio</strong> acima. Só recebe quem tem telefone no cadastro (Equipe → editar). O aviso sai do WhatsApp da loja;
               os números da equipe ficam fora do CRM e da IA. Horário: o mesmo do Agente de IA.
             </p>
           </div>

@@ -178,6 +178,8 @@ export interface CrmAutomationSettings {
   dispatch_enabled: boolean;
   dispatch_minutes: number;
   dispatch_owner_id: string | null;
+  /** Fila de Assistência: conserto vai primeiro para estes (depois vendas, depois o dono). */
+  service_members: string[];
 }
 
 /** Uma vez de alguém na distribuição de atendimento. */
