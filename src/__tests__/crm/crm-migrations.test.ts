@@ -29,6 +29,7 @@ const AD_CODES = read("20261116080000_crm_ad_codes.sql");
 const OS_SYNC = read("20261116090000_crm_os_sync.sql");
 const NO_DUP = read("20261116100000_crm_tasks_no_dup.sql");
 const DISPATCH = read("20261116110000_crm_dispatch.sql");
+const DISPATCH_SVC = read("20261116120000_crm_dispatch_service.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -130,6 +131,7 @@ beforeAll(async () => {
   await db.exec(NO_DUP);
   await db.exec(`alter table public.profiles add column phone text;`);
   await db.exec(DISPATCH);
+  await db.exec(DISPATCH_SVC);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -821,6 +823,7 @@ describe("CRM — assistência acompanha a OS", () => {
 
 describe("CRM — distribuição com aviso no WhatsApp", () => {
   const U3 = "00000000-0000-0000-0000-0000000000a3"; // 2º vendedor da loja A
+  const TEC = "00000000-0000-0000-0000-0000000000a4"; // técnico da loja A
   const active = (conv: string) => one(`select * from crm_dispatches where conversation_id = $1 and status in ('waiting', 'offered')`, [conv]);
   const expire = (conv: string) => db.query(`update crm_dispatches set expires_at = now() - interval '1 second' where conversation_id = $1 and status = 'offered'`, [conv]);
   let n = 0;
@@ -941,5 +944,32 @@ describe("CRM — distribuição com aviso no WhatsApp", () => {
     await db.query(`update crm_automation_settings set dispatch_enabled = false where store_id = $1`, [A]);
     await db.query(`select crm_dispatch_tick()`);
     expect(await val(`select count(*)::int from crm_dispatches where store_id = $1 and status in ('waiting', 'offered')`, [A])).toBe(0);
+  });
+
+  it("conserto vai primeiro para o técnico; sem assumir segue para vendas e depois para o dono", async () => {
+    await db.exec(`
+      insert into auth.users values ('${TEC}');
+      insert into public.member_stores (user_id, store_id) values ('${TEC}', '${A}');
+      insert into public.user_roles (user_id, role) values ('${TEC}', 'tecnico');
+      insert into public.profiles (user_id, display_name, phone) values ('${TEC}', 'Rafael Técnico', '(87) 98800-1122');
+      update public.crm_automation_settings set dispatch_enabled = true, service_members = array['${TEC}']::uuid[],
+        round_robin_members = array['${U1}']::uuid[] where store_id = '${A}';
+    `);
+    const conv = await handedOff(); // passagem com interesse "conserto"
+    expect(await active(conv)).toMatchObject({ user_id: TEC, queue: "service" });
+    await expire(conv);
+    await db.query(`select crm_dispatch_tick()`);
+    expect(await active(conv)).toMatchObject({ user_id: U1, queue: "sales" });
+    await expire(conv);
+    await db.query(`select crm_dispatch_tick()`);
+    expect(await one(`select user_id, queue from crm_dispatches where conversation_id = $1 and status = 'owner'`, [conv])).toEqual({ user_id: ADM, queue: "owner" });
+
+    // venda não passa pelos técnicos
+    n += 1;
+    const sale = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "tem iphone 13?",
+      p_phone: `55119333300${String(n).padStart(2, "0")}`, p_external_id: `DSP${n}` })).conversation_id as string;
+    await db.query(`select crm_ai_handoff($1, 'iPhone 13', 'Quer iPhone 13', 'warm', 'device', null)`, [sale]);
+    expect(await active(sale)).toMatchObject({ user_id: U1, queue: "sales" });
+    await db.query(`update crm_automation_settings set dispatch_enabled = false where store_id = $1`, [A]);
   });
 });
