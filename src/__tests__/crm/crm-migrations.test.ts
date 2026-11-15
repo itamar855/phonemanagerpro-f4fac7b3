@@ -27,6 +27,7 @@ const TRACKING = read("20261116060000_crm_tracking.sql");
 const IG_MANUAL = read("20261116070000_crm_ig_manual_lead.sql");
 const AD_CODES = read("20261116080000_crm_ad_codes.sql");
 const OS_SYNC = read("20261116090000_crm_os_sync.sql");
+const NO_DUP = read("20261116100000_crm_tasks_no_dup.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -125,6 +126,7 @@ beforeAll(async () => {
   await db.exec(IG_MANUAL);
   await db.exec(AD_CODES);
   await db.exec(OS_SYNC);
+  await db.exec(NO_DUP);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -699,6 +701,18 @@ describe("CRM — lead do Instagram (manual)", () => {
     expect(await val(`select phone from crm_contacts where id = $1`, [old])).toBe("5581977776666");
   });
 
+  it("cadastrar de novo em outro segundo não duplica a retomada (nem a tarefa da IA)", async () => {
+    const r1 = await asUser(U1, () => create({ p_store_id: A, p_phone: "81966665555", p_source: "post" }));
+    await db.query(`select pg_sleep(1.1)`);
+    await asUser(U1, () => create({ p_store_id: A, p_phone: "81966665555", p_source: "post" }));
+    expect(await val(`select count(*)::int from crm_tasks where conversation_id = $1 and kind = 'ig_followup' and done_at is null`, [r1.conversation_id])).toBe(1);
+
+    await db.query(`select crm_ai_handoff($1, 'x', 'resumo', 'warm', 'device', null)`, [r1.conversation_id]);
+    await db.query(`select pg_sleep(1.1)`);
+    await db.query(`select crm_ai_handoff($1, 'x', 'resumo 2', 'warm', 'device', null)`, [r1.conversation_id]);
+    expect(await val(`select count(*)::int from crm_tasks where conversation_id = $1 and source = 'ai' and done_at is null`, [r1.conversation_id])).toBe(1);
+  });
+
   it("número inválido e loja de outra pessoa são recusados", async () => {
     expect(await asUser(U1, () => errorOf(`select crm_create_instagram_lead($1, '123')`, [A]))).toMatch(/inválido/);
     expect(await asUser(U2, () => errorOf(`select crm_create_instagram_lead($1, '81988776655')`, [A]))).toMatch(/Sem acesso/);
@@ -712,8 +726,8 @@ describe("CRM — lead do Instagram (manual)", () => {
     await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "Oi! Quero sim", p_phone: "5581988776655", p_external_id: "IGM-in" });
     expect(await val(`select count(*)::int from crm_tasks where conversation_id = $1 and kind = 'ig_followup' and done_at is null`, [conv])).toBe(0);
     const rep = await asUser(U1, () => val<any>(`select crm_ig_manual_report($1, now() - interval '1 day', now() + interval '1 minute')`, [A]));
-    // Bruna + Carla (teste anterior); só a Bruna respondeu
-    expect(rep).toMatchObject({ leads: 2, from_ads: 2, replied: 1, won: 0 });
+    // Bruna + Carla (anúncio) + o lead do teste de duplicidade (post); só a Bruna respondeu
+    expect(rep).toMatchObject({ leads: 3, from_ads: 2, replied: 1, won: 0 });
     const camp = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where campaign = 'Tela Novembro' and adset = '—'`, [A]));
     expect(camp.rows[0].replied).toBe(1);
     expect(camp.rows[0]).toMatchObject({ source: "Anúncio → Instagram", contacts: 1 });
