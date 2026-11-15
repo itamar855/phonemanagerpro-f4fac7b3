@@ -10,6 +10,20 @@ describe("lead do Instagram — texto colado da DM", () => {
     expect(extractPhone("tela custa 350 reais, modelo A54")).toBeNull();
   });
 
+  it("número sozinho, do jeito que o lead manda", () => {
+    expect(extractPhone("87999112233")).toBe("87999112233");
+    expect(extractPhone("87 9 9911 2233")).toBe("87999112233");
+    expect(extractPhone("esse é meu zap: 87 99911-2233 👍")).toBe("87999112233");
+  });
+
+  it("@ a partir do link do perfil (Copiar URL do perfil)", () => {
+    expect(extractUsername("https://www.instagram.com/bruna.lima?igsh=MWx0dGZ1c3g4bWI=")).toBe("bruna.lima");
+    expect(extractUsername("instagram.com/Ana_Souza/")).toBe("ana_souza");
+    expect(extractUsername("https://www.instagram.com/p/C1abcDEF/")).toBeNull(); // link de post, não de perfil
+    expect(extractUsername("bruna.lima")).toBe("bruna.lima");
+    expect(extractUsername("87999112233")).toBeNull();
+  });
+
   it("acha @ e nome quando a pessoa se apresenta", () => {
     expect(extractUsername("Conversa com @Bruna.Lima ontem")).toBe("bruna.lima");
     expect(extractName("oi, meu nome é ana souza, quero orçamento")).toBe("Ana Souza");
@@ -22,6 +36,10 @@ describe("lead do Instagram — mensagem modelo", () => {
   it("usa o primeiro nome, a loja e o assunto", () => {
     expect(fillTemplate(DEFAULT_IG_MESSAGE, { name: "Bruna Lima", store: "Restaura Phone", subject: "Troca de tela do iPhone 12" }))
       .toBe("Oi Bruna! Aqui é a Restaura Phone, você falou com a gente no Instagram sobre troca de tela do iPhone 12 😊 Posso te ajudar por aqui?");
+  });
+
+  it("contato só com @ não vira nome na saudação", () => {
+    expect(fillTemplate("Oi {primeiro_nome}! Tudo bem?", { name: "@bruna.lima", store: "Loja", subject: null })).toBe("Oi! Tudo bem?");
   });
 
   it("sem nome e sem assunto continua natural", () => {

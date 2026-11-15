@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { campaignSuggestions, createInstagramLead, igFirstMessageTemplate, type IgSource } from "../../api/igLead";
 import { useCrmContext, useTeam } from "../../hooks/useInbox";
@@ -44,7 +43,6 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const { data: campaigns = [] } = useQuery({ queryKey: ["crm", "campaigns", store], queryFn: () => campaignSuggestions(store!), enabled: open && Boolean(store) });
   const { data: template } = useQuery({ queryKey: ["crm", "ig-template", store], queryFn: () => igFirstMessageTemplate(store!), enabled: open && Boolean(store) });
 
-  const [paste, setPaste] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -57,30 +55,35 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
   useEffect(() => {
     if (!open) return;
-    setPaste(""); setPhone(""); setName(""); setUsername(""); setInterest("repair"); setSubject(""); setSource("ad"); setCampaign("");
+    setPhone(""); setName(""); setUsername(""); setInterest("repair"); setSubject(""); setSource("ad"); setCampaign("");
     setOwner(userId ?? "");
   }, [open, userId]);
 
-  // texto colado da DM → número, @ e nome
-  function readText(text: string) {
-    setPaste(text);
+  // mensagem colada (às vezes só o número, às vezes "esse é meu zap: ...") → número (+ nome, se ela se apresentou)
+  function readPhone(text: string): boolean {
     const p = extractPhone(text);
-    if (p) setPhone(formatPhone(`55${p}`));
-    const u = extractUsername(text);
-    if (u && !username) setUsername(u);
+    if (!p) return false;
+    setPhone(formatPhone(`55${p}`));
     const n = extractName(text);
     if (n && !name) setName(n);
-    if (!p && text.trim()) toast.info("Não achei um número no texto. Digite no campo WhatsApp.");
+    return true;
   }
 
-  async function pasteFromClipboard() {
-    try {
-      const t = await navigator.clipboard.readText();
-      if (t) readText(t);
-      else toast.info("A área de transferência está vazia.");
-    } catch {
-      toast.info("Cole o texto no campo abaixo (o navegador não deixou ler a área de transferência).");
-    }
+  // link do perfil ("Copiar URL do perfil"), @ ou o usuário sozinho → @
+  function readUser(text: string): boolean {
+    const u = extractUsername(text);
+    if (!u) return false;
+    setUsername(u);
+    return true;
+  }
+
+  async function pasteInto(kind: "phone" | "user") {
+    let t = "";
+    try { t = await navigator.clipboard.readText(); }
+    catch { toast.info("Toque e segure no campo e escolha Colar (o navegador não deixou ler a área de transferência)."); return; }
+    if (!t.trim()) { toast.info("Nada copiado ainda."); return; }
+    const ok = kind === "phone" ? readPhone(t) : readUser(t);
+    if (!ok) toast.info(kind === "phone" ? "Não achei um número no que foi copiado." : "Não achei um @ no que foi copiado. No perfil: ⋯ → Copiar URL do perfil.");
   }
 
   const validPhone = Boolean(extractPhone(phone));
@@ -112,36 +115,42 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><ChannelIcon channel="instagram" className="h-5 w-5" /> Lead do Instagram</DialogTitle>
-          <DialogDescription>Pegou o WhatsApp na DM? Cadastre aqui e a conversa abre com a primeira mensagem pronta.</DialogDescription>
+          <DialogDescription>A pessoa mandou o número na DM? Cole aqui e a conversa de WhatsApp abre com a primeira mensagem pronta.</DialogDescription>
         </DialogHeader>
 
         <form id="ig-lead" onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="ig-paste">Texto da DM (opcional)</Label>
-              <Button type="button" size="sm" variant="outline" className="h-9" onClick={pasteFromClipboard}>
-                <ClipboardPaste className="mr-1.5 h-4 w-4" /> Colar da DM
+            <Label htmlFor="ig-phone">WhatsApp *</Label>
+            <div className="flex gap-2">
+              <Input id="ig-phone" inputMode="tel" autoComplete="off" value={phone} required aria-invalid={phone.length > 0 && !validPhone}
+                onChange={(e) => setPhone(e.target.value)}
+                onPaste={(e) => { if (readPhone(e.clipboardData.getData("text"))) e.preventDefault(); }}
+                placeholder="(87) 99999-9999" />
+              <Button type="button" variant="outline" className="h-10 shrink-0" onClick={() => pasteInto("phone")} aria-label="Colar o número copiado da DM">
+                <ClipboardPaste className="mr-1.5 h-4 w-4" /> Colar
               </Button>
             </div>
-            <Textarea id="ig-paste" value={paste} onChange={(e) => readText(e.target.value)} rows={2}
-              placeholder="Copie a mensagem em que a pessoa passou o número e cole aqui" className="text-base md:text-sm" />
+            <p className={cn("text-xs", phone.length > 0 && !validPhone ? "text-destructive" : "text-muted-foreground")}>
+              {phone.length > 0 && !validPhone ? "Use DDD + número." : "Copie a mensagem com o número na DM e toque em Colar."}
+            </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="ig-phone">WhatsApp *</Label>
-              <Input id="ig-phone" inputMode="tel" autoComplete="off" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(87) 99999-9999" required
-                aria-invalid={phone.length > 0 && !validPhone} />
-              {phone.length > 0 && !validPhone && <p className="text-xs text-destructive">Use DDD + número.</p>}
+          <div className="space-y-1.5">
+            <Label htmlFor="ig-user">@ no Instagram</Label>
+            <div className="flex gap-2">
+              <Input id="ig-user" value={username} autoCapitalize="off" autoCorrect="off" maxLength={31} placeholder="usuario"
+                onChange={(e) => setUsername(e.target.value.replace(/^@/, "").trim())}
+                onPaste={(e) => { if (readUser(e.clipboardData.getData("text"))) e.preventDefault(); }} />
+              <Button type="button" variant="outline" className="h-10 shrink-0" onClick={() => pasteInto("user")} aria-label="Colar o link do perfil">
+                <ClipboardPaste className="mr-1.5 h-4 w-4" /> Colar
+              </Button>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ig-name">Nome</Label>
-              <Input id="ig-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Ana Souza" maxLength={80} />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="ig-user">@ no Instagram</Label>
-              <Input id="ig-user" value={username} onChange={(e) => setUsername(e.target.value.replace(/^@/, ""))} placeholder="usuario" maxLength={31} autoCapitalize="off" />
-            </div>
+            <p className="text-xs text-muted-foreground">No perfil da pessoa: ⋯ → <strong>Copiar URL do perfil</strong> e toque em Colar.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="ig-name">Primeiro nome <span className="font-normal text-muted-foreground">(como está no Insta, opcional)</span></Label>
+            <Input id="ig-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Ana" maxLength={80} autoCapitalize="words" />
           </div>
 
           <div className="space-y-1.5">
