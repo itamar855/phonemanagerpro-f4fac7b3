@@ -75,7 +75,7 @@ export async function createDeal(d: NewDeal): Promise<CrmDeal> {
   return data as CrmDeal;
 }
 
-export type DealPatch = Partial<Pick<CrmDeal, "title" | "value" | "interest" | "owner_id" | "expected_close_date" | "stage_id" | "pipeline_id" | "lost_reason" | "position" | "ai_summary">>;
+export type DealPatch = Partial<Pick<CrmDeal, "title" | "value" | "interest" | "owner_id" | "expected_close_date" | "stage_id" | "pipeline_id" | "lost_reason" | "position" | "ai_summary" | "sale_id" | "service_order_id">>;
 
 export async function updateDeal(id: string, patch: DealPatch) {
   const { error } = await crmDb.from("crm_deals").update(patch).eq("id", id);
