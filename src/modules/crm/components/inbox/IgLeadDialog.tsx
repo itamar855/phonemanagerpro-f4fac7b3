@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ClipboardPaste, Loader2, MessageCircle } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { AlertTriangle, ClipboardPaste, Loader2, Megaphone, MessageCircle, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,16 +9,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { findDuplicate, listAdCodes } from "../../api/adCodes";
 import { campaignSuggestions, createInstagramLead, igFirstMessageTemplate, type IgSource } from "../../api/igLead";
 import { useCrmContext, useTeam } from "../../hooks/useInbox";
+import { adCodePath, parsePasted, type AdCode } from "../../lib/adCodes";
 import { INTEREST_LABEL } from "../../lib/constants";
-import { DEFAULT_IG_MESSAGE, extractName, extractPhone, extractUsername, fillTemplate } from "../../lib/igLead";
+import { DEFAULT_IG_MESSAGE, extractName, extractPhone, fillTemplate } from "../../lib/igLead";
 import { formatPhone } from "../../lib/phone";
 import { ChannelIcon } from "../shared/ChannelIcon";
 
 const SOURCES: { v: IgSource; l: string }[] = [
   { v: "ad", l: "Anúncio" }, { v: "post", l: "Post" }, { v: "story", l: "Story" }, { v: "organic", l: "Perfil / outro" },
 ];
+const OTHER = "__other__";
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -30,9 +33,16 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
+function useDebounced<T>(v: T, ms = 400) {
+  const [d, setD] = useState(v);
+  useEffect(() => { const t = setTimeout(() => setD(v), ms); return () => clearTimeout(t); }, [v, ms]);
+  return d;
+}
+
 /**
- * O vendedor pegou o WhatsApp da pessoa na DM do Instagram: cadastra em poucos toques,
- * e o CRM abre a conversa de WhatsApp com a primeira mensagem pronta para revisar e enviar.
+ * O vendedor pegou o WhatsApp da pessoa na DM do Instagram: cola o link do perfil, a mensagem com o número
+ * e (se veio de anúncio) a saudação/pergunta com o código — tudo no mesmo botão. A conversa de WhatsApp
+ * abre com a primeira mensagem pronta para revisar e enviar.
  */
 export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const navigate = useNavigate();
@@ -42,6 +52,8 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const { data: team = [] } = useTeam(store);
   const { data: campaigns = [] } = useQuery({ queryKey: ["crm", "campaigns", store], queryFn: () => campaignSuggestions(store!), enabled: open && Boolean(store) });
   const { data: template } = useQuery({ queryKey: ["crm", "ig-template", store], queryFn: () => igFirstMessageTemplate(store!), enabled: open && Boolean(store) });
+  const { data: codes = [] } = useQuery({ queryKey: ["crm", "ad-codes", store], queryFn: () => listAdCodes(store!), enabled: open && Boolean(store) });
+  const activeCodes = useMemo(() => codes.filter((c) => c.active), [codes]);
 
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
@@ -49,41 +61,55 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [interest, setInterest] = useState<string>("repair");
   const [subject, setSubject] = useState("");
   const [source, setSource] = useState<IgSource>("ad");
+  const [adCode, setAdCode] = useState<AdCode | null>(null);
+  const [pick, setPick] = useState<string>(""); // código escolhido na lista, ou OTHER
   const [campaign, setCampaign] = useState("");
   const [owner, setOwner] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setPhone(""); setName(""); setUsername(""); setInterest("repair"); setSubject(""); setSource("ad"); setCampaign("");
-    setOwner(userId ?? "");
+    setPhone(""); setName(""); setUsername(""); setInterest("repair"); setSubject(""); setSource("ad");
+    setAdCode(null); setPick(""); setCampaign(""); setOwner(userId ?? "");
   }, [open, userId]);
 
-  // mensagem colada (às vezes só o número, às vezes "esse é meu zap: ...") → número (+ nome, se ela se apresentou)
-  function readPhone(text: string): boolean {
-    const p = extractPhone(text);
-    if (!p) return false;
-    setPhone(formatPhone(`55${p}`));
-    const n = extractName(text);
-    if (n && !name) setName(n);
-    return true;
+  // contato repetido (pelo número ou pelo @)
+  const dPhone = useDebounced(phone);
+  const dUser = useDebounced(username);
+  const phoneDigits = extractPhone(dPhone);
+  const { data: dup } = useQuery({
+    queryKey: ["crm", "dup", store, phoneDigits, dUser],
+    queryFn: () => findDuplicate(store!, phoneDigits, dUser || null),
+    enabled: open && Boolean(store) && Boolean(phoneDigits || dUser.length >= 3),
+    staleTime: 30_000,
+  });
+
+  /** Aplica o que foi colado. Devolve a lista do que foi reconhecido. */
+  function apply(text: string): string[] {
+    const r = parsePasted(text, activeCodes);
+    const got: string[] = [];
+    if (r.phone) { setPhone(formatPhone(`55${r.phone}`)); got.push("WhatsApp"); const n = extractName(text); if (n && !name) setName(n); }
+    if (r.username) { setUsername(r.username); got.push("@"); }
+    if (r.code) { setAdCode(r.code); setSource("ad"); setPick(r.code.code); got.push(`anúncio ${r.code.code}`); }
+    return got;
   }
 
-  // link do perfil ("Copiar URL do perfil"), @ ou o usuário sozinho → @
-  function readUser(text: string): boolean {
-    const u = extractUsername(text);
-    if (!u) return false;
-    setUsername(u);
-    return true;
-  }
-
-  async function pasteInto(kind: "phone" | "user") {
+  async function pasteSmart() {
     let t = "";
     try { t = await navigator.clipboard.readText(); }
-    catch { toast.info("Toque e segure no campo e escolha Colar (o navegador não deixou ler a área de transferência)."); return; }
+    catch { toast.info("Toque e segure num campo e escolha Colar (o navegador não deixou ler a área de transferência)."); return; }
     if (!t.trim()) { toast.info("Nada copiado ainda."); return; }
-    const ok = kind === "phone" ? readPhone(t) : readUser(t);
-    if (!ok) toast.info(kind === "phone" ? "Não achei um número no que foi copiado." : "Não achei um @ no que foi copiado. No perfil: ⋯ → Copiar URL do perfil.");
+    const got = apply(t);
+    if (got.length) toast.success(`Preenchido: ${got.join(", ")}`);
+    else toast.info("Não reconheci. Copie o link do perfil, a mensagem com o número ou a saudação do anúncio.");
+  }
+
+  const onFieldPaste = (e: React.ClipboardEvent) => { if (apply(e.clipboardData.getData("text")).length) e.preventDefault(); };
+
+  function choose(v: string) {
+    setPick(v);
+    if (v === OTHER) { setAdCode(null); return; }
+    setAdCode(activeCodes.find((c) => c.code === v) ?? null);
   }
 
   const validPhone = Boolean(extractPhone(phone));
@@ -96,7 +122,9 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     try {
       const r = await createInstagramLead({
         storeId: store, phone, name: name.trim() || null, username: username.trim() || null, interest,
-        subject: subject.trim() || null, source, campaign: source === "ad" ? campaign.trim() || null : null, ownerId: owner || null,
+        subject: subject.trim() || null, source,
+        adCode: source === "ad" ? adCode?.code ?? null : null,
+        campaign: source === "ad" && !adCode ? campaign.trim() || null : null, ownerId: owner || null,
       });
       const draft = fillTemplate(template || DEFAULT_IG_MESSAGE, { name: name.trim() || r.contact_name, store: r.store_name, subject: subject.trim() || null });
       for (const k of ["conversations", "counts", "contacts", "board", "tasks", "task-counts"]) qc.invalidateQueries({ queryKey: ["crm", k] });
@@ -115,42 +143,75 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><ChannelIcon channel="instagram" className="h-5 w-5" /> Lead do Instagram</DialogTitle>
-          <DialogDescription>A pessoa mandou o número na DM? Cole aqui e a conversa de WhatsApp abre com a primeira mensagem pronta.</DialogDescription>
+          <DialogDescription>Copie no Instagram e toque em Colar: o link do perfil, a mensagem com o número e, se veio de anúncio, a saudação com o código.</DialogDescription>
         </DialogHeader>
 
         <form id="ig-lead" onSubmit={submit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="ig-phone">WhatsApp *</Label>
-            <div className="flex gap-2">
+          <Button type="button" className="h-12 w-full text-base" onClick={pasteSmart}>
+            <ClipboardPaste className="mr-2 h-5 w-5" /> Colar do Instagram
+          </Button>
+
+          {dup && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm" role="status">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <p className="flex-1">
+                Já existe <strong>{dup.name}</strong> com este {dup.by === "phone" ? "número" : "@"}. Ao cadastrar, atualizo esse contato em vez de criar outro.{" "}
+                <Link to={`/crm/contatos/${dup.id}`} onClick={() => onOpenChange(false)} className="font-medium text-primary underline-offset-2 hover:underline">Ver ficha</Link>
+              </p>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ig-phone">WhatsApp *</Label>
               <Input id="ig-phone" inputMode="tel" autoComplete="off" value={phone} required aria-invalid={phone.length > 0 && !validPhone}
-                onChange={(e) => setPhone(e.target.value)}
-                onPaste={(e) => { if (readPhone(e.clipboardData.getData("text"))) e.preventDefault(); }}
-                placeholder="(87) 99999-9999" />
-              <Button type="button" variant="outline" className="h-10 shrink-0" onClick={() => pasteInto("phone")} aria-label="Colar o número copiado da DM">
-                <ClipboardPaste className="mr-1.5 h-4 w-4" /> Colar
-              </Button>
+                onChange={(e) => setPhone(e.target.value)} onPaste={onFieldPaste} placeholder="(87) 99999-9999" />
+              {phone.length > 0 && !validPhone && <p className="text-xs text-destructive">Use DDD + número.</p>}
             </div>
-            <p className={cn("text-xs", phone.length > 0 && !validPhone ? "text-destructive" : "text-muted-foreground")}>
-              {phone.length > 0 && !validPhone ? "Use DDD + número." : "Copie a mensagem com o número na DM e toque em Colar."}
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="ig-user">@ no Instagram</Label>
-            <div className="flex gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ig-user">@ no Instagram</Label>
               <Input id="ig-user" value={username} autoCapitalize="off" autoCorrect="off" maxLength={31} placeholder="usuario"
-                onChange={(e) => setUsername(e.target.value.replace(/^@/, "").trim())}
-                onPaste={(e) => { if (readUser(e.clipboardData.getData("text"))) e.preventDefault(); }} />
-              <Button type="button" variant="outline" className="h-10 shrink-0" onClick={() => pasteInto("user")} aria-label="Colar o link do perfil">
-                <ClipboardPaste className="mr-1.5 h-4 w-4" /> Colar
-              </Button>
+                onChange={(e) => setUsername(e.target.value.replace(/^@/, "").trim())} onPaste={onFieldPaste} />
             </div>
-            <p className="text-xs text-muted-foreground">No perfil da pessoa: ⋯ → <strong>Copiar URL do perfil</strong> e toque em Colar.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ig-name">Primeiro nome <span className="font-normal text-muted-foreground">(opcional)</span></Label>
+            <Input id="ig-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Ana" maxLength={80} autoCapitalize="words" />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="ig-name">Primeiro nome <span className="font-normal text-muted-foreground">(como está no Insta, opcional)</span></Label>
-            <Input id="ig-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Ana" maxLength={80} autoCapitalize="words" />
+            <Label>De onde veio</Label>
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Origem">
+              {SOURCES.map((s) => <Chip key={s.v} active={source === s.v} onClick={() => setSource(s.v)}>{s.l}</Chip>)}
+            </div>
+            {source === "ad" && (adCode ? (
+              <div className="flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
+                <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{adCode.code} · {adCodePath(adCode)}</p>
+                  <p className="text-xs text-muted-foreground">Campanha, conjunto e anúncio vão para a ficha e para os relatórios.</p>
+                </div>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setAdCode(null); setPick(""); }} aria-label="Trocar anúncio">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Select value={pick} onValueChange={choose}>
+                  <SelectTrigger aria-label="Qual anúncio"><SelectValue placeholder={activeCodes.length ? "Qual anúncio? (ou cole a saudação)" : "Qual campanha?"} /></SelectTrigger>
+                  <SelectContent>
+                    {activeCodes.map((c) => <SelectItem key={c.id} value={c.code}>{c.code} · {adCodePath(c)}</SelectItem>)}
+                    <SelectItem value={OTHER}>Outra / não sei o código</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(pick === OTHER || activeCodes.length === 0) && (
+                  <>
+                    <Input list="ig-campaigns" value={campaign} onChange={(e) => setCampaign(e.target.value)} placeholder="Nome da campanha (opcional)" aria-label="Campanha" maxLength={120} />
+                    <datalist id="ig-campaigns">{campaigns.map((c) => <option key={c} value={c} />)}</datalist>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="space-y-1.5">
@@ -159,19 +220,6 @@ export function IgLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               {Object.entries(INTEREST_LABEL).map(([k, l]) => <Chip key={k} active={interest === k} onClick={() => setInterest(k)}>{l}</Chip>)}
             </div>
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Ex.: troca de tela do iPhone 12" aria-label="Assunto" maxLength={120} />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>De onde veio</Label>
-            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Origem">
-              {SOURCES.map((s) => <Chip key={s.v} active={source === s.v} onClick={() => setSource(s.v)}>{s.l}</Chip>)}
-            </div>
-            {source === "ad" && (
-              <>
-                <Input list="ig-campaigns" value={campaign} onChange={(e) => setCampaign(e.target.value)} placeholder="Campanha (ex.: Tela Novembro)" aria-label="Campanha" maxLength={120} />
-                <datalist id="ig-campaigns">{campaigns.map((c) => <option key={c} value={c} />)}</datalist>
-              </>
-            )}
           </div>
 
           {team.length > 1 && (

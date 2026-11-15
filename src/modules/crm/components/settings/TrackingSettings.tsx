@@ -16,6 +16,7 @@ import { useCrmContext } from "../../hooks/useInbox";
 import { relative } from "../../lib/format";
 import { META_URL_PARAMS, slugify, TRACK_BASE } from "../../lib/tracking";
 import { EmptyState } from "../shared/EmptyState";
+import { AdCodesCard } from "./AdCodesCard";
 
 const MANAGER = new Set(["admin", "gerente", "dono"]);
 const KEY = (storeId: string) => ["crm", "tracking", storeId];
@@ -38,6 +39,7 @@ export function TrackingSettings() {
         </p>
       </div>
       <MetaCard storeId={storeId} canEdit={canEdit} />
+      <AdCodesCard storeId={storeId} userId={userId} canEdit={canEdit} />
       <LinksCard storeId={storeId} userId={userId} canEdit={canEdit} />
       <EventsCard storeId={storeId} />
     </div>

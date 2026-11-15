@@ -18,6 +18,7 @@ import type { CrmActivity, CrmDealWithContact, CrmStage, Interest } from "../../
 import { EntityTasks } from "../tasks/EntityTasks";
 import { DealLinks } from "./DealLinks";
 import { LostReasonDialog } from "./LostReasonDialog";
+import { WonValueDialog } from "./WonValueDialog";
 
 const NONE = "__none__";
 
@@ -50,6 +51,7 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [askLost, setAskLost] = useState(false);
+  const [askWon, setAskWon] = useState(false);
 
   useEffect(() => {
     if (deal) setForm({
@@ -101,7 +103,8 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={openConversation}><MessageSquare className="mr-1.5 h-4 w-4" /> Conversa</Button>
             {deal.status !== "won" && wonStage && (
-              <Button size="sm" onClick={() => save({ stage_id: wonStage.id }, "Negócio ganho! 🎉", "won")} disabled={saving !== null}>
+              <Button size="sm" disabled={saving !== null}
+                onClick={() => (Number(deal.value) > 0 || value > 0 ? save({ stage_id: wonStage.id, ...(value > 0 ? { value } : {}) }, "Negócio ganho! 🎉", "won") : setAskWon(true))}>
                 {saving === "won" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trophy className="mr-1.5 h-4 w-4" />} Ganhou
               </Button>
             )}
@@ -240,6 +243,12 @@ export function DealDrawer({ deal, stages, team, userId, onClose }: Props) {
           </Button>
         </div>
 
+        <WonValueDialog
+          open={askWon}
+          dealTitle={deal.title}
+          onCancel={() => setAskWon(false)}
+          onConfirm={(v) => { setAskWon(false); if (wonStage) void save({ stage_id: wonStage.id, ...(v ? { value: v } : {}) }, "Negócio ganho! 🎉", "won"); }}
+        />
         <LostReasonDialog
           open={askLost}
           dealTitle={deal.title}

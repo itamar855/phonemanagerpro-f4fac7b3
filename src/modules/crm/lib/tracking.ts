@@ -1,7 +1,8 @@
 // Regras puras do rastreamento (sem acesso ao banco).
 
 export interface Attribution {
-  id: string; kind: "link" | "ctwa" | "organic"; entry_point: string | null; entry_app: string | null;
+  id: string; kind: "link" | "ctwa" | "organic" | "manual" | "code"; entry_point: string | null; entry_app: string | null;
+  utm_medium?: string | null; ad_code?: string | null;
   ad_title: string | null; ad_source_id: string | null; ad_id: string | null; utm_source: string | null; utm_campaign: string | null;
   utm_content: string | null; utm_term: string | null; created_at: string;
 }
@@ -22,8 +23,16 @@ const ENTRY_LABEL: Record<string, string> = {
 };
 
 /** Texto curto da origem para a ficha do contato. */
+const IG_ENTRY: Record<string, string> = { instagram_ad: "anúncio", instagram_post: "post", instagram_story: "story", instagram_organic: "perfil" };
+
 export function attributionLabel(a: Attribution): string {
-  if (a.kind === "link") return ["Link de rastreio", a.utm_campaign, a.utm_content].filter(Boolean).join(" · ");
+  const path = [a.utm_campaign, a.utm_term, a.utm_content].filter(Boolean).join(" › ");
+  if (a.kind === "link") return ["Link de rastreio", path].filter(Boolean).join(" · ");
+  if (a.kind === "code") return [`Anúncio ${a.ad_code ?? ""}`.trim(), path].filter(Boolean).join(" · ");
+  if (a.kind === "manual") {
+    const where = IG_ENTRY[a.entry_point ?? ""] ?? "Instagram";
+    return [`Instagram (${where})${a.ad_code ? ` ${a.ad_code}` : ""}`, path].filter(Boolean).join(" · ");
+  }
   if (a.kind === "ctwa") return ["Anúncio (WhatsApp)", a.ad_title, a.ad_source_id ? `#${a.ad_source_id}` : null].filter(Boolean).join(" · ");
   return `Orgânico · ${ENTRY_LABEL[a.entry_point ?? ""] ?? a.entry_point ?? "WhatsApp"}`;
 }

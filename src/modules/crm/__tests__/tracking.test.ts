@@ -18,7 +18,12 @@ describe("rastreamento — tela", () => {
   });
 
   it("origem legível na ficha do contato", () => {
-    expect(attributionLabel({ ...base, kind: "link", utm_campaign: "Tela A54", utm_content: "Vídeo 1" })).toBe("Link de rastreio · Tela A54 · Vídeo 1");
+    expect(attributionLabel({ ...base, kind: "link", utm_campaign: "Tela A54", utm_content: "Vídeo 1" })).toBe("Link de rastreio · Tela A54 › Vídeo 1");
+    expect(attributionLabel({ ...base, kind: "code", ad_code: "T21", utm_campaign: "Tela Nov", utm_term: "25-45", utm_content: "Vídeo 1" }))
+      .toBe("Anúncio T21 · Tela Nov › 25-45 › Vídeo 1");
+    expect(attributionLabel({ ...base, kind: "manual", entry_point: "instagram_ad", ad_code: "T21", utm_campaign: "Tela Nov" }))
+      .toBe("Instagram (anúncio) T21 · Tela Nov");
+    expect(attributionLabel({ ...base, kind: "manual", entry_point: "instagram_story" })).toBe("Instagram (story)");
     expect(attributionLabel({ ...base, kind: "ctwa", ad_title: "Tela em 1h", ad_source_id: "120" })).toBe("Anúncio (WhatsApp) · Tela em 1h · #120");
     expect(attributionLabel({ ...base, entry_point: "click_to_chat_link" })).toBe("Orgânico · link do WhatsApp (wa.me)");
   });

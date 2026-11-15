@@ -8,7 +8,7 @@ import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
 import { base64ToBytes, transcribeMessage } from "../_shared/transcribe.ts"
 import { checkWebhookAuth } from "./auth.ts"
-import { extractAdAttribution, extractTrackCode, hasAdData, mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
+import { extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
 /** Config pela instância do evento; sem ela, o número ativo. */
 async function resolveConfig(admin: SupabaseClient, instance: unknown): Promise<EvolutionConfig | null> {
@@ -187,7 +187,8 @@ serve(async (req) => {
     }
     // Rastreamento: código do link / dados do anúncio → origem do contato; 1º contato → evento Lead para a Meta
     if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
-      const code = extractTrackCode(parsed.content)
+      // código do link de rastreio (cód. K7Q2M) ou do anúncio (#T21 / Ref. T21)
+      const code = extractTrackCode(parsed.content) ?? extractAdCode(parsed.content)
       const native = extractAdAttribution(message)
       if (code || crm.contact_created || hasAdData(native)) {
         background((async () => {

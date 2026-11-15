@@ -24,7 +24,7 @@ export interface MetaEvent {
   contact: { name: string } | null;
 }
 
-export interface CampaignRow { source: string; campaign: string; ad: string; contacts: number; qualified: number; won: number; revenue: number }
+export interface CampaignRow { source: string; campaign: string; adset: string; ad: string; contacts: number; replied: number; qualified: number; won: number; revenue: number }
 
 export async function getTrackingSettings(storeId: string): Promise<TrackingSettings | null> {
   const { data, error } = await crmDb.from("crm_tracking_settings").select("*").eq("store_id", storeId).maybeSingle();

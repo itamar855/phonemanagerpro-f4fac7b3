@@ -13,11 +13,11 @@ export interface IgLeadResult {
 
 export async function createInstagramLead(a: {
   storeId: string; phone: string; name?: string | null; username?: string | null; interest?: string | null;
-  subject?: string | null; source: IgSource; campaign?: string | null; ownerId?: string | null;
+  subject?: string | null; source: IgSource; campaign?: string | null; ownerId?: string | null; adCode?: string | null;
 }): Promise<IgLeadResult> {
   const { data, error } = await crmDb.rpc("crm_create_instagram_lead", {
     p_store_id: a.storeId, p_phone: a.phone, p_name: a.name || null, p_username: a.username || null, p_interest: a.interest || null,
-    p_subject: a.subject || null, p_source: a.source, p_campaign: a.campaign || null, p_owner_id: a.ownerId || null,
+    p_subject: a.subject || null, p_source: a.source, p_campaign: a.campaign || null, p_owner_id: a.ownerId || null, p_ad_code: a.adCode || null,
   });
   throwIf(error);
   return data as IgLeadResult;

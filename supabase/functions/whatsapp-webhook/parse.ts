@@ -143,6 +143,15 @@ export function extractTrackCode(text: string | null | undefined): string | null
   return m ? m[1].toUpperCase() : null;
 }
 
+/**
+ * Código de anúncio na mensagem: "#T21" ou "Ref. T21" (o banco só aceita se estiver cadastrado).
+ * Mesmo padrão em src/modules/crm/lib/adCodes.ts.
+ */
+export function extractAdCode(text: string | null | undefined): string | null {
+  const m = /(?:#|\bref\.?\s*:?\s*)([A-Za-z][A-Za-z0-9]{1,5})\b/i.exec(text ?? "");
+  return m ? m[1].toUpperCase() : null;
+}
+
 /** Status de entrega da Evolution → status do CRM. */
 export function mapAckStatus(raw: unknown): "sent" | "delivered" | "read" | null {
   const s = String(raw ?? "").toUpperCase();
