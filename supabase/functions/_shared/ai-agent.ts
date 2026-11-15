@@ -7,6 +7,7 @@ import {
 } from "./ai-agent-core.ts";
 import { evolution, loadWhatsAppConfig, whatsappNumber } from "./evolution.ts";
 import { generateJson, type ChatTurn } from "./llm.ts";
+import { loadMessageAudio, transcribeMessage } from "./transcribe.ts";
 
 export interface AiSettings {
   store_id: string;
@@ -116,13 +117,24 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     const overDaily = (runsToday ?? 0) >= (s.max_replies_per_day || 30);
 
     const [{ data: msgs }, { count: aiCount }, { data: store }, serviceOrders] = await Promise.all([
-      admin.from("crm_messages").select("direction, sender_kind, kind, body, created_at").eq("conversation_id", conv.id)
-        .order("created_at", { ascending: false }).limit(30),
+      admin.from("crm_messages").select("id, direction, sender_kind, kind, body, created_at, transcript, transcript_status, media_path, media_url, media_mime")
+        .eq("conversation_id", conv.id).order("created_at", { ascending: false }).limit(30),
       admin.from("crm_messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id).eq("sender_kind", "ai"),
       admin.from("stores").select("name").eq("id", conv.store_id).maybeSingle(),
       loadServiceOrders(admin, conv.store_id, contact ?? {}),
     ]);
-    const messages = ((msgs ?? []) as TranscriptMessage[]).reverse();
+    const messages = ((msgs ?? []) as (TranscriptMessage & { id: string; transcript_status: string | null; media_path: string | null; media_url: string | null; media_mime: string | null })[]).reverse();
+
+    // áudios recentes do cliente ainda sem transcrição (ex.: chegaram antes deste recurso): transcreve agora
+    const pending = messages.filter((m) => m.kind === "audio" && m.direction === "in" && !m.transcript_status && (m.media_path || m.media_url)).slice(-3);
+    for (const m of pending) {
+      try {
+        const { bytes, mime } = await loadMessageAudio(admin, m);
+        m.transcript = await transcribeMessage(admin, m.id, bytes, mime);
+      } catch (e) {
+        console.error("[ai-agent] transcrever:", (e as Error).message);
+      }
+    }
 
     const t0 = Date.now();
     let result;

@@ -76,6 +76,18 @@ describe("agente de IA — travas", () => {
     expect(applyGuards(reply(), { ...g, lastInbound: msg("in", "[Áudio]", "audio") }).reason).toBe("mensagem em áudio/imagem");
   });
 
+  it("áudio transcrito a IA entende (e o pedido de atendente falado também conta)", () => {
+    const heard = { ...msg("in", "[Áudio]", "audio"), transcript: "minha tela do A54 quebrou, quanto fica?" };
+    expect(applyGuards(reply(), { ...g, lastInbound: heard }).decision).toBe("reply");
+    const asksHuman = { ...msg("in", "[Áudio]", "audio"), transcript: "deixa eu falar com um atendente" };
+    expect(applyGuards(reply(), { ...g, lastInbound: asksHuman }).decision).toBe("handoff");
+  });
+
+  it("transcrição entra na conversa enviada ao modelo", () => {
+    const turns = toTurns([{ ...msg("in", "[Áudio]", "audio"), transcript: "boa tarde, tem capinha do iPhone 13?" }]);
+    expect(turns).toEqual([{ role: "user", text: "[áudio da pessoa, transcrito]: boa tarde, tem capinha do iPhone 13?" }]);
+  });
+
   it("limite de mensagens da IA", () => {
     expect(applyGuards(reply(), { ...g, aiRepliesSoFar: 8 }).decision).toBe("handoff");
     expect(applyGuards(reply(), g).decision).toBe("reply");

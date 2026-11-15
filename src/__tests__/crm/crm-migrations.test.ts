@@ -21,6 +21,7 @@ const TASKS = read("20261116000000_crm_tasks_automations.sql");
 const REPORTS = read("20261116010000_crm_reports.sql");
 const AVATARS = read("20261116020000_crm_contact_avatars.sql");
 const AI = read("20261116030000_crm_ai_agent.sql");
+const TRANSCRIPT = read("20261116040000_crm_audio_transcript.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -113,6 +114,7 @@ beforeAll(async () => {
   await db.exec(REPORTS);
   await db.exec(AVATARS);
   await db.exec(AI);
+  await db.exec(TRANSCRIPT);
 }, 60_000);
 
 describe("CRM — fundação", () => {
