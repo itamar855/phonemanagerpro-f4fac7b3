@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordModal from "./ChangePasswordModal";
 
+/** Item ativo: rota exata, ou qualquer subrota de módulos com navegação própria (/crm/...). */
+const isNavActive = (pathname: string, path: string) =>
+  pathname === path || (path !== "/" && path === "/crm" && pathname.startsWith("/crm/"));
+
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", permission: "dashboard" },
   { label: "Ranking & Metas", icon: Trophy, path: "/ranking" },
@@ -22,7 +26,7 @@ const navItems = [
   { label: "Estoque", icon: Package, path: "/estoque", permission: "estoque" },
   { label: "OS", icon: Wrench, path: "/ordens-servico", permission: "os" },
   { label: "Clientes", icon: UserCircle, path: "/clientes", permission: "clientes" },
-  { label: "CRM de Leads", icon: MessageSquare, path: "/leads" },
+  { label: "CRM", icon: MessageSquare, path: "/crm" },
   { label: "Transações", icon: ArrowUpDown, path: "/transacoes", permission: "transacoes" },
   { label: "Relatórios", icon: FileText, path: "/relatorios", permission: "relatorios" },
   { label: "Notas Fiscais", icon: ReceiptText, path: "/notas-fiscais", permission: "fiscal" },
@@ -169,7 +173,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                 to={item.path}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all duration-150 active:scale-[0.98]",
-                  location.pathname === item.path
+                  isNavActive(location.pathname, item.path)
                     ? "bg-primary/10 text-primary shadow-sm font-semibold"
                     : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
                 )}
@@ -291,7 +295,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
               return (
                 <>
                   {primaryNavItems.map((item) => {
-                    const isActive = location.pathname === item.path;
+                    const isActive = isNavActive(location.pathname, item.path);
                     const Icon = item.icon || Smartphone;
                     return (
                       <Link
@@ -347,7 +351,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
                 <div className="grid grid-cols-1 gap-1">
                   {secondaryNavItems.map((item) => {
                     const Icon = item.icon || Smartphone;
-                    const isActive = location.pathname === item.path;
+                    const isActive = isNavActive(location.pathname, item.path);
                     return (
                       <Link
                         key={item.path}

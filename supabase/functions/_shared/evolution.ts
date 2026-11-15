@@ -62,7 +62,7 @@ export function evolution(cfg: EvolutionConfig) {
   return {
     instanceName: cfg.instance_name,
     async connectionState(): Promise<string> {
-      const r = await call("GET", `/instance/connectionState/${instance}`, undefined, 8000);
+      const r = await call("GET", `/instance/connectionState/${instance}`, undefined, 5000);
       if (r.status === 404) return "not_found";
       const d = must(r, "Status");
       return String(d?.instance?.state ?? d?.state ?? "unknown");
