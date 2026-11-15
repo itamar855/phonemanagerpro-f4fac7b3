@@ -24,6 +24,16 @@ async function handleInstagram(action: Action, admin: any, userId: string, store
     const appId = String(body.app_id || "").trim();
     const appSecret = String(body.app_secret || "").trim();
     if (!/^\d{6,20}$/.test(appId)) throw new HttpError(400, "ID do app do Instagram inválido (só números).");
+    // O ID do app do Facebook (meta app) é aceito pelo Graph como app: se responder, é o ID errado.
+    try {
+      const fb = await fetch(`https://graph.facebook.com/${appId}?fields=id,name`);
+      const fbData = await fb.json().catch(() => ({}));
+      if (fb.ok && fbData?.id === appId && !/-IG$/i.test(String(fbData?.name ?? ""))) {
+        throw new HttpError(400, `Este é o ID do app do Facebook ("${fbData.name}"). Use o "ID do app do Instagram", que fica em Casos de uso → Instagram → Configuração da API com login do Instagram.`);
+      }
+    } catch (e) {
+      if (e instanceof HttpError) throw e; // sem rede para checar: segue
+    }
     const { data: prev } = await admin.from("crm_channel_secrets").select("secrets").eq("store_id", storeId).eq("channel", "instagram").maybeSingle();
     const secret = appSecret || prev?.secrets?.app_secret;
     if (!secret) throw new HttpError(400, "Cole a chave secreta do app do Instagram.");
