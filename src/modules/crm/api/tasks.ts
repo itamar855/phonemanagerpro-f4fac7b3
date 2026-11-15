@@ -1,5 +1,5 @@
 import { byStore, crmDb, throwIf } from "./db";
-import type { CrmAutomationSettings, CrmTask, CrmTaskWithLinks } from "../lib/types";
+import type { CrmAutomationSettings, CrmDispatch, CrmTask, CrmTaskWithLinks } from "../lib/types";
 
 const TASK_SELECT = "*, contact:crm_contacts(id, name, phone), deal:crm_deals(id, title, pipeline_id, status)";
 
@@ -90,6 +90,26 @@ export async function getAutomationSettings(storeId: string): Promise<CrmAutomat
   const { data, error } = await crmDb.from("crm_automation_settings").select("*").eq("store_id", storeId).maybeSingle();
   throwIf(error);
   return (data ?? null) as CrmAutomationSettings | null;
+}
+
+/** Quem da loja tem telefone para receber o aviso da distribuição (só gerência). */
+export async function teamPhones(storeId: string): Promise<Record<string, boolean>> {
+  const { data, error } = await crmDb.rpc("crm_team_phones", { p_store_id: storeId });
+  throwIf(error);
+  return Object.fromEntries(((data ?? []) as { user_id: string; has_phone: boolean }[]).map((r) => [r.user_id, r.has_phone]));
+}
+
+/** Vez atual da conversa na distribuição (aguardando a loja abrir ou oferecida a alguém). */
+export async function activeDispatch(conversationId: string): Promise<CrmDispatch | null> {
+  const { data, error } = await crmDb.from("crm_dispatches").select("*").eq("conversation_id", conversationId)
+    .in("status", ["waiting", "offered"]).maybeSingle();
+  throwIf(error);
+  return (data ?? null) as CrmDispatch | null;
+}
+
+export async function acceptDispatch(conversationId: string) {
+  const { error } = await crmDb.rpc("crm_dispatch_accept", { p_conversation_id: conversationId });
+  throwIf(error);
 }
 
 export async function saveAutomationSettings(storeId: string, userId: string, patch: Partial<Omit<CrmAutomationSettings, "store_id">>) {

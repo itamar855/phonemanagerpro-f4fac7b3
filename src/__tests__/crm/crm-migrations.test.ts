@@ -28,6 +28,7 @@ const IG_MANUAL = read("20261116070000_crm_ig_manual_lead.sql");
 const AD_CODES = read("20261116080000_crm_ad_codes.sql");
 const OS_SYNC = read("20261116090000_crm_os_sync.sql");
 const NO_DUP = read("20261116100000_crm_tasks_no_dup.sql");
+const DISPATCH = read("20261116110000_crm_dispatch.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -127,6 +128,8 @@ beforeAll(async () => {
   await db.exec(AD_CODES);
   await db.exec(OS_SYNC);
   await db.exec(NO_DUP);
+  await db.exec(`alter table public.profiles add column phone text;`);
+  await db.exec(DISPATCH);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -813,5 +816,130 @@ describe("CRM — assistência acompanha a OS", () => {
     expect(repair.rows[0].n).toBeGreaterThan(0);
     expect(repair.rows[0].n).toBeLessThan(all.rows[0].n);
     expect(Number(sales.rows[0].r)).toBe(450); // a venda do "Tela A54" do teste de rastreamento (funil de Vendas)
+  });
+});
+
+describe("CRM — distribuição com aviso no WhatsApp", () => {
+  const U3 = "00000000-0000-0000-0000-0000000000a3"; // 2º vendedor da loja A
+  const active = (conv: string) => one(`select * from crm_dispatches where conversation_id = $1 and status in ('waiting', 'offered')`, [conv]);
+  const expire = (conv: string) => db.query(`update crm_dispatches set expires_at = now() - interval '1 second' where conversation_id = $1 and status = 'offered'`, [conv]);
+  let n = 0;
+  const handedOff = async () => {
+    n += 1;
+    const conv = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "minha tela quebrou",
+      p_phone: `55119333300${String(n).padStart(2, "0")}`, p_name: `Cliente ${n}`, p_external_id: `DSP${n}` })).conversation_id as string;
+    await db.query(`select crm_ai_handoff($1, 'Troca de tela', 'Tela quebrada do A54', 'hot', 'repair', 'qualificado')`, [conv]);
+    return conv;
+  };
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into auth.users values ('${U3}');
+      insert into public.member_stores (user_id, store_id) values ('${U3}', '${A}');
+      insert into public.user_roles (user_id, role) values ('${U3}', 'vendedor');
+      insert into public.profiles (user_id, display_name, phone) values ('${U3}', 'Vendedor A2', '(87) 98877-6655');
+      update public.profiles set phone = '87 9 8811-2233' where user_id = '${U1}';
+      update public.crm_ai_settings set mode = 'draft', business_hours = null where store_id = '${A}';
+      update public.crm_automation_settings set dispatch_enabled = true, dispatch_minutes = 5, round_robin = false,
+        round_robin_members = array['${U1}', '${U3}']::uuid[] where store_id = '${A}';
+    `);
+  });
+
+  it("passagem da IA vai para o 1º da fila; sem assumir passa para o próximo; volta inteira fica com o dono", async () => {
+    const conv = await handedOff();
+    const first = await active(conv);
+    expect(first).toMatchObject({ status: "offered", notify_status: "pending" });
+    expect([U1, U3]).toContain(first.user_id);
+    expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(first.user_id);
+    expect(await val(`select owner_id from crm_deals d join crm_conversations c on c.contact_id = d.contact_id where c.id = $1 and d.status = 'open'`, [conv])).toBe(first.user_id);
+
+    await expire(conv);
+    expect(await val<any>(`select crm_dispatch_tick()`)).toMatchObject({ expired: 1, offered: 1 });
+    const second = await active(conv);
+    expect(second.user_id).toBe(first.user_id === U1 ? U3 : U1);
+    expect(second.cycle_id).toBe(first.cycle_id);
+
+    await expire(conv);
+    expect(await val<any>(`select crm_dispatch_tick()`)).toMatchObject({ expired: 1, owner: 1 });
+    expect(await active(conv)).toBeUndefined();
+    const owner = await one(`select * from crm_dispatches where conversation_id = $1 and status = 'owner'`, [conv]);
+    expect(owner.user_id).toBe(ADM);
+    expect(owner.notify_status).toBeNull(); // dono sem telefone: fica com ele, sem aviso
+    expect(await one(`select assigned_to, accepted_by from crm_conversations where id = $1`, [conv])).toEqual({ assigned_to: ADM, accepted_by: ADM });
+    // parou de repassar
+    await db.query(`select crm_dispatch_tick()`);
+    expect(await val(`select count(*)::int from crm_dispatches where conversation_id = $1`, [conv])).toBe(3);
+  });
+
+  it("assumir pelo botão (só gente da loja) fecha a tarefa; responder o cliente também conta", async () => {
+    const conv = await handedOff();
+    await asUser(U2, async () => {
+      expect(await errorOf(`select crm_dispatch_accept($1)`, [conv])).toMatch(/Sem acesso/);
+    });
+    await asUser(U3, async () => {
+      await db.query(`select crm_dispatch_accept($1)`, [conv]);
+      // vendedor vê a fila da própria loja
+      expect(await val(`select count(*)::int from crm_dispatches where conversation_id = $1`, [conv])).toBe(1);
+    });
+    expect(await one(`select status from crm_dispatches where conversation_id = $1`, [conv])).toEqual({ status: "accepted" });
+    expect(await one(`select assigned_to, accepted_by from crm_conversations where id = $1`, [conv])).toEqual({ assigned_to: U3, accepted_by: U3 });
+    expect(await val(`select count(*)::int from crm_tasks where conversation_id = $1 and source = 'ai' and done_at is null`, [conv])).toBe(0);
+
+    const conv2 = await handedOff();
+    const phone = await val<string>(`select ct.phone from crm_contacts ct join crm_conversations c on c.contact_id = ct.id where c.id = $1`, [conv2]);
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "user", p_body: "Oi! Aqui é o João", p_phone: phone, p_external_id: "DSP-reply", p_sender_user_id: U1 });
+    expect(await active(conv2)).toBeUndefined();
+    expect(await val(`select accepted_by from crm_conversations where id = $1`, [conv2])).toBe(U1);
+  });
+
+  it("loja fechada espera abrir; conversa nova sem IA também entra; conversa em andamento não", async () => {
+    await db.query(`update crm_ai_settings set mode = 'off', business_hours = '{"enabled": true, "start": "08:00", "end": "18:00", "days": []}' where store_id = $1`, [A]);
+    const conv = (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi", p_phone: "5511933330099", p_external_id: "DSP-closed" })).conversation_id;
+    expect(await active(conv)).toMatchObject({ status: "waiting", user_id: null, notify_status: null });
+    await db.query(`select crm_dispatch_tick()`);
+    expect((await active(conv)).status).toBe("waiting");
+    await db.query(`update crm_ai_settings set business_hours = null where store_id = $1`, [A]);
+    expect(await val<any>(`select crm_dispatch_tick()`)).toMatchObject({ offered: 1 });
+    expect((await active(conv)).status).toBe("offered");
+
+    // alguém da loja já está conversando: mensagem nova do cliente não redistribui
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "user", p_body: "Bom dia!", p_phone: "5511933330099", p_external_id: "DSP-closed-r" });
+    await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "e aí?", p_phone: "5511933330099", p_external_id: "DSP-closed-2" });
+    expect(await active(conv)).toBeUndefined();
+  });
+
+  it("aviso sai uma vez só e o número da equipe fica fora do CRM", async () => {
+    await db.query(`update crm_ai_settings set mode = 'draft' where store_id = $1`, [A]);
+    await handedOff();
+    const list = await val<any[]>(`select crm_dispatch_claim_notifications()`);
+    // só sai aviso de quem está com a vez (ofertas vencidas não avisam mais)
+    expect(list.every((x) => x.kind === "offered" || x.kind === "owner")).toBe(true);
+    const mine = list.find((x) => x.kind === "offered");
+    const u3 = mine.user_id === U3;
+    expect(mine).toMatchObject({ staff_phone: u3 ? "5587988776655" : "5587988112233", staff_name: u3 ? "Vendedor A2" : "Vendedor A", minutes: 5 });
+    expect(mine.contact_name).toBeTruthy();
+    expect(await val<any[]>(`select crm_dispatch_claim_notifications()`)).toEqual([]);
+    await db.query(`select crm_dispatch_notified($1, true)`, [mine.id]);
+    expect(await val(`select notify_status from crm_dispatches where id = $1`, [mine.id])).toBe("sent");
+    expect(await one(`select ignored, tags from crm_contacts where store_id = $1 and phone_key = crm_phone_key($2)`, [A, mine.staff_phone]))
+      .toEqual({ ignored: true, tags: ["equipe"] });
+  });
+
+  it("resolver cancela a distribuição; devolver para a IA permite distribuir de novo", async () => {
+    const conv = await handedOff();
+    await db.query(`update crm_conversations set status = 'resolved' where id = $1`, [conv]);
+    expect(await val<any>(`select crm_dispatch_tick()`)).toMatchObject({ cancelled: 1 });
+    expect(await active(conv)).toBeUndefined();
+
+    const conv2 = await handedOff();
+    await asUser(U1, () => db.query(`select crm_dispatch_accept($1)`, [conv2]));
+    await db.query(`update crm_conversations set handler = 'ai' where id = $1`, [conv2]);
+    expect(await val(`select accepted_at from crm_conversations where id = $1`, [conv2])).toBeNull();
+    await db.query(`select crm_ai_handoff($1, 'x', 'de novo', 'warm', 'repair', null)`, [conv2]);
+    expect((await active(conv2)).status).toBe("offered");
+    // desligou a distribuição: tudo que estava na fila sai
+    await db.query(`update crm_automation_settings set dispatch_enabled = false where store_id = $1`, [A]);
+    await db.query(`select crm_dispatch_tick()`);
+    expect(await val(`select count(*)::int from crm_dispatches where store_id = $1 and status in ('waiting', 'offered')`, [A])).toBe(0);
   });
 });

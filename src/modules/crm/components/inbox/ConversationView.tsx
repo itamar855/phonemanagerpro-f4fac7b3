@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Bot, CheckCircle2, Loader2, MessageSquareDashed, PanelRight, RotateCcw } from "lucide-react";
 import { setConversationHandler } from "../../api/ai";
 import { AiSuggestionBar } from "./AiSuggestionBar";
+import { DispatchBanner } from "./DispatchBanner";
 import { toast } from "sonner";
 import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -214,6 +215,8 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
           </Button>
         </div>
       </header>
+
+      <DispatchBanner conversationId={conv.id} userId={userId} names={names} />
 
       <div ref={scroller} className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3 md:px-6" aria-live="polite" aria-relevant="additions">
         {messagesQ.hasNextPage && (
