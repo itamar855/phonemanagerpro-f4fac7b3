@@ -41,6 +41,7 @@ import "@/utils/debugLogger";
 const CrmModule = lazy(() => import("./modules/crm"));
 const Privacidade = lazy(() => import("./pages/Privacidade"));
 const Termos = lazy(() => import("./pages/Termos"));
+const IntegracaoInstagram = lazy(() => import("./pages/IntegracaoInstagram"));
 
 const queryClient = new QueryClient();
 
@@ -108,6 +109,7 @@ const App = () => (
                 <Route path="/avaliacao" element={<Avaliacao />} />
                 <Route path="/privacidade" element={<Suspense fallback={<ModuleFallback />}><Privacidade /></Suspense>} />
                 <Route path="/termos" element={<Suspense fallback={<ModuleFallback />}><Termos /></Suspense>} />
+                <Route path="/integracao/instagram" element={<Suspense fallback={<ModuleFallback />}><IntegracaoInstagram /></Suspense>} />
                 <Route path="/auditoria" element={<ProtectedRoute><Auditoria /></ProtectedRoute>} />
                 <Route path="*" element={<NotFound />} />
               </Routes>

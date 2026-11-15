@@ -61,6 +61,64 @@ export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
 
   useEffect(() => { if (s?.app_id && !appId) setAppId(s.app_id); }, [s?.app_id, appId]);
 
+  // Aviso do popup de login (página /integracao/instagram)
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.origin !== window.location.origin || ev.data?.type !== "crm-ig-oauth") return;
+      if (ev.data.ok) {
+        if (ev.data.subscribed) toast.success(`Instagram${ev.data.user ? ` @${ev.data.user}` : ""} conectado ao CRM!`);
+        else toast.warning("Instagram conectado, mas a inscrição no webhook falhou. Confira o webhook na Meta e conecte de novo.");
+      } else {
+        toast.error(ev.data.msg || "Não foi possível conectar o Instagram.");
+      }
+      qc.invalidateQueries({ queryKey: key });
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
+
+  // Link aberto em outro navegador: confere a conexão a cada 5 s enquanto houver link ativo
+  const [linkActiveUntil, setLinkActiveUntil] = useState<number | null>(null);
+  useEffect(() => {
+    if (!linkActiveUntil) return;
+    const t = setInterval(() => {
+      if (Date.now() > linkActiveUntil) { setLinkActiveUntil(null); return; }
+      qc.invalidateQueries({ queryKey: key });
+    }, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkActiveUntil]);
+  useEffect(() => { if (s?.connected && linkActiveUntil) { setLinkActiveUntil(null); toast.success(`Instagram @${s.username} conectado ao CRM!`); } }, [s?.connected, s?.username, linkActiveUntil]);
+
+  function openPopup() {
+    // abre a janela já no clique (evita bloqueio de popup) e depois aponta para o login
+    const w = window.open("about:blank", "crm-ig-login", "width=520,height=720,menubar=no,toolbar=no");
+    void run("oauth", async () => {
+      try {
+        const { url } = await igAuthUrl(storeId, window.location.origin);
+        if (w && !w.closed) w.location.href = url;
+        else window.location.assign(url); // popup bloqueado: vai na mesma aba
+      } catch (e) {
+        w?.close();
+        throw e;
+      }
+    });
+  }
+
+  function copyLink() {
+    void run("link", async () => {
+      const { url } = await igAuthUrl(storeId, window.location.origin);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copiado! Abra no navegador em que o Instagram da loja está logado. Vale por 15 minutos, uma vez.");
+      } catch {
+        window.prompt("Copie o link de autorização:", url);
+      }
+      setLinkActiveUntil(Date.now() + 15 * 60 * 1000);
+    });
+  }
+
   // Volta do login do Instagram: ?ig=ok|error
   useEffect(() => {
     const ig = params.get("ig");
@@ -156,18 +214,18 @@ export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
           </Step>
 
           <Step n={3} title="Conectar a conta da loja">
-            <p className="text-xs text-muted-foreground">Você vai para o Instagram, entra com a conta da loja e autoriza o CRM a ler e responder as mensagens.</p>
+            <p className="text-xs text-muted-foreground">
+              Abre uma janelinha do Instagram: entre com a conta da loja e autorize. Se o Instagram da loja estiver logado em outro
+              navegador ou no celular, copie o link e abra lá.
+            </p>
             <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                disabled={!appReady || busy !== null}
-                onClick={() => run("oauth", async () => {
-                  const { url } = await igAuthUrl(storeId, window.location.href);
-                  window.location.assign(url);
-                })}
-              >
+              <Button size="sm" disabled={!appReady || busy !== null} onClick={openPopup}>
                 {busy === "oauth" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <LogIn className="mr-1.5 h-4 w-4" />}
                 {s.connected ? "Reconectar com Instagram" : "Conectar com Instagram"}
+              </Button>
+              <Button size="sm" variant="outline" disabled={!appReady || busy !== null} onClick={copyLink}>
+                {busy === "link" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Copy className="mr-1.5 h-4 w-4" />}
+                Copiar link de autorização
               </Button>
               {s.connected && (
                 <Button
@@ -184,6 +242,11 @@ export function InstagramChannelCard({ storeId }: { storeId: string | null }) {
               )}
             </div>
             {!appReady && <p className="text-xs text-amber-600 dark:text-amber-400">Salve primeiro os dados do app (passo 2).</p>}
+            {linkActiveUntil && !s.connected && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Aguardando a autorização pelo link…
+              </p>
+            )}
           </Step>
 
           <details className="rounded-lg border border-border/50 p-3 text-sm">
