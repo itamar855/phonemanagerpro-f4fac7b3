@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Loader2, Save, Shuffle, Workflow } from "lucide-react";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { saveAutomationSettings } from "../../api/tasks";
+import { saveAutomationSettings, teamPhones } from "../../api/tasks";
 import { useCrmContext, useTeam } from "../../hooks/useInbox";
 import { taskKeys, useAutomationSettings } from "../../hooks/useTasks";
 import type { CrmAutomationSettings } from "../../lib/types";
@@ -20,7 +20,9 @@ const DEFAULTS: Form = {
   round_robin: false, round_robin_members: [], unanswered_minutes: 30, stale_deals: true,
   os_ready: true, review_after_days: 3, warranty_alert_days: 7,
   ig_first_message: DEFAULT_IG_MESSAGE, ig_followup_hours: 2, os_sync: true,
+  dispatch_enabled: false, dispatch_minutes: 5, dispatch_owner_id: null,
 };
+const NO_OWNER = "__auto__";
 const MANAGER = new Set(["admin", "gerente", "dono"]);
 
 /** Só os campos editáveis (a linha do banco tem também cursor e auditoria). */
@@ -30,6 +32,7 @@ function pick(d: CrmAutomationSettings | null | undefined): Form {
     round_robin: d.round_robin, round_robin_members: d.round_robin_members ?? [], unanswered_minutes: d.unanswered_minutes,
     stale_deals: d.stale_deals, os_ready: d.os_ready, review_after_days: d.review_after_days, warranty_alert_days: d.warranty_alert_days,
     ig_first_message: d.ig_first_message || DEFAULT_IG_MESSAGE, ig_followup_hours: d.ig_followup_hours ?? 2, os_sync: d.os_sync ?? true,
+    dispatch_enabled: d.dispatch_enabled ?? false, dispatch_minutes: d.dispatch_minutes ?? 5, dispatch_owner_id: d.dispatch_owner_id ?? null,
   };
 }
 
@@ -72,6 +75,9 @@ export function AutomationSettingsCard() {
   const [form, setForm] = useState<Form>(DEFAULTS);
   const [saving, setSaving] = useState(false);
   const canEdit = MANAGER.has(String(userRole ?? ""));
+  const { data: phones } = useQuery({
+    queryKey: ["crm", "team-phones", storeId], queryFn: () => teamPhones(storeId as string), enabled: Boolean(storeId) && canEdit, staleTime: 60_000,
+  });
 
   useEffect(() => { setForm(pick(data)); }, [data]);
 
@@ -87,6 +93,9 @@ export function AutomationSettingsCard() {
   async function save() {
     if (!storeId || !userId) return;
     if (form.round_robin && form.round_robin_members.length === 0) { toast.error("Escolha quem entra no rodízio."); return; }
+    if (form.dispatch_enabled && !form.round_robin_members.some((u) => phones?.[u])) {
+      toast.error("Na distribuição, marque no rodízio ao menos uma pessoa com telefone cadastrado."); return;
+    }
     setSaving(true);
     try {
       await saveAutomationSettings(storeId, userId, form);
@@ -124,10 +133,36 @@ export function AutomationSettingsCard() {
                     onCheckedChange={(v) => set({ round_robin_members: v ? [...form.round_robin_members, t.user_id] : form.round_robin_members.filter((x) => x !== t.user_id) })} />
                   <Shuffle className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
                   <span className="truncate">{t.display_name}{t.user_id === userId ? " (você)" : ""}</span>
+                  {form.dispatch_enabled && phones && !phones[t.user_id] && (
+                    <span className="ml-auto shrink-0 text-xs text-amber-700 dark:text-amber-400">sem telefone</span>
+                  )}
                 </label>
               );
             })}
           </fieldset>
+        </Row>
+
+        <Row id="au-dispatch" title="Distribuir com aviso no WhatsApp"
+          help="Quando a IA passa o atendimento (ou chega conversa nova sem IA), a próxima pessoa do rodízio recebe um aviso no WhatsApp dela com o link da conversa. Se não tocar em “Assumir” (ou responder o cliente) no prazo, passa para a próxima. Depois de uma volta sem ninguém, fica com o dono. Com a loja fechada, espera abrir."
+          checked={form.dispatch_enabled} onChange={(v) => set({ dispatch_enabled: v, round_robin: v ? true : form.round_robin })} disabled={off}>
+          <div className="space-y-3">
+            <NumberSelect label="Prazo para assumir" value={form.dispatch_minutes} options={[2, 3, 5, 10, 15]} disabled={off}
+              unit={(n) => `${n} minutos`} onChange={(n) => set({ dispatch_minutes: n })} />
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Se ninguém assumir, fica com</span>
+              <Select value={form.dispatch_owner_id ?? NO_OWNER} onValueChange={(v) => set({ dispatch_owner_id: v === NO_OWNER ? null : v })} disabled={off}>
+                <SelectTrigger className="h-9 w-56" aria-label="Quem fica com o atendimento se ninguém assumir"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_OWNER}>Dono / admin da loja</SelectItem>
+                  {team.map((t) => <SelectItem key={t.user_id} value={t.user_id}>{t.display_name}{t.user_id === userId ? " (você)" : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+              Recebe quem está marcado no <strong>Rodízio</strong> acima e tem telefone no cadastro (Equipe → editar). O aviso sai do WhatsApp da loja;
+              os números da equipe ficam fora do CRM e da IA. Horário: o mesmo do Agente de IA.
+            </p>
+          </div>
         </Row>
 
         <Row id="au-reply" title="Conversa sem resposta" help="Cria a tarefa “Responder fulano” quando o cliente fica esperando. Fecha sozinha quando alguém responde."

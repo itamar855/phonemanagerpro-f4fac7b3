@@ -52,6 +52,8 @@ export interface CrmConversation {
   last_message_direction: Direction | null;
   last_inbound_at: string | null;
   first_response_at: string | null;
+  accepted_at?: string | null;
+  accepted_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -173,6 +175,25 @@ export interface CrmAutomationSettings {
   ig_first_message: string;
   ig_followup_hours: number;
   os_sync: boolean;
+  dispatch_enabled: boolean;
+  dispatch_minutes: number;
+  dispatch_owner_id: string | null;
+}
+
+/** Uma vez de alguém na distribuição de atendimento. */
+export interface CrmDispatch {
+  id: string;
+  store_id: string;
+  conversation_id: string;
+  cycle_id: string;
+  user_id: string | null;
+  status: "waiting" | "offered" | "accepted" | "expired" | "owner" | "cancelled";
+  offered_at: string | null;
+  expires_at: string | null;
+  decided_at: string | null;
+  notify_status: "pending" | "sending" | "sent" | "failed" | null;
+  notify_error: string | null;
+  created_at: string;
 }
 
 export interface CrmActivity {

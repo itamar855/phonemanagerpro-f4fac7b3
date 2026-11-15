@@ -5,6 +5,7 @@ import {
   applyGuards, buildSystemPrompt, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
   type AgentDecision, type BusinessHours, type ServiceOrderInfo, type TranscriptMessage,
 } from "./ai-agent-core.ts";
+import { sendDispatchNotices } from "./dispatch.ts";
 import { evolution, loadWhatsAppConfig, whatsappNumber } from "./evolution.ts";
 import { generateJson, type ChatTurn } from "./llm.ts";
 import { loadMessageAudio, transcribeMessage } from "./transcribe.ts";
@@ -204,6 +205,8 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
         await sendAsAi(admin, conv, contact, d.reply);
       }
     }
+    // a passagem já entrou na fila de distribuição (gatilho no banco): avisa a pessoa da vez agora
+    if (d.decision === "handoff") await sendDispatchNotices(admin);
     return { status: "done", decision: d, mode, run_id: runId };
   } catch (e) {
     console.error("[ai-agent]", (e as Error).message);
