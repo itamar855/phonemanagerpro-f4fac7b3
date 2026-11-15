@@ -1546,8 +1546,29 @@ const OrdensServico = () => {
   };
 
   // Suporte a abertura automática de OS via link direto (?openOs=ID ou ?id=ID)
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const openOsParam = searchParams.get("openOs") || searchParams.get("id");
+
+  // Nova OS vinda do CRM (?novaOs=1&cliente=&nome=&telefone=&servico=): só pré-preenche o formulário.
+  // A gravação da OS continua igual; o CRM liga a OS ao negócio sozinho depois (pelo cliente/telefone).
+  useEffect(() => {
+    if (searchParams.get("novaOs") !== "1") return;
+    const p = (k: string) => (searchParams.get(k) ?? "").slice(0, 200);
+    setForm((prev) => ({
+      ...prev,
+      customer_id: /^[0-9a-f-]{36}$/i.test(p("cliente")) ? p("cliente") : prev.customer_id,
+      customer_name: p("nome") || prev.customer_name,
+      customer_phone: p("telefone") || prev.customer_phone,
+      // o assunto do negócio ("troca de tela do iPhone 12") vai para o defeito relatado (texto livre);
+      // o serviço é uma lista fixa e fica para o atendente escolher
+      reported_defect: p("servico") || prev.reported_defect,
+    }));
+    setDialogOpen(true);
+    const next = new URLSearchParams(searchParams);
+    for (const k of ["novaOs", "cliente", "nome", "telefone", "servico"]) next.delete(k);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     if (!openOsParam) return;

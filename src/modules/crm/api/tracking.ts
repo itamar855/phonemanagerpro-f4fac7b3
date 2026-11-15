@@ -86,8 +86,9 @@ export async function getAttribution(id: string): Promise<Attribution | null> {
   return (data ?? null) as Attribution | null;
 }
 
-export async function trackingReport(storeId: string | null, from: Date, to: Date): Promise<CampaignRow[]> {
-  const { data, error } = await crmDb.rpc("crm_tracking_report", { p_store_id: storeId, p_from: from.toISOString(), p_to: to.toISOString() });
+/** kind: null = tudo, "repair" = conserto, "sales" = aparelho/acessório */
+export async function trackingReport(storeId: string | null, from: Date, to: Date, kind: "repair" | "sales" | null = null): Promise<CampaignRow[]> {
+  const { data, error } = await crmDb.rpc("crm_tracking_report", { p_store_id: storeId, p_from: from.toISOString(), p_to: to.toISOString(), p_kind: kind });
   throwIf(error);
   return ((data ?? []) as CampaignRow[]).map((r) => ({ ...r, revenue: Number(r.revenue) }));
 }
