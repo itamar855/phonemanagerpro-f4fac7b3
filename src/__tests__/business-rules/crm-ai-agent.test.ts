@@ -1,8 +1,38 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyGuards, buildSystemPrompt, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, defaultHandoffMessage, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
   type AgentDecision, type TranscriptMessage,
 } from "../../../supabase/functions/_shared/ai-agent-core";
+
+describe("agente de IA — aprendizado", () => {
+  it("esconde telefone, e-mail e CPF", () => {
+    expect(maskPersonalData("me chama no (87) 99911-2233 ou ana@gmail.com, cpf 123.456.789-09"))
+      .toBe("me chama no [telefone] ou [email], cpf [cpf]");
+    expect(maskPersonalData("+55 87 999112233")).toBe("[telefone]");
+    expect(maskPersonalData("iPhone 13 128GB por R$ 3.500")).toBe("iPhone 13 128GB por R$ 3.500");
+  });
+
+  it("monta a conversa antiga em ordem e só quando houve troca real", () => {
+    const t = historyTranscript([
+      { fromMe: true, text: "Temos sim, sai por R$ 30", at: 3 },
+      { fromMe: false, text: "tem película 3D do A54?", at: 1 },
+      { fromMe: false, text: "meu número é 87999112233", at: 2 },
+    ]);
+    expect(t).toBe("Cliente: tem película 3D do A54?\nCliente: meu número é [telefone]\nLoja: Temos sim, sai por R$ 30");
+    expect(historyTranscript([{ fromMe: false, text: "oi", at: 1 }, { fromMe: false, text: "alguém?", at: 2 }, { fromMe: false, text: "?", at: 3 }])).toBeNull();
+  });
+
+  it("exemplos aprovados entram nas instruções com o aviso sobre preço", () => {
+    const p = buildSystemPrompt({
+      storeName: "Loja", knowledge: null, persona: null, contactName: null, isCustomer: false, now: new Date(), openNow: null,
+      hoursText: null, serviceOrders: [], handoffMessage: null,
+      examples: [{ question: "trocam tela de iphone 11?", answer: "Trocamos sim! Fica pronto no mesmo dia." }],
+    });
+    expect(p).toContain('Cliente: "trocam tela de iphone 11?"');
+    expect(p).toContain('Loja: "Trocamos sim! Fica pronto no mesmo dia."');
+    expect(p).toMatch(/NÃO repita preços dos exemplos/);
+  });
+});
 
 const msg = (direction: "in" | "out", body: string, kind = "text", sender_kind: TranscriptMessage["sender_kind"] = direction === "in" ? "contact" : "user"): TranscriptMessage =>
   ({ direction, body, kind, sender_kind });

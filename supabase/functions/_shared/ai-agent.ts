@@ -41,6 +41,7 @@ async function loadServiceOrders(admin: any, storeId: string, contact: any): Pro
 export async function decide(args: {
   settings: AiSettings; storeName: string; contact: { name: string | null; customer_id?: string | null } | null;
   messages: TranscriptMessage[]; serviceOrders: ServiceOrderInfo[]; aiRepliesSoFar: number;
+  examples?: { question: string | null; answer: string; has_price?: boolean }[];
 }) {
   const now = new Date();
   const openNow = isOpenNow(args.settings.business_hours, now);
@@ -48,6 +49,7 @@ export async function decide(args: {
     storeName: args.storeName, knowledge: args.settings.knowledge, persona: args.settings.persona,
     contactName: args.contact?.name ?? null, isCustomer: Boolean(args.contact?.customer_id), now, openNow,
     hoursText: hoursText(args.settings.business_hours), serviceOrders: args.serviceOrders, handoffMessage: args.settings.handoff_message,
+    examples: args.examples,
   });
   const turns: ChatTurn[] = toTurns(args.messages);
   if (!turns.length) throw new Error("Conversa sem mensagens do cliente.");
@@ -77,6 +79,16 @@ async function gate(admin: any, opts: { conversationId: string; forceDraft?: boo
   }
   if (contact?.ignored) return { skip: "não é cliente" };
   return { conv, contact, s };
+}
+
+/** Exemplos aprovados da biblioteca parecidos com as últimas mensagens do cliente. Nunca lança. */
+export async function similarExamples(admin: any, storeId: string, messages: TranscriptMessage[]) {
+  const recent = messages.filter((m) => m.direction === "in").slice(-3)
+    .map((m) => (m.kind === "audio" ? m.transcript : m.body) ?? "").join(" ").replace(/\[[^\]]*\]/g, " ").trim();
+  if (recent.length < 4) return [];
+  const { data, error } = await admin.rpc("crm_ai_similar_examples", { p_store_id: storeId, p_text: recent.slice(-500), p_limit: 5 });
+  if (error) { console.error("[ai-agent] exemplos:", error.message); return []; }
+  return (data ?? []) as { id: string; question: string | null; answer: string; has_price: boolean }[];
 }
 
 export type RunResult =
@@ -137,10 +149,11 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     }
 
     const t0 = Date.now();
+    const examples = await similarExamples(admin, conv.store_id, messages);
     let result;
     try {
       result = await decide({
-        settings: s, storeName: store?.name ?? "loja", contact, messages, serviceOrders,
+        settings: s, storeName: store?.name ?? "loja", contact, messages, serviceOrders, examples,
         aiRepliesSoFar: overDaily ? Number.MAX_SAFE_INTEGER : aiCount ?? 0,
       });
     } catch (e) {
@@ -155,7 +168,7 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     const { data: run } = await admin.from("crm_ai_runs").insert({
       store_id: conv.store_id, conversation_id: conv.id, trigger_message_id: opts.triggerMessageId ?? null,
       decision: d.decision, model: result.llm.model, latency_ms: result.llm.latencyMs,
-      input: { mode, turns: result.turns.length, service_orders: serviceOrders.length, open_now: result.openNow, manual: Boolean(opts.forceDraft) },
+      input: { mode, turns: result.turns.length, service_orders: serviceOrders.length, open_now: result.openNow, manual: Boolean(opts.forceDraft), examples: examples.map((e) => e.id) },
       output: d,
     }).select("id").single();
     const runId: string | null = run?.id ?? null;

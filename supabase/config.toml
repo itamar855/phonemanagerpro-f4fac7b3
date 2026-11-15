@@ -10,3 +10,8 @@ verify_jwt = false
 # a função valida um "state" de uso único criado pela crm-channel)
 [functions.instagram-oauth]
 verify_jwt = false
+
+# Leitura das conversas antigas: chama a si mesma com a senha interna (CRM_INTERNAL_SECRET);
+# chamadas da tela continuam exigindo login (requireUser + gerência dentro da função)
+[functions.crm-ai-learn]
+verify_jwt = false
