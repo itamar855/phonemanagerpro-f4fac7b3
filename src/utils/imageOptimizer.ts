@@ -101,10 +101,16 @@ export async function convertToWebP(
 
     ctx.drawImage(img, 0, 0, width, height);
 
-    // 5. Converte para Blob WebP
-    const webpBlob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), "image/webp", quality);
+    // 5. Converte para WebP. O Safari (iPhone) não gera WebP pelo canvas e devolve um PNG
+    //    enorme (~4 MB); nesse caso comprime em JPEG, que todo navegador gera.
+    const encode = (type: string) => new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), type, quality);
     });
+    let webpBlob = await encode("image/webp");
+    if (!webpBlob || webpBlob.type !== "image/webp") {
+      const jpeg = await encode("image/jpeg");
+      webpBlob = jpeg && jpeg.type === "image/jpeg" ? jpeg : null;
+    }
 
     if (!webpBlob) {
       return file;
@@ -116,12 +122,13 @@ export async function convertToWebP(
       return file;
     }
 
-    // 6. Gera novo nome com extensão .webp
+    // 6. Nome e tipo de acordo com o formato que saiu de fato (.webp ou .jpg)
+    const isWebp = webpBlob.type === "image/webp";
     const baseName = file.name.substring(0, file.name.lastIndexOf(".")) || file.name;
-    const newFileName = `${baseName}.webp`;
+    const newFileName = `${baseName}.${isWebp ? "webp" : "jpg"}`;
 
     return new File([webpBlob], newFileName, {
-      type: "image/webp",
+      type: isWebp ? "image/webp" : "image/jpeg",
       lastModified: Date.now(),
     });
   } catch (error) {

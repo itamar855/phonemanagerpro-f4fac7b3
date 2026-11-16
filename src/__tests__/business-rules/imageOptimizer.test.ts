@@ -138,6 +138,20 @@ describe('Image Optimizer — comprovantes', () => {
     });
   });
 
+  it('iPhone (Safari sem WebP no canvas): comprime em JPEG em vez de subir PNG gigante', async () => {
+    const jpg = new File([new Uint8Array(2_500_000)], 'IMG_0001.jpg', { type: 'image/jpeg' });
+    await withFakeCanvas(3024, 4032, 0, async (canvas) => {
+      canvas.toBlob.mockImplementation((cb: (b: Blob | null) => void, type: string) =>
+        type === 'image/jpeg'
+          ? cb(new Blob([new Uint8Array(140_000)], { type: 'image/jpeg' }))
+          : cb(new Blob([new Uint8Array(4_200_000)], { type: 'image/png' })));
+      const out = await convertToWebP(jpg, RECEIPT_IMAGE);
+      expect(out.type).toBe('image/jpeg');
+      expect(out.name).toBe('IMG_0001.jpg');
+      expect(out.size).toBe(140_000);
+    });
+  });
+
   it('nunca sobe arquivo maior que o original', async () => {
     const jpg = new File([new Uint8Array(40_000)], 'cupom.jpg', { type: 'image/jpeg' });
     await withFakeCanvas(900, 1200, 60_000, async () => {
