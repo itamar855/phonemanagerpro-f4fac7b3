@@ -24,7 +24,7 @@ import {
   Printer, ChevronRight, ChevronLeft, Camera, Upload, Receipt, Shield, Trash2, Store, Copy
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
-import { convertToWebP } from "@/utils/imageOptimizer";
+import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { openComprovante, getSignedComprovanteUrl, parseReceiptUrls } from "@/lib/storageHelper";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { OsChecklist, ChecklistData, CHECKLIST_ITEMS, VISUAL_CHECKLIST_ITEMS } from "@/components/OsChecklist";
@@ -428,7 +428,7 @@ const OrdensServico = () => {
   useEffect(() => { fetchData(); }, [activeStoreId]);
 
   const uploadReceipt = async (file: File): Promise<string | null> => {
-    const optimizedFile = await convertToWebP(file);
+    const optimizedFile = await convertToWebP(file, RECEIPT_IMAGE);
     const fileName = `${detailOrder?.order_number}-${Date.now()}-${optimizedFile.name}`;
     const storePrefix = detailOrder?.store_id || activeStoreId || "geral";
     const { data, error } = await supabase.storage.from("comprovantes").upload(`${storePrefix}/os-pagamentos/${fileName}`, optimizedFile, { upsert: true });

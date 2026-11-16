@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { Plus, Search, Package, ArrowRightLeft, AlertTriangle, Zap, Pencil, Trash2, Store, Wrench, Cpu, Upload, FileText } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { logAction } from "@/utils/auditLogger";
-import { convertToWebP } from "@/utils/imageOptimizer";
+import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import DeviceRepairModal from "@/components/DeviceRepairModal";
 import { AparelhosTable } from "@/components/features/estoque/AparelhosTable";
 import { AcessoriosTable } from "@/components/features/estoque/AcessoriosTable";
@@ -427,7 +427,7 @@ const Estoque = () => {
     try {
       let voucherUrl = null;
       if (partVoucherFile) {
-        const optimizedVoucher = await convertToWebP(partVoucherFile);
+        const optimizedVoucher = await convertToWebP(partVoucherFile, RECEIPT_IMAGE);
         const fileExt = optimizedVoucher.name.split(".").pop();
         const safeName = optimizedVoucher.name.replace(/[^a-zA-Z0-9]/g, "_");
         const path = `pecas/comprovante-${Date.now()}-${safeName}.${fileExt}`;
@@ -583,7 +583,7 @@ const Estoque = () => {
     }, 200);
 
     try {
-      const optimizedFile = await convertToWebP(file);
+      const optimizedFile = await convertToWebP(file, RECEIPT_IMAGE);
       const fileExt = optimizedFile.name.split(".").pop();
       const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9]/g, "_");
       const path = `pecas/comprovante-${Date.now()}-${safeName}.${fileExt}`;

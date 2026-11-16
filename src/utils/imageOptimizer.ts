@@ -7,10 +7,17 @@
  * são preservados integralmente sem qualquer alteração.
  */
 
-interface OptimizeOptions {
+export interface OptimizeOptions {
   quality?: number; // 0.1 a 1.0 (padrão: 0.82)
   maxDimension?: number; // largura ou altura máxima (padrão: 1920px)
 }
+
+/**
+ * Comprovantes (Pix, cupom, boleto, nota de peça): só precisam do texto legível.
+ * 1400 px + qualidade 0,68 deixa a foto de celular com ~80–200 KB.
+ * Fotos de aparelho/OS continuam no padrão (mais detalhe).
+ */
+export const RECEIPT_IMAGE: OptimizeOptions = { maxDimension: 1400, quality: 0.68 };
 
 /**
  * Converte um arquivo de imagem para WebP no navegador de forma assíncrona.
@@ -103,9 +110,9 @@ export async function convertToWebP(
       return file;
     }
 
-    // Trava de tamanho: se a imagem já era WebP ou se o novo blob por algum motivo ficou maior,
-    // e o arquivo original já era bem comprimido, mantém o menor.
-    if (file.type === "image/webp" && webpBlob.size >= file.size) {
+    // Trava de tamanho: nunca sobe um arquivo maior que o original (vale para qualquer formato
+    // que o navegador consiga exibir; o original já estava mais enxuto).
+    if (webpBlob.size >= file.size && /^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
       return file;
     }
 
