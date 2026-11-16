@@ -266,10 +266,11 @@ const Dashboard = () => {
       can("estoque") 
         ? (!isFiltered ? supabase.from("accessories" as any).select("*") : supabase.from("accessories" as any).select("*").eq("store_id", effectiveStoreId))
         : Promise.resolve({ data: [] }),
+      // Leads = contatos novos do CRM no período (sem equipe/fornecedor/pessoal)
       can("leads")
-        ? (!isFiltered 
-            ? supabase.from("leads").select("id, created_at").gte("created_at", start).lte("created_at", end) 
-            : supabase.from("leads").select("id, created_at").or(`store_id.eq.${effectiveStoreId},store_id.is.null`).gte("created_at", start).lte("created_at", end))
+        ? (!isFiltered
+            ? supabase.from("crm_contacts" as any).select("id, created_at").eq("ignored", false).gte("created_at", start).lte("created_at", end)
+            : supabase.from("crm_contacts" as any).select("id, created_at").eq("ignored", false).eq("store_id", effectiveStoreId).gte("created_at", start).lte("created_at", end))
         : Promise.resolve({ data: [] }),
     ];
 

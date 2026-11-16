@@ -563,15 +563,19 @@ const Relatorios = () => {
   const fetchLeads = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    let q = supabase.from("leads").select("*").gte("created_at", start).lte("created_at", end);
+    // Leads = contatos novos do CRM no período (sem equipe/fornecedor/pessoal); convertido = virou cliente
+    let q = supabase.from("crm_contacts" as any).select("id, origin_channel, customer_id")
+      .eq("ignored", false).gte("created_at", start).lte("created_at", end);
     if (effectiveStoreId && effectiveStoreId !== "all") q = q.eq("store_id", effectiveStoreId);
-    const { data } = await q;
-    if (!data) return;
+    const { data: rows } = await q;
+    if (!rows) return;
+    const data = rows as unknown as { origin_channel: string | null; customer_id: string | null }[];
     const total = data.length;
     const sourceMap: Record<string, number> = {};
-    data.forEach(l => { const src = l.source || "outro"; sourceMap[src] = (sourceMap[src] || 0) + 1; });
+    const originLabel: Record<string, string> = { whatsapp: "WhatsApp", instagram: "Instagram", manual: "Manual", os_vendas: "Vendas/OS", import: "Importado" };
+    data.forEach(l => { const src = originLabel[l.origin_channel ?? ""] ?? "Outro"; sourceMap[src] = (sourceMap[src] || 0) + 1; });
     const bySource = Object.entries(sourceMap).map(([name, value]) => ({ name, value }));
-    const converted = data.filter(l => l.status === "concluido").length;
+    const converted = data.filter(l => l.customer_id).length;
     setLeadsData({ total, bySource, conversion: total > 0 ? (converted / total) * 100 : 0 });
   }, [period, storeId, customStart, customEnd, specificDay]);
 

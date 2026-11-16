@@ -160,3 +160,21 @@ export function mapAckStatus(raw: unknown): "sent" | "delivered" | "read" | null
   if (s === "READ" || s === "PLAYED" || s === "4" || s === "5") return "read";
   return null;
 }
+
+/** Tipos aceitos pelo bucket crm_media (imagem e áudio do WhatsApp). */
+const MEDIA_MIMES = ["image/jpeg", "image/png", "image/webp", "image/gif", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/webm", "audio/aac"];
+
+/** Mime limpo para o bucket: "audio/ogg; codecs=opus" → "audio/ogg"; desconhecido → padrão do tipo. */
+export function mediaMime(raw: string | null | undefined, kind: string): string {
+  const m = String(raw ?? "").split(";")[0].trim().toLowerCase();
+  if (MEDIA_MIMES.includes(m)) return m;
+  return kind === "audio" ? "audio/ogg" : "image/jpeg";
+}
+
+export function mediaExt(mime: string): string {
+  const ext: Record<string, string> = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+    "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm", "audio/aac": "aac",
+  };
+  return ext[mime] ?? "bin";
+}

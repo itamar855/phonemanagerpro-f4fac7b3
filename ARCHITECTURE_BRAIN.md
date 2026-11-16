@@ -78,7 +78,8 @@ graph TD
 | **Caixa** | `src/pages/Caixa.tsx` | Abertura, suprimento, sangria e fechamento de caixa (`cash_registers`, `cash_entries`). Interage diretamente com as vendas para registro de entradas em dinheiro. |
 | **Financeiro** | `src/pages/Transacoes.tsx`, `Contas.tsx` | Gestão de `bank_accounts`, conciliação e transações gerais (income, expense). Contas bancárias e taxas de adquirentes (cartão/pix). |
 | **Ordens de Serviço** | `src/pages/OrdensServico.tsx` | Criação de OS (`service_orders`), checklist pré/pós, controle de status, adição de peças e aprovação de orçamento. Rota pública para cliente `OSPublica.tsx`. |
-| **Clientes e CRM**| `src/pages/Clientes.tsx`, `Leads.tsx` | Gestão da carteira de clientes, captura de leads, integração omnichannel via webhook. |
+| **Clientes** | `src/pages/Clientes.tsx` | Gestão da carteira de clientes. |
+| **CRM** | `src/modules/crm/` (rota lazy `/crm`) | Módulo isolado: Caixa de Entrada WhatsApp/Instagram, Funil (vendas e assistência), Contatos 360, Tarefas, Relatórios, Agente de IA e distribuição de atendimento. Tabelas `crm_*`. Ver seção 10. |
 | **Equipe & Auditoria** | `src/pages/Equipe.tsx`, `Auditoria.tsx` | Criação de usuários (`profiles`), definição de permissões e log detalhado de ações (`audit_logs`). |
 
 ---
@@ -215,6 +216,8 @@ Esta seção serve como memória persistente de features implementadas, bugs cor
 | 05/11/2026 | `Bugfix` | `20261105054500_align_os_cash_cutoff_date.sql`, `OrdensServico.tsx`, `Relatorios.tsx`, `CommissionPayoutModal.tsx` | **Alinhamento de Data de Corte Contábil para 01/11/2026:** Ajuste da trava de presença em `cash_entries` de `2026-07-01` para `2026-11-01`. As ordens de serviço de outubro (`OS #94`, `OS #95`, `OS #96`, `OS #98`) voltam ao status de confirmadas no caixa sem violar os caixas históricos encerrados. |
 | 05/11/2026 | `Bugfix` | `Caixa.tsx`, `audit_logs` | **Governança de Exclusão Manual no Caixa:** A rotina `reconcileMissingOS` passa a consultar o log de auditoria (`audit_logs`) e respeita a exclusão manual de entradas pelo operador, não reinserindo o valor na gaveta aberta ao recarregar a tela a menos que a OS seja reaberta. |
 | 05/11/2026 | `Feature / Fix` | `AuthContext.tsx`, `AppLayout.tsx`, `Ranking.tsx`, `Relatorios.tsx`, `public.profiles` | **Padronização Consistente de Nome e Sobrenome para Técnicos e Colaboradores:** (1) Atualizado o perfil do operador principal no banco para `Itamar Monteiro`; (2) `AuthContext` e `AppLayout` passam a renderizar `userDisplayName` na barra lateral e drawer móvel; (3) `Ranking.tsx` e `Relatorios.tsx` passam a incluir `profiles` na busca concorrente do ranking, garantindo que o pódio da bancada e as tabelas sempre exibam nomes e sobrenomes reais em vez de e-mails ou termos genéricos. |
+| 14–16/11/2026 | `Feature` | `src/modules/crm/`, `supabase/functions/crm-*`, migrations `2026111*_crm_*` | **Novo CRM (PRs #2–#28):** módulo isolado substitui a tela `/leads`. Detalhes, regras e operação na seção 12. |
+| 16/11/2026 | `Cleanup` | `whatsapp-webhook`, `Index.tsx`, `Relatorios.tsx` | **Fase 7 do CRM:** removidos `Leads.tsx`, `LeadList`, `ChatCenter`, `ConversaSync`, `WhatsAppConnectModal` e a função `whatsapp-send`; o webhook não grava mais em `leads`/`lead_messages` e salva mídia no bucket privado `crm_media`; card de Leads do Painel e aba Leads de Relatórios passam a contar `crm_contacts` (não ignorados). Tabelas `leads`, `lead_messages`, `lead_responses` continuam no banco (só leitura) até confirmação expressa do dono. |
 
 
 ---
@@ -250,5 +253,23 @@ As seguintes regras e convenções de interface do usuário foram adotadas para 
    - Efeitos de transparência e blur de fundo (`backdrop-blur-md bg-card/95`) são utilizados em barras fixas e modais de sobreposição para expressar camadas e profundidade física.
 4. **Animações e Micro-Interações:**
    - Adicionada classe utilitária `.active-hig-feedback` para botões com escala elástica (`active:scale-[0.98]`) e curvas de transição de mola.
+
+---
+
+## 12. Módulo CRM (`src/modules/crm/`)
+
+**Fronteira:** o módulo só importa `@/components/ui`, `@/contexts/AuthContext`, `@/integrations/supabase/client` e `@/lib/*`; fora dele só `App.tsx` o referencia (lazy). Telas: `/crm/inbox`, `/crm/funil`, `/crm/contatos`, `/crm/tarefas`, `/crm/relatorios`, `/crm/config`. `/leads` redireciona para `/crm`. Mobile-first (o CRM é usado como app no celular).
+
+**Banco (`crm_*`, RLS por `member_stores`):** contatos (um por pessoa; `ignored` = equipe/fornecedor/pessoal, fora do CRM e da IA), conversas (uma por canal; `handler` = `ai`/`human`), mensagens (idempotentes por `external_id`; mídia em `crm_media`, privado, link assinado), funis/etapas/negócios, atividades, tarefas, configurações de automação e de IA. Toda mensagem entra por `crm_ingest_message` (atômica).
+
+**Edge Functions:** `whatsapp-webhook` (segredo obrigatório; grava, transcreve áudio, aciona IA), `crm-send`, `crm-channel` (QR/status; a chave da Evolution nunca vai ao navegador), `crm-ai-agent`, `crm-ai-learn`, `crm-track` (`/w/<slug>`), `crm-meta` (CAPI), `crm-dispatch` (avisos no WhatsApp da equipe), `instagram-webhook`/`instagram-oauth` (prontos, Instagram não conectado).
+
+**Agente de IA:** só atende conversas novas (`handler='ai'`); qualifica e passa para a equipe (`ai_handoff`), criando negócio e tarefa. Fala como alguém da loja e nunca diz que é robô/IA; se o cliente perguntar, passa para a equipe sem negar. Nunca afirma estoque nem inventa preço/prazo. Conhecimento da loja é escrito pelo dono em Ajustes → Agente de IA e vale sobre os exemplos.
+
+**Distribuição de atendimento:** após a passagem da IA, `crm_dispatch_*` oferece a conversa (conserto → fila de Assistência → fila de Vendas → dono), com aviso no WhatsApp da pessoa e prazo para assumir (padrão 5 min). Loja fechada espera abrir. Ninguém assumiu após uma volta → fica com o dono e para.
+
+**Jobs `pg_cron`:** `crm-automations` (5 min), `crm-meta-flush` (1 min), `crm-os-sync` (5 min, só lê `service_orders`), `crm-dispatch` (1 min). Chamadas internas usam o segredo `CRM_CRON_SECRET` (Vault `crm_cron_secret`).
+
+**Operação:** migrations aplicadas com `supabase db query --file` (nunca `db push`, o histórico remoto diverge). Testes de banco em `src/__tests__/crm/crm-migrations.test.ts` (PGlite).
 
 *(Mantenha este documento atualizado a cada feature relevante criada ou correção feita. Coloque Identificação tambem de data ou commit, para identificar de quaando foi feito a alteração, e sempre que possivel revise esse documento para deixá-lo mais clean, sempre tomando cuidado para nao deletar informações importantes, e sempre alimentando ele com êxito e falhas, aprendizados e tudo que for relevante para o projeto.)*

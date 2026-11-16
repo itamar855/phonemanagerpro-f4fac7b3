@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { checkWebhookAuth, safeEqual, WEBHOOK_SECRET_HEADER } from "../../../supabase/functions/whatsapp-webhook/auth.ts";
-import { isDirectChat, mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "../../../supabase/functions/whatsapp-webhook/parse.ts";
+import { isDirectChat, mapAckStatus, mediaExt, mediaMime, parseMessageBody, resolveContactJid, resolveTimestamp } from "../../../supabase/functions/whatsapp-webhook/parse.ts";
 
 const headers = (h: Record<string, string>) => new Headers(h);
 
@@ -88,5 +88,14 @@ describe("whatsapp-webhook — interpretação da mensagem", () => {
     const fb = new Date("2026-01-01T00:00:00Z");
     expect(resolveTimestamp("lixo", fb)).toBe(fb.toISOString());
     expect(resolveTimestamp(undefined, fb)).toBe(fb.toISOString());
+  });
+
+  it("mídia: mime aceito pelo bucket crm_media e extensão", () => {
+    expect(mediaMime("audio/ogg; codecs=opus", "audio")).toBe("audio/ogg");
+    expect(mediaMime("IMAGE/PNG", "image")).toBe("image/png");
+    expect(mediaMime("application/octet-stream", "audio")).toBe("audio/ogg");
+    expect(mediaMime(undefined, "image")).toBe("image/jpeg");
+    expect(mediaExt("audio/ogg")).toBe("ogg");
+    expect(mediaExt("image/jpeg")).toBe("jpg");
   });
 });
