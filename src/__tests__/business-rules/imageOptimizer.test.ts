@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { convertToWebP } from '@/utils/imageOptimizer';
+import { convertToWebP, RECEIPT_IMAGE } from '@/utils/imageOptimizer';
 
 describe('Image Optimizer — Defensive WebP Conversion', () => {
   it('should preserve PDF files completely untouched without converting', async () => {
@@ -102,5 +102,47 @@ describe('Image Optimizer — Defensive WebP Conversion', () => {
       if (originalCreateObjectURL) global.URL.createObjectURL = originalCreateObjectURL;
       if (originalRevokeObjectURL) global.URL.revokeObjectURL = originalRevokeObjectURL;
     }
+  });
+});
+
+/** Navegador falso: imagem w×h; o canvas devolve um WebP de `outBytes` bytes. */
+async function withFakeCanvas<T>(w: number, h: number, outBytes: number, run: (canvas: { width: number; height: number; toBlob: ReturnType<typeof vi.fn> }) => Promise<T>) {
+  const saved = { doc: global.document, img: global.Image, create: global.URL.createObjectURL, revoke: global.URL.revokeObjectURL };
+  const canvas = {
+    width: 0, height: 0,
+    getContext: vi.fn().mockReturnValue({ drawImage: vi.fn() }),
+    toBlob: vi.fn((cb: (b: Blob | null) => void) => cb(new Blob([new Uint8Array(outBytes)], { type: 'image/webp' }))),
+  };
+  try {
+    global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock');
+    global.URL.revokeObjectURL = vi.fn();
+    global.Image = class { width = w; height = h; onload: (() => void) | null = null; set src(_: string) { setTimeout(() => this.onload?.(), 0); } } as any;
+    global.document = { createElement: vi.fn(() => canvas) } as any;
+    return await run(canvas);
+  } finally {
+    global.document = saved.doc; global.Image = saved.img;
+    global.URL.createObjectURL = saved.create; global.URL.revokeObjectURL = saved.revoke;
+  }
+}
+
+describe('Image Optimizer — comprovantes', () => {
+  it('comprovante: reduz para 1400 px e usa qualidade 0,68', async () => {
+    const jpg = new File([new Uint8Array(3_000_000)], 'pix.jpg', { type: 'image/jpeg' });
+    await withFakeCanvas(3000, 4000, 150_000, async (canvas) => {
+      const out = await convertToWebP(jpg, RECEIPT_IMAGE);
+      expect(canvas.width).toBe(1050);
+      expect(canvas.height).toBe(1400);
+      expect(canvas.toBlob.mock.calls[0][2]).toBe(0.68);
+      expect(out.type).toBe('image/webp');
+      expect(out.size).toBe(150_000);
+    });
+  });
+
+  it('nunca sobe arquivo maior que o original', async () => {
+    const jpg = new File([new Uint8Array(40_000)], 'cupom.jpg', { type: 'image/jpeg' });
+    await withFakeCanvas(900, 1200, 60_000, async () => {
+      const out = await convertToWebP(jpg, RECEIPT_IMAGE);
+      expect(out).toBe(jpg);
+    });
   });
 });

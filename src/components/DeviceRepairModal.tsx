@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Wrench, Plus, Trash2, Loader2, Camera, Upload, Receipt, CheckCircle, Cpu, FileText, Smartphone, Image as LucideImage, X } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
-import { convertToWebP } from "@/utils/imageOptimizer";
+import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 
 interface Supplier {
   id: string;
@@ -383,7 +383,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     }, 200);
 
     try {
-      const optimizedFile = await convertToWebP(file);
+      const optimizedFile = await convertToWebP(file, RECEIPT_IMAGE);
       const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const path = `reparos/${product.id}-${type}-${Date.now()}-${safeName}`;
 

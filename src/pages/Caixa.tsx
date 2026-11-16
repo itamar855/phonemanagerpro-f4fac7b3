@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
 import { SuppliersTab } from "@/components/features/caixa/SuppliersTab";
-import { convertToWebP } from "@/utils/imageOptimizer";
+import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { openComprovante } from "@/lib/storageHelper";
 import {
   CashEntry,
@@ -566,7 +566,7 @@ const Caixa = () => {
 
 
   const uploadReceipt = async (file: File, path: string): Promise<string | null> => {
-    const optimizedFile = await convertToWebP(file);
+    const optimizedFile = await convertToWebP(file, RECEIPT_IMAGE);
     let finalPath = path;
     if (optimizedFile.type === "image/webp" && !finalPath.toLowerCase().endsWith(".webp")) {
       finalPath = finalPath.replace(/\.[^/.]+$/, "") + ".webp";

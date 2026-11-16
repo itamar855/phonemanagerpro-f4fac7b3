@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, ArrowUpDown, ArrowUpRight, ArrowDownRight, Tag, Trash2, Edit2, Camera, Upload, Receipt, CheckCircle, Loader2, AlertTriangle, Store } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
-import { convertToWebP } from "@/utils/imageOptimizer";
+import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { openComprovante } from "@/lib/storageHelper";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -105,7 +105,7 @@ const Transacoes = () => {
   });
 
   const uploadReceipt = async (file: File): Promise<string | null> => {
-    const optimizedFile = await convertToWebP(file);
+    const optimizedFile = await convertToWebP(file, RECEIPT_IMAGE);
     const safeName = optimizedFile.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
     const fileName = `${user?.id}-${Date.now()}-${safeName}`;
     const storePrefix = (selectedStoreId && selectedStoreId !== "all") ? selectedStoreId : (form.store_id || activeStoreId || "geral");

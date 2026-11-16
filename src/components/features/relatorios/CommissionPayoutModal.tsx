@@ -31,7 +31,7 @@ import {
   formatBrasiliaDate,
   type SettleCommissionsPayload,
 } from "@/utils/commissionSettlement";
-import { convertToWebP } from "@/utils/imageOptimizer";
+import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { isOSCommissionWaived } from "@/utils/osCalculations";
 import { Ban } from "lucide-react";
 
@@ -631,7 +631,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
 
       let uploadedReceiptUrl: string | null = null;
       if (receiptFile) {
-        const optimized = await convertToWebP(receiptFile);
+        const optimized = await convertToWebP(receiptFile, RECEIPT_IMAGE);
         const safeName = `liquidacao-${selectedUserId.slice(0, 8)}-${Date.now()}.webp`;
         const { data: upData, error: upError } = await supabase.storage
           .from("comprovantes")
