@@ -8,7 +8,7 @@ import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
 import { base64ToBytes, transcribeMessage } from "../_shared/transcribe.ts"
 import { checkWebhookAuth } from "./auth.ts"
-import { extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
+import { extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, mediaExt, mediaMime, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
 /** Config pela instância do evento; sem ela, o número ativo. */
 async function resolveConfig(admin: SupabaseClient, instance: unknown): Promise<EvolutionConfig | null> {
@@ -19,75 +19,17 @@ async function resolveConfig(admin: SupabaseClient, instance: unknown): Promise<
   return loadWhatsAppConfig(admin, null)
 }
 
-// ---------------------------------------------------------------------------
-// Tabelas antigas (leads/lead_messages): mantidas até a Fase 2 substituir a tela /leads.
-// ---------------------------------------------------------------------------
-async function writeLegacy(admin: SupabaseClient, args: {
-  storeId: string; phone: string; pushName: string; fromMe: boolean; at: string;
-  content: string; kind: string; mediaUrl: string | null;
-}): Promise<{ leadId: string | null; storeId: string }> {
-  const { storeId, phone, fromMe, at } = args
-  let lead: any = null
-  {
-    const { data } = await admin.from('leads').select('*').eq('phone', phone).eq('store_id', storeId)
-      .order('created_at', { ascending: true }).limit(1)
-    lead = data?.[0] ?? null
-  }
-  if (!lead) {
-    const { data } = await admin.from('leads').select('*').eq('phone', phone)
-      .order('created_at', { ascending: true }).limit(1)
-    lead = data?.[0] ?? null
-  }
-  if (!lead) {
-    if (fromMe) return { leadId: null, storeId }
-    const { data, error } = await admin.from('leads').insert({
-      name: args.pushName, phone, source: 'whatsapp', status: 'novo', store_id: storeId,
-      has_unread: true, last_message_at: at,
-    }).select().single()
-    if (error) throw error
-    lead = data
-  }
-
-  const { data: dup } = await admin.from('lead_messages').select('id')
-    .eq('lead_id', lead.id).eq('created_at', at).eq('content', args.content).limit(1)
-  if (dup && dup.length > 0) return { leadId: lead.id, storeId: lead.store_id || storeId }
-
-  // Eco do que a tela antiga enviou (whatsapp-send já gravou em lead_messages)
-  if (fromMe) {
-    const since = new Date(new Date(at).getTime() - 3 * 60 * 1000).toISOString()
-    const { data: echo } = await admin.from('lead_messages').select('id')
-      .eq('lead_id', lead.id).eq('sender', 'vendedor').eq('content', args.content).gte('created_at', since).limit(1)
-    if (echo && echo.length > 0) return { leadId: lead.id, storeId: lead.store_id || storeId }
-  }
-
-  const { error: msgErr } = await admin.from('lead_messages').insert({
-    lead_id: lead.id, store_id: lead.store_id || storeId, content: args.content,
-    sender: fromMe ? 'vendedor' : 'lead', sender_user_id: null,
-    message_type: args.kind === 'image' || args.kind === 'audio' ? args.kind : 'text',
-    media_url: args.mediaUrl, created_at: at,
-  })
-  if (msgErr) throw msgErr
-
-  await admin.from('leads').update(fromMe
-    ? { last_message_at: at, has_unread: false, unread_count: 0 }
-    : { last_message_at: at, has_unread: true, unread_count: (Number(lead.unread_count) || 0) + 1 }
-  ).eq('id', lead.id)
-  return { leadId: lead.id, storeId: lead.store_id || storeId }
-}
-
-async function uploadMedia(admin: SupabaseClient, folder: string, messageId: string | undefined, base64: string, mimeType: string, kind: string) {
-  const ext = kind === 'audio' ? 'ogg' : mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg'
-  const fileName = `whatsapp/${folder}/${Date.now()}_${messageId || crypto.randomUUID()}.${ext}`
-  const clean = base64.replace(/^data:.*?;base64,/, '')
-  const bin = atob(clean)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  const { data, error } = await admin.storage.from('chat_media').upload(fileName, bytes, { contentType: mimeType, upsert: true })
-  if (error || !data?.path) {
-    console.error('[WhatsApp Webhook] Falha no upload da mídia:', error?.message)
+/** Mídia recebida vai para o bucket privado crm_media (a tela abre por link assinado). */
+async function uploadMedia(admin: SupabaseClient, storeId: string, messageId: string | undefined, base64: string, mimeType: string, kind: string) {
+  const mime = mediaMime(mimeType, kind)
+  const id = (messageId || crypto.randomUUID()).replace(/[^A-Za-z0-9_-]/g, '').slice(-60)
+  const path = `${storeId}/whatsapp/${Date.now()}_${id}.${mediaExt(mime)}`
+  const { error } = await admin.storage.from('crm_media').upload(path, base64ToBytes(base64), { contentType: mime, upsert: true })
+  if (error) {
+    console.error('[WhatsApp Webhook] Falha no upload da mídia:', error.message)
     return null
   }
-  return admin.storage.from('chat_media').getPublicUrl(data.path).data.publicUrl
+  return { path, mime }
 }
 
 serve(async (req) => {
@@ -144,7 +86,7 @@ serve(async (req) => {
     const at = resolveTimestamp(message?.messageTimestamp)
 
     // Mídia (imagem/áudio)
-    let mediaUrl: string | null = null
+    let media: { path: string; mime: string } | null = null
     let audioBase64: string | undefined
     if (parsed.kind === 'image' || parsed.kind === 'audio') {
       let base64 = parsed.base64
@@ -154,7 +96,7 @@ serve(async (req) => {
       if (parsed.kind === 'audio') audioBase64 = base64
       if (base64) {
         try {
-          mediaUrl = await uploadMedia(admin, phone, key.id, base64, parsed.mimeType || (parsed.kind === 'image' ? 'image/jpeg' : 'audio/ogg'), parsed.kind)
+          media = await uploadMedia(admin, storeId, key.id, base64, parsed.mimeType || '', parsed.kind)
         } catch (e) { console.error('[WhatsApp Webhook] upload:', e) }
       }
     }
@@ -170,8 +112,8 @@ serve(async (req) => {
       p_phone: phone,
       p_name: fromMe ? null : pushName,
       p_external_thread_id: jid,
-      p_media_url: mediaUrl,
-      p_media_mime: parsed.mimeType ?? null,
+      p_media_path: media?.path ?? null,
+      p_media_mime: media?.mime ?? parsed.mimeType ?? null,
       p_external_id: key.id ?? null,
       p_created_at: at,
     })
@@ -221,18 +163,9 @@ serve(async (req) => {
       if (rt?.waitUntil) { background(photo); background(agent) } else await Promise.all([photo, agent, transcription])
     }
 
-    // Mensagem que o próprio CRM enviou (crm-send já gravou): não repete nas tabelas antigas
+    if (crmError) return json({ error: crmError.message }, 500)
+    // Mensagem que o próprio CRM enviou (crm-send já gravou)
     if (crm?.duplicate) return json({ status: 'duplicate' })
-
-    // 2. Tabelas antigas (tela /leads atual)
-    try {
-      await writeLegacy(admin, { storeId, phone, pushName, fromMe, at, content: parsed.content, kind: parsed.kind, mediaUrl })
-    } catch (legacyErr) {
-      console.error('[WhatsApp Webhook] legado:', (legacyErr as Error)?.message)
-      if (crmError) throw legacyErr // nada foi salvo em lugar nenhum
-    }
-
-    if (crmError) return json({ status: 'partial', error: crmError.message }, 500)
     return json({ status: 'success', crm })
   } catch (error) {
     console.error('[WhatsApp Webhook] Erro:', error)
