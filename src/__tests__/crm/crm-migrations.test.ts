@@ -30,6 +30,7 @@ const OS_SYNC = read("20261116090000_crm_os_sync.sql");
 const NO_DUP = read("20261116100000_crm_tasks_no_dup.sql");
 const DISPATCH = read("20261116110000_crm_dispatch.sql");
 const DISPATCH_SVC = read("20261116120000_crm_dispatch_service.sql");
+const WATCHDOG = read("20261117020000_whatsapp_watchdog.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -971,5 +972,36 @@ describe("CRM — distribuição com aviso no WhatsApp", () => {
     await db.query(`select crm_ai_handoff($1, 'iPhone 13', 'Quer iPhone 13', 'warm', 'device', null)`, [sale]);
     expect(await active(sale)).toMatchObject({ user_id: U1, queue: "sales" });
     await db.query(`update crm_automation_settings set dispatch_enabled = false where store_id = $1`, [A]);
+  });
+});
+
+describe("WhatsApp da loja — vigia do zumbi", () => {
+  it("cria a tabela do último aviso fechada para a tela e acha o celular do admin", async () => {
+    const ADM2 = "00000000-0000-0000-0000-0000000000ae";
+    await db.exec(`
+      create table if not exists public.whatsapp_config (id uuid primary key default gen_random_uuid(), store_id uuid,
+        api_url text not null, api_key text not null, instance_name text not null, is_active boolean default true);
+    `);
+    await db.exec(WATCHDOG);
+    const original = await val<string | null>(`select phone from profiles where user_id = $1`, [ADM]);
+    await db.exec(`
+      insert into auth.users values ('${ADM2}');
+      insert into public.user_roles (user_id, role) values ('${ADM2}', 'admin');
+      insert into public.profiles (user_id, display_name, phone) values ('${ADM2}', 'Outro admin', '(81) 97777-6655');
+      update public.profiles set phone = '(87) 99123-4567' where user_id = '${ADM}';
+    `);
+    // admin da loja vem primeiro; vendedor com celular nunca recebe
+    expect(await val(`select whatsapp_watchdog_admin_phone($1)`, [A])).toBe("5587991234567");
+    await db.query(`update profiles set phone = null where user_id = $1`, [ADM]);
+    expect(await val(`select whatsapp_watchdog_admin_phone($1)`, [A])).toBe("5581977776655");
+
+    const cfg = await val<string>(`insert into whatsapp_config (store_id, api_url, api_key, instance_name) values ($1, 'https://evo', 'k', 'Loja') returning id`, [A]);
+    await db.query(`insert into whatsapp_watchdog (config_id, last_alert_at) values ($1, now())`, [cfg]);
+    expect(await asUser(ADM, () => errorOf(`select * from whatsapp_watchdog`))).toMatch(/permission denied/);
+    expect(await asUser(ADM, () => errorOf(`select whatsapp_watchdog_admin_phone('${A}')`))).toMatch(/permission denied/);
+    await db.query(`delete from whatsapp_config where id = $1`, [cfg]);
+    expect(await val(`select count(*)::int from whatsapp_watchdog`)).toBe(0);
+
+    await db.query(`update profiles set phone = $2 where user_id = $1`, [ADM, original]);
   });
 });

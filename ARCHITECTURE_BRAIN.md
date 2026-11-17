@@ -265,13 +265,13 @@ As seguintes regras e convenções de interface do usuário foram adotadas para 
 
 **Banco (`crm_*`, RLS por `member_stores`):** contatos (um por pessoa; `ignored` = equipe/fornecedor/pessoal, fora do CRM e da IA), conversas (uma por canal; `handler` = `ai`/`human`), mensagens (idempotentes por `external_id`; mídia em `crm_media`, privado, link assinado), funis/etapas/negócios, atividades, tarefas, configurações de automação e de IA. Toda mensagem entra por `crm_ingest_message` (atômica).
 
-**Edge Functions:** `whatsapp-webhook` (segredo obrigatório; grava, transcreve áudio, aciona IA), `crm-send`, `crm-channel` (QR/status; a chave da Evolution nunca vai ao navegador), `crm-ai-agent`, `crm-ai-learn`, `crm-track` (`/w/<slug>`), `crm-meta` (CAPI), `crm-dispatch` (avisos no WhatsApp da equipe), `instagram-webhook`/`instagram-oauth` (prontos, Instagram não conectado).
+**Edge Functions:** `whatsapp-webhook` (segredo obrigatório; grava, transcreve áudio, aciona IA), `crm-send`, `crm-channel` (QR/status; a chave da Evolution nunca vai ao navegador), `crm-ai-agent`, `crm-ai-learn`, `crm-track` (`/w/<slug>`), `crm-meta` (CAPI), `crm-dispatch` (avisos no WhatsApp da equipe), `crm-watchdog` (alerta de instância "zumbi", §14), `instagram-webhook`/`instagram-oauth` (prontos, Instagram não conectado).
 
 **Agente de IA:** só atende conversas novas (`handler='ai'`); qualifica e passa para a equipe (`ai_handoff`), criando negócio e tarefa. Fala como alguém da loja e nunca diz que é robô/IA; se o cliente perguntar, passa para a equipe sem negar. Nunca afirma estoque nem inventa preço/prazo. Conhecimento da loja é escrito pelo dono em Ajustes → Agente de IA e vale sobre os exemplos.
 
 **Distribuição de atendimento:** após a passagem da IA, `crm_dispatch_*` oferece a conversa (conserto → fila de Assistência → fila de Vendas → dono), com aviso no WhatsApp da pessoa e prazo para assumir (padrão 5 min). Loja fechada espera abrir. Ninguém assumiu após uma volta → fica com o dono e para.
 
-**Jobs `pg_cron`:** `crm-automations` (5 min), `crm-meta-flush` (1 min), `crm-os-sync` (5 min, só lê `service_orders`), `crm-dispatch` (1 min). Chamadas internas usam o segredo `CRM_CRON_SECRET` (Vault `crm_cron_secret`).
+**Jobs `pg_cron`:** `crm-automations` (5 min), `crm-meta-flush` (1 min), `crm-os-sync` (5 min, só lê `service_orders`), `crm-dispatch` (1 min), `crm-watchdog` (15 min, 8h–20h; ver §14). Chamadas internas usam o segredo `CRM_CRON_SECRET` (Vault `crm_cron_secret`).
 
 **Operação:** migrations aplicadas com `supabase db query --file` (nunca `db push`, o histórico remoto diverge). Testes de banco em `src/__tests__/crm/crm-migrations.test.ts` (PGlite).
 
@@ -286,5 +286,17 @@ As seguintes regras e convenções de interface do usuário foram adotadas para 
 - O trigger `sync_cash_to_transaction` concilia por `ILIKE` da descrição: nomes de produto com `\` (ex.: "S\ PRIVACIDADE") não conciliam — vale também para o PDV da tela.
 
 **Assistente financeiro do dono (`whatsapp-financial-assistant`):** grupos do WhatsApp pessoal (instância própria em `EVOLUTION_*` secrets, outro servidor Evolution). Religado em 17/11/2026 com segredo obrigatório; ações `status`/`configure_webhook` (mesmo segredo; nunca altera a instância da loja). Em 17/11 o servidor da instância pessoal (vps9520) falhava no TLS — sem reconectar a instância, nada chega.
+
+---
+
+## 14. Vigia do WhatsApp da loja (instância "zumbi") — 17/11/2026
+
+**Incidente (17/11/2026):** a instância da Evolution ficou ~24 h mostrando `open` e enviando, mas sem receber nada — o CRM ficou sem mensagens e ninguém percebeu. Reiniciar a instância não adiantou; só voltou com **logout + novo QR Code**.
+
+**Vigia:** `crm-watchdog` (Edge Function, ação `check`), chamada pelo `pg_cron` `crm-watchdog` a cada 15 min das 8h às 19h45 de Brasília (`*/15 11-22 * * *` UTC), com `x-crm-internal` = `CRM_CRON_SECRET`; a gerência também pode chamar logada. Para cada `whatsapp_config` ativa (uma checagem por instância, mesmo que atenda duas lojas): `connectionState` → se `open`, `POST /chat/findMessages/{instance}` com `limit` 50 (todas as conversas) e pega a recebida (`key.fromMe=false`) mais recente; grupos contam como sinal de vida.
+- **Regra** (`_shared/whatsapp-watchdog-core.ts`, testes `whatsapp-watchdog.test.ts`): avisa se `open` e nada recebido há **mais de 90 min**, só entre 8h e 20h (America/Sao_Paulo, UTC-3 fixo). O silêncio conta a partir das 8h do dia — a noite quieta não dispara; o 1º aviso possível é 9h30. Se as 50 últimas forem todas enviadas, a mais antiga da página serve de limite. Instância sem nenhuma mensagem: não avisa.
+- **Aviso:** uma mensagem pelo próprio número (`evolution(cfg).sendText`) para o admin (`whatsapp_watchdog_admin_phone`: `user_roles.role='admin'` com `profiles.phone`, de preferência membro da loja): "WhatsApp da loja parou de receber mensagens desde HH:MM — desconecte e leia o QR de novo" (outro dia: "dd/MM às HH:MM").
+- **Repetição:** no máximo 1 aviso a cada 6 h por instância, guardado em `whatsapp_watchdog` (`last_alert_at`, também `last_inbound_at`/`last_state`/`checked_at` da última checagem; RLS ligada, só a chave de serviço lê/grava).
+- Limites: loja fechada em dia útil sem cliente nenhum por 90 min gera aviso falso (no máx. 1 a cada 6 h). Se a Evolution estiver fora do ar, a checagem falha em silêncio (só log) — o status da instância já aparece em CRM → Configurações → Canais.
 
 *(Mantenha este documento atualizado a cada feature relevante criada ou correção feita. Coloque Identificação tambem de data ou commit, para identificar de quaando foi feito a alteração, e sempre que possivel revise esse documento para deixá-lo mais clean, sempre tomando cuidado para nao deletar informações importantes, e sempre alimentando ele com êxito e falhas, aprendizados e tudo que for relevante para o projeto.)*
