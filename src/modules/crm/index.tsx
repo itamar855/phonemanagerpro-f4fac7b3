@@ -2,8 +2,10 @@
 // quem não abre /crm não baixa nada daqui.
 import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { MessagesSquare } from "lucide-react";
+import { Lock, MessagesSquare } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { CrmNav } from "./components/shared/CrmNav";
+import { crmAccess } from "./lib/access";
 
 const InboxPage = lazy(() => import("./pages/InboxPage"));
 const PipelinePage = lazy(() => import("./pages/PipelinePage"));
@@ -20,7 +22,24 @@ function PageFallback() {
   );
 }
 
+function NoAccess() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+      <Lock className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+      <h1 className="font-display text-lg font-bold">Sem acesso ao CRM</h1>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Peça ao administrador para liberar o módulo <strong>CRM</strong> no seu usuário, em Equipe.
+      </p>
+    </div>
+  );
+}
+
 export default function CrmModule() {
+  const { userRole, userPermissions } = useAuth();
+  const access = crmAccess(userRole, userPermissions);
+  if (access === "loading") return <PageFallback />;
+  if (access === "denied") return <NoAccess />;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-col gap-2 border-b border-border/50 px-1.5 pb-1.5 pt-1.5 sm:px-3 sm:pb-2 sm:pt-3 md:px-6 md:pt-5">
