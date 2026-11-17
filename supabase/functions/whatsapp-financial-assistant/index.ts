@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
+import { checkWebhookAuth } from "../whatsapp-webhook/auth.ts";
+import { evolution } from "../_shared/evolution.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -85,6 +87,16 @@ Deno.serve(async (req) => {
     }
   }
 
+  // POST = eventos da Evolution. Exige o segredo do webhook (fail-closed); antes qualquer
+  // chamada com "fromMe: true" conseguia lançar despesas.
+  const auth = checkWebhookAuth(req.headers, Deno.env.get("EVOLUTION_WEBHOOK_SECRET"));
+  if (!auth.ok) {
+    return new Response(JSON.stringify({ error: auth.error }), {
+      status: auth.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const allowedPhone = Deno.env.get("ALLOWED_PHONE_NUMBER") || "";
     const evolutionUrl = Deno.env.get("EVOLUTION_API_URL") || "";
@@ -93,7 +105,31 @@ Deno.serve(async (req) => {
     const groqApiKey = Deno.env.get("GROQ_API_KEY") || "";
 
     const body = await req.json();
-    console.log("Evolution API Webhook received:", JSON.stringify(body, null, 2));
+
+    // Manutenção (mesmo segredo): ver o estado da instância pessoal e apontar o webhook dela para cá.
+    if (body?.action === "status" || body?.action === "configure_webhook") {
+      const reply = (data: unknown, status = 200) => new Response(JSON.stringify(data), {
+        status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+      if (!evolutionUrl || !evolutionApiKey || !evolutionInstance) return reply({ configured: false });
+      // nunca mexe no número da loja (esse é do CRM)
+      const { data: storeCfg } = await supabase.from("whatsapp_config").select("instance_name").eq("instance_name", evolutionInstance).limit(1);
+      const isStoreInstance = (storeCfg?.length ?? 0) > 0;
+      const evo = evolution({ id: "", store_id: "", api_url: evolutionUrl, api_key: evolutionApiKey, instance_name: evolutionInstance, is_active: true });
+      const state = await evo.connectionState().catch((e: Error) => `erro: ${e.message}`);
+      let webhookUrl: string | null = null;
+      try {
+        const r = await fetch(`${evolutionUrl.replace(/\/$/, "")}/webhook/find/${encodeURIComponent(evolutionInstance)}`, { headers: { apikey: evolutionApiKey } });
+        if (r.ok) webhookUrl = (await r.json())?.url ?? null;
+      } catch { /* sem webhook */ }
+      if (body.action === "status") return reply({ configured: true, isStoreInstance, state, webhookUrl });
+      if (isStoreInstance) return reply({ error: "A instância configurada é a do número da loja; webhook não alterado." }, 409);
+      const target = `${supabaseUrl}/functions/v1/whatsapp-financial-assistant`;
+      await evo.setWebhook(target, Deno.env.get("EVOLUTION_WEBHOOK_SECRET")!);
+      return reply({ configured: true, state, webhookUrl: target });
+    }
+
+    console.log(`[assistente financeiro] evento ${body?.event}`);
 
     // Accept both MESSAGES_UPSERT and SEND_MESSAGE events
     const validEvents = ["messages.upsert", "send.message", "MESSAGES_UPSERT", "SEND_MESSAGE"];
@@ -293,13 +329,12 @@ Deno.serve(async (req) => {
       profile = adminProfile;
     }
 
+    // Sem perfil reconhecido não lança nada (antes caía no "primeiro perfil" do banco).
     if (!profile) {
-      const { data: firstProfile } = await supabase
-        .from("profiles")
-        .select("user_id, store_id, display_name")
-        .limit(1)
-        .maybeSingle();
-      profile = firstProfile;
+      console.warn("[assistente financeiro] remetente autorizado sem perfil vinculado");
+      return new Response(JSON.stringify({ status: "unknown_sender" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const userId = profile?.user_id;

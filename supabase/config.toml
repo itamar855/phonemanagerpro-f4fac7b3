@@ -28,3 +28,8 @@ verify_jwt = false
 # Avisos da distribuição de atendimento: o cron chama com a senha interna (CRM_CRON_SECRET)
 [functions.crm-dispatch]
 verify_jwt = false
+
+# Assistente financeiro do dono (grupos do WhatsApp pessoal): a Evolution chama com o
+# cabeçalho x-evolution-webhook-secret; a leitura de configuração (GET) exige login de admin
+[functions.whatsapp-financial-assistant]
+verify_jwt = false
