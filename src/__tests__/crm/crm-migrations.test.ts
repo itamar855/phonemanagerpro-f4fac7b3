@@ -973,3 +973,38 @@ describe("CRM — distribuição com aviso no WhatsApp", () => {
     await db.query(`update crm_automation_settings set dispatch_enabled = false where store_id = $1`, [A]);
   });
 });
+
+describe("WhatsApp — contatos ocultos (@lid)", () => {
+  const LID_MAP = read("20261117030000_crm_lid_map.sql");
+  const LID = "123456789012345@lid";
+  const remember = (phone: string, source: string) =>
+    val<number>(`select crm_lid_remember($1, $2, $3, $4)`, [A, LID, phone, source]);
+  const mapped = () => one(`select phone, source from crm_lid_map where store_id = $1 and lid = $2`, [A, LID]);
+
+  it("guarda o par; palpite pelo nome não troca par do WhatsApp", async () => {
+    await db.exec(LID_MAP);
+    await db.exec(LID_MAP); // idempotente
+    expect(await remember("5587999112233@s.whatsapp.net", "name")).toBe(0);
+    expect(await mapped()).toEqual({ phone: "5587999112233", source: "name" });
+    expect(await remember("5587988887777", "evolution")).toBe(0);
+    expect(await mapped()).toEqual({ phone: "5587988887777", source: "evolution" });
+    await remember("5511900001111", "name");
+    expect(await mapped()).toEqual({ phone: "5587988887777", source: "evolution" });
+    // entradas inválidas não gravam
+    expect(await val(`select crm_lid_remember($1, '5587@s.whatsapp.net', '5587999112233', 'message')`, [A])).toBe(0);
+    expect(await val(`select crm_lid_remember($1, $2, '123', 'message')`, [A, LID])).toBe(0);
+    expect(await val(`select count(*)::int from crm_lid_map`)).toBe(1);
+  });
+
+  it("conta as mensagens que esperam o número e fecha tudo para a tela", async () => {
+    await db.query(`insert into crm_lid_pending (store_id, lid, external_id, payload) values ($1, $2, 'M1', '{}'), ($1, $2, 'M2', '{}')`, [A, LID]);
+    expect(await errorOf(`insert into crm_lid_pending (store_id, lid, external_id, payload) values ($1, $2, 'M1', '{}')`, [A, LID])).toMatch(/duplicate|unique/);
+    expect(await remember("5587988887777", "message")).toBe(2);
+    await db.query(`update crm_lid_pending set resolved_at = now() where external_id = 'M1'`);
+    expect(await remember("5587988887777", "message")).toBe(1);
+
+    expect(await asUser(ADM, () => errorOf(`select * from crm_lid_map`))).toMatch(/permission denied/);
+    expect(await asUser(ADM, () => errorOf(`select * from crm_lid_pending`))).toMatch(/permission denied/);
+    expect(await asUser(ADM, () => errorOf(`select crm_lid_remember('${A}', '${LID}', '5587999112233', 'message')`))).toMatch(/permission denied/);
+  });
+});
