@@ -6,7 +6,8 @@ import { adminClient, corsHeaders, json } from "../_shared/http.ts"
 import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/evolution.ts"
 import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
-import { base64ToBytes, transcribeMessage } from "../_shared/transcribe.ts"
+import { base64ToBytes, transcribeAudio, transcribeMessage } from "../_shared/transcribe.ts"
+import { findStaff, handleStaffMessage } from "../_shared/staff-assistant.ts"
 import { checkWebhookAuth } from "./auth.ts"
 import { extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, mediaExt, mediaMime, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
 
@@ -84,6 +85,27 @@ serve(async (req) => {
     const phone = jid.split('@')[0]
     const pushName = message.pushName || 'Lead WhatsApp'
     const at = resolveTimestamp(message?.messageTimestamp)
+    const rt = (globalThis as any).EdgeRuntime
+    const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p)
+
+    // Equipe da loja escrevendo no privado → assistente interno (relatório / venda no PDV), fora do CRM
+    if (!fromMe) {
+      const staff = await findStaff(admin, phone, storeId)
+      if (staff) {
+        const work = (async () => {
+          let text = ['text', 'image'].includes(parsed.kind) && parsed.content !== '[Imagem]' ? parsed.content : ''
+          if (parsed.kind === 'audio') {
+            let b64 = parsed.base64
+            if (!b64 && key.id) b64 = await evolution(cfg).mediaBase64(key.id).catch(() => undefined)
+            if (b64) text = (await transcribeAudio(base64ToBytes(b64), parsed.mimeType || 'audio/ogg').catch(() => ({ text: '' }))).text
+          }
+          const r = await handleStaffMessage(admin, cfg, staff, { text, messageId: key.id ?? null, jid, hasImage: parsed.kind === 'image' })
+          console.log('[WhatsApp Webhook] equipe:', r)
+        })().catch((e) => console.error('[WhatsApp Webhook] equipe:', (e as Error).message))
+        if (rt?.waitUntil) background(work); else await work
+        return json({ status: 'staff' })
+      }
+    }
 
     // Mídia (imagem/áudio)
     let media: { path: string; mime: string } | null = null
@@ -120,8 +142,6 @@ serve(async (req) => {
     if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
 
     // Segundo plano (sem atrasar a resposta à Evolution): transcrição do áudio, foto e agente de IA
-    const rt = (globalThis as any).EdgeRuntime
-    const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p)
     let transcription: Promise<unknown> = Promise.resolve()
     if (audioBase64 && crm?.message_id && !crm.duplicate && !crm.ignored) {
       transcription = transcribeMessage(admin, crm.message_id, base64ToBytes(audioBase64), parsed.mimeType || 'audio/ogg')

@@ -218,6 +218,8 @@ Esta seção serve como memória persistente de features implementadas, bugs cor
 | 05/11/2026 | `Feature / Fix` | `AuthContext.tsx`, `AppLayout.tsx`, `Ranking.tsx`, `Relatorios.tsx`, `public.profiles` | **Padronização Consistente de Nome e Sobrenome para Técnicos e Colaboradores:** (1) Atualizado o perfil do operador principal no banco para `Itamar Monteiro`; (2) `AuthContext` e `AppLayout` passam a renderizar `userDisplayName` na barra lateral e drawer móvel; (3) `Ranking.tsx` e `Relatorios.tsx` passam a incluir `profiles` na busca concorrente do ranking, garantindo que o pódio da bancada e as tabelas sempre exibam nomes e sobrenomes reais em vez de e-mails ou termos genéricos. |
 | 14–16/11/2026 | `Feature` | `src/modules/crm/`, `supabase/functions/crm-*`, migrations `2026111*_crm_*` | **Novo CRM (PRs #2–#28):** módulo isolado substitui a tela `/leads`. Detalhes, regras e operação na seção 12. |
 | 16/11/2026 | `Cleanup` | `whatsapp-webhook`, `Index.tsx`, `Relatorios.tsx` | **Fase 7 do CRM:** removidos `Leads.tsx`, `LeadList`, `ChatCenter`, `ConversaSync`, `WhatsAppConnectModal` e a função `whatsapp-send`; o webhook não grava mais em `leads`/`lead_messages` e salva mídia no bucket privado `crm_media`; card de Leads do Painel e aba Leads de Relatórios passam a contar `crm_contacts` (não ignorados). Tabelas `leads`, `lead_messages`, `lead_responses` continuam no banco (só leitura) até confirmação expressa do dono. |
+| 17/11/2026 | `Feature` | `whatsapp-webhook`, `_shared/staff-assistant*`, `20261117010000_staff_assistant.sql` | **Assistente da equipe no WhatsApp da loja:** relatório do dia e venda de acessórios no PDV com confirmação (ver seção 13). |
+| 17/11/2026 | `Security` | `whatsapp-financial-assistant` | Assistente financeiro do dono religado com segredo obrigatório, sem fallback para o "primeiro perfil" e sem log do corpo da mensagem. |
 | 17/11/2026 | `Security` / `Cleanup` | `AppLayout.tsx`, `Equipe.tsx`, `modules/crm` | **Permissão do CRM:** menu e rotas `/crm/*` exigem a permissão `leads` (rótulo "CRM" em Equipe); admin sempre entra; sem permissão a tela mostra "Sem acesso ao CRM". **Tabelas `leads`, `lead_messages`, `lead_responses` apagadas** com autorização do dono (`20261117000000_drop_legacy_leads.sql`); cópia JSON entregue ao dono. RLS das tabelas `crm_*` continua por loja (não checa a permissão). |
 
 
@@ -272,5 +274,17 @@ As seguintes regras e convenções de interface do usuário foram adotadas para 
 **Jobs `pg_cron`:** `crm-automations` (5 min), `crm-meta-flush` (1 min), `crm-os-sync` (5 min, só lê `service_orders`), `crm-dispatch` (1 min). Chamadas internas usam o segredo `CRM_CRON_SECRET` (Vault `crm_cron_secret`).
 
 **Operação:** migrations aplicadas com `supabase db query --file` (nunca `db push`, o histórico remoto diverge). Testes de banco em `src/__tests__/crm/crm-migrations.test.ts` (PGlite).
+
+---
+
+## 13. Assistentes de WhatsApp internos
+
+**Assistente da equipe (número da loja, desde 17/11/2026):** `whatsapp-webhook` desvia mensagem direta (não `fromMe`) cujo celular bate com `profiles.phone` (via `staff_lookup`, `crm_phone_key`) para `_shared/staff-assistant.ts` — não entra no CRM nem na IA de clientes. Regras puras em `_shared/staff-assistant-core.ts` (testes: `staff-assistant.test.ts`).
+- **Relatório:** `staff_day_report` — vendas PDV do próprio vendedor (admin: da loja), OS recebidas na loja e lançamentos sem comprovante no caixa aberto. Nunca custo/lucro.
+- **Venda de acessórios:** a IA extrai itens/pagamento → `staff_find_accessories` (pg_trgm) → escolhe sozinha só com resultado claramente melhor, senão lista numerada → resumo e **SIM obrigatório** → `pdv_register_sale` (atômica, mesmo formato do PDV da tela: `transactions` income/acessorio + `cash_entries` no caixa aberto; dinheiro confirmado, Pix/cartão pendentes até o comprovante; `metadata.source='whatsapp'`; auditoria `CREATE_PDV_SALE`). Sem caixa aberto, recusa.
+- Exige permissão `vendas` (admin sempre). Conversa em andamento em `staff_assistant_sessions` (15 min). Aparelhos/troca/OS ficam só no sistema.
+- O trigger `sync_cash_to_transaction` concilia por `ILIKE` da descrição: nomes de produto com `\` (ex.: "S\ PRIVACIDADE") não conciliam — vale também para o PDV da tela.
+
+**Assistente financeiro do dono (`whatsapp-financial-assistant`):** grupos do WhatsApp pessoal (instância própria em `EVOLUTION_*` secrets, outro servidor Evolution). Religado em 17/11/2026 com segredo obrigatório; ações `status`/`configure_webhook` (mesmo segredo; nunca altera a instância da loja). Em 17/11 o servidor da instância pessoal (vps9520) falhava no TLS — sem reconectar a instância, nada chega.
 
 *(Mantenha este documento atualizado a cada feature relevante criada ou correção feita. Coloque Identificação tambem de data ou commit, para identificar de quaando foi feito a alteração, e sempre que possivel revise esse documento para deixá-lo mais clean, sempre tomando cuidado para nao deletar informações importantes, e sempre alimentando ele com êxito e falhas, aprendizados e tudo que for relevante para o projeto.)*
