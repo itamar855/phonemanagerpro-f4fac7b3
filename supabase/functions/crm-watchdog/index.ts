@@ -34,7 +34,9 @@ async function checkAll(admin: any): Promise<CheckResult[]> {
       const evo = evolution(cfg);
       const nowMs = Date.now();
       res.state = await evo.connectionState();
-      const { data: health } = await admin.from("whatsapp_watchdog").select("last_alert_at").eq("config_id", cfg.id).maybeSingle();
+      // sem conseguir ler o último aviso, não avisa (evita repetir a cada 15 min)
+      const { data: health, error: hErr } = await admin.from("whatsapp_watchdog").select("last_alert_at").eq("config_id", cfg.id).maybeSingle();
+      if (hErr) throw new Error(`ler whatsapp_watchdog: ${hErr.message}`);
       const lastAlertMs = health?.last_alert_at ? Date.parse(health.last_alert_at) : null;
 
       // só lê as mensagens se a instância diz que está aberta (o resto não é "zumbi")
@@ -63,7 +65,10 @@ async function checkAll(admin: any): Promise<CheckResult[]> {
       };
       if (alertedAt) row.last_alert_at = alertedAt;
       const { error: uErr } = await admin.from("whatsapp_watchdog").upsert(row, { onConflict: "config_id" });
-      if (uErr) console.error("[watchdog] gravar", uErr.message);
+      if (uErr) {
+        console.error("[watchdog] gravar", uErr.message);
+        if (alertedAt) res.error = `aviso enviado, mas não gravado: ${uErr.message}`;
+      }
     } catch (e) {
       res.error = (e as Error).message;
       console.error("[watchdog]", cfg.instance_name, res.error);
