@@ -9,7 +9,10 @@ import { runAgent } from "../_shared/ai-agent.ts"
 import { base64ToBytes, transcribeAudio, transcribeMessage } from "../_shared/transcribe.ts"
 import { findStaff, handleStaffMessage } from "../_shared/staff-assistant.ts"
 import { checkWebhookAuth } from "./auth.ts"
-import { extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, mediaExt, mediaMime, parseMessageBody, resolveContactJid, resolveTimestamp } from "./parse.ts"
+import {
+  contactLid, extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, matchContactByName, mediaExt, mediaMime,
+  parseMessageBody, phoneFromEvolutionContacts, phoneJidFrom, resolveContactJid, resolveTimestamp, stripBase64, withResolvedPhone,
+} from "./parse.ts"
 
 /** Config pela instância do evento; sem ela, o número ativo. */
 async function resolveConfig(admin: SupabaseClient, instance: unknown): Promise<EvolutionConfig | null> {
@@ -31,6 +34,227 @@ async function uploadMedia(admin: SupabaseClient, storeId: string, messageId: st
     return null
   }
   return { path, mime }
+}
+
+type Result = { body: Record<string, unknown>; status?: number }
+
+const rt = (globalThis as any).EdgeRuntime
+const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p)
+
+// ------------------------------------------------------------------ contatos ocultos (@lid)
+
+/** Guarda o par lid → número; se havia mensagens esperando por ele, reprocessa em segundo plano. */
+async function rememberLid(admin: SupabaseClient, cfg: EvolutionConfig, lid: string, phoneJid: string, source: 'message' | 'evolution' | 'name') {
+  const { data: pending, error } = await admin.rpc('crm_lid_remember', {
+    p_store_id: cfg.store_id, p_lid: lid, p_phone: phoneJid.split('@')[0], p_source: source,
+  })
+  if (error) { console.error('[WhatsApp Webhook] lid:', error.message); return }
+  if (Number(pending) > 0) {
+    const work = replayPending(admin, cfg, lid, phoneJid).catch((e) => console.error('[WhatsApp Webhook] fila lid:', (e as Error).message))
+    if (rt?.waitUntil) background(work); else await work
+  }
+}
+
+/** Número de um contato @lid sem remoteJidAlt: par salvo → Evolution → nome igual no CRM (um só). */
+async function lookupLid(admin: SupabaseClient, cfg: EvolutionConfig, lid: string, pushName: unknown): Promise<string | null> {
+  const { data: known } = await admin.from('crm_lid_map').select('phone').eq('store_id', cfg.store_id).eq('lid', lid).maybeSingle()
+  const saved = phoneJidFrom(known?.phone)
+  if (saved) return saved
+
+  try {
+    const fromEvolution = phoneFromEvolutionContacts(await evolution(cfg).findContacts({ remoteJid: lid }), lid)
+    if (fromEvolution) {
+      await rememberLid(admin, cfg, lid, fromEvolution, 'evolution')
+      return fromEvolution
+    }
+  } catch (e) { console.error('[WhatsApp Webhook] findContacts:', (e as Error).message) }
+
+  const name = typeof pushName === 'string' ? pushName.trim() : ''
+  if (name) {
+    const pattern = name.replace(/[\\%_]/g, (c) => `\\${c}`)
+    const { data: contacts } = await admin.from('crm_contacts')
+      .select('name, phone').eq('store_id', cfg.store_id).not('phone', 'is', null).ilike('name', pattern).limit(5)
+    const byName = matchContactByName(contacts ?? [], name)
+    if (byName) {
+      await rememberLid(admin, cfg, lid, byName, 'name')
+      return byName
+    }
+  }
+  return null
+}
+
+/** Mensagem sem número fica na fila de espera (sem o base64 e sem a chave que a Evolution manda no evento). */
+async function holdPending(admin: SupabaseClient, cfg: EvolutionConfig, lid: string, payload: any) {
+  const message = payload?.data
+  const { error } = await admin.from('crm_lid_pending').insert({
+    store_id: cfg.store_id,
+    lid,
+    external_id: message?.key?.id ?? null,
+    from_me: Boolean(message?.key?.fromMe),
+    push_name: message?.pushName ?? null,
+    payload: stripBase64({ event: payload?.event, instance: payload?.instance, data: message }),
+  })
+  if (error && error.code !== '23505') throw new Error(`fila lid: ${error.message}`)
+}
+
+/** Reprocessa, na ordem em que chegaram, as mensagens desse lid que esperavam o número. */
+async function replayPending(admin: SupabaseClient, cfg: EvolutionConfig, lid: string, phoneJid: string) {
+  const { data: rows, error } = await admin.from('crm_lid_pending')
+    .update({ resolved_at: new Date().toISOString(), resolved_phone: phoneJid.split('@')[0] })
+    .eq('store_id', cfg.store_id).eq('lid', lid).is('resolved_at', null)
+    .select('id, payload, attempts, received_at')
+  if (error) throw new Error(error.message)
+  const list = [...(rows ?? [])].sort((a: any, b: any) => String(a.received_at).localeCompare(String(b.received_at)))
+  let ok = 0
+  for (const row of list as any[]) {
+    let failure: string | null = null
+    try {
+      const r = await handleUpsert(admin, cfg, withResolvedPhone(row.payload, phoneJid), { replay: true })
+      if ((r.status ?? 200) >= 400) failure = String(r.body?.error ?? r.status)
+    } catch (e) { failure = (e as Error).message }
+    if (failure) {
+      await admin.from('crm_lid_pending')
+        .update({ resolved_at: null, resolved_phone: null, attempts: (row.attempts ?? 0) + 1, last_error: failure.slice(0, 300) })
+        .eq('id', row.id)
+    } else ok++
+  }
+  console.log(`[WhatsApp Webhook] fila lid: ${ok}/${list.length} mensagens recuperadas`)
+}
+
+// ------------------------------------------------------------------ mensagem
+
+/**
+ * Trata um messages.upsert. replay = mensagem da fila de espera do @lid:
+ * não aciona o assistente da equipe nem o agente de IA (é mensagem antiga).
+ */
+async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload: any, opts: { replay?: boolean } = {}): Promise<Result> {
+  const storeId = cfg.store_id
+  const message = payload.data
+  const key = message?.key || {}
+  const fromMe = Boolean(key.fromMe)
+
+  let jid = resolveContactJid(key)
+  const lid = contactLid(key)
+  if (lid && jid && !opts.replay) {
+    await rememberLid(admin, cfg, lid, jid, 'message')
+  } else if (lid && !jid) {
+    jid = await lookupLid(admin, cfg, lid, fromMe ? null : message?.pushName)
+    if (!jid) {
+      await holdPending(admin, cfg, lid, payload)
+      console.warn('[WhatsApp Webhook] contato oculto sem número — mensagem guardada na fila de espera')
+      return { body: { status: 'pending', reason: 'lid_unresolved' } }
+    }
+  }
+  if (!jid) return { body: { status: 'ignored', reason: 'not_direct_chat' } }
+
+  const parsed = parseMessageBody(message, payload)
+  if (!parsed) return { body: { status: 'ignored', reason: 'unsupported_message' } }
+
+  const phone = jid.split('@')[0]
+  const pushName = message.pushName || 'Lead WhatsApp'
+  const at = resolveTimestamp(message?.messageTimestamp)
+
+  // Equipe da loja escrevendo no privado → assistente interno (relatório / venda no PDV), fora do CRM
+  if (!fromMe) {
+    const staff = await findStaff(admin, phone, storeId)
+    if (staff && opts.replay) return { body: { status: 'staff', replay: true } }
+    if (staff) {
+      const work = (async () => {
+        let text = ['text', 'image'].includes(parsed.kind) && parsed.content !== '[Imagem]' ? parsed.content : ''
+        if (parsed.kind === 'audio') {
+          let b64 = parsed.base64
+          if (!b64 && key.id) b64 = await evolution(cfg).mediaBase64(key.id).catch(() => undefined)
+          if (b64) text = (await transcribeAudio(base64ToBytes(b64), parsed.mimeType || 'audio/ogg').catch(() => ({ text: '' }))).text
+        }
+        const r = await handleStaffMessage(admin, cfg, staff, { text, messageId: key.id ?? null, jid, hasImage: parsed.kind === 'image' })
+        console.log('[WhatsApp Webhook] equipe:', r)
+      })().catch((e) => console.error('[WhatsApp Webhook] equipe:', (e as Error).message))
+      if (rt?.waitUntil) background(work); else await work
+      return { body: { status: 'staff' } }
+    }
+  }
+
+  // Mídia (imagem/áudio)
+  let media: { path: string; mime: string } | null = null
+  let audioBase64: string | undefined
+  if (parsed.kind === 'image' || parsed.kind === 'audio') {
+    let base64 = parsed.base64
+    if (!base64 && key.id) {
+      try { base64 = await evolution(cfg).mediaBase64(key.id) } catch (e) { console.error('[WhatsApp Webhook] mídia:', (e as Error).message) }
+    }
+    if (parsed.kind === 'audio') audioBase64 = base64
+    if (base64) {
+      try {
+        media = await uploadMedia(admin, storeId, key.id, base64, parsed.mimeType || '', parsed.kind)
+      } catch (e) { console.error('[WhatsApp Webhook] upload:', e) }
+    }
+  }
+
+  // 1. CRM novo: contato + conversa + mensagem numa transação (idempotente pelo id do WhatsApp)
+  const { data: crm, error: crmError } = await admin.rpc('crm_ingest_message', {
+    p_store_id: storeId,
+    p_channel: 'whatsapp',
+    p_direction: fromMe ? 'out' : 'in',
+    p_sender_kind: fromMe ? 'user' : 'contact',
+    p_kind: parsed.kind,
+    p_body: parsed.content,
+    p_phone: phone,
+    p_name: fromMe ? null : pushName,
+    p_external_thread_id: jid,
+    p_media_path: media?.path ?? null,
+    p_media_mime: media?.mime ?? parsed.mimeType ?? null,
+    p_external_id: key.id ?? null,
+    p_created_at: at,
+  })
+  if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
+
+  // Segundo plano (sem atrasar a resposta à Evolution): transcrição do áudio, foto e agente de IA
+  let transcription: Promise<unknown> = Promise.resolve()
+  if (audioBase64 && crm?.message_id && !crm.duplicate && !crm.ignored) {
+    transcription = transcribeMessage(admin, crm.message_id, base64ToBytes(audioBase64), parsed.mimeType || 'audio/ogg')
+    background(transcription)
+  }
+  // Rastreamento: código do link / dados do anúncio → origem do contato; 1º contato → evento Lead para a Meta
+  if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
+    // código do link de rastreio (cód. K7Q2M) ou do anúncio (#T21 / Ref. T21)
+    const code = extractTrackCode(parsed.content) ?? extractAdCode(parsed.content)
+    const native = extractAdAttribution(message)
+    if (code || crm.contact_created || hasAdData(native)) {
+      background((async () => {
+        const { error: attErr } = await admin.rpc('crm_track_attach', {
+          p_contact_id: crm.contact_id, p_code: code, p_native: native, p_is_new: Boolean(crm.contact_created),
+        })
+        if (attErr) console.error('[WhatsApp Webhook] origem:', attErr.message)
+        if (crm.contact_created) {
+          const { data: ev } = await admin.rpc('crm_meta_enqueue', { p_contact_id: crm.contact_id, p_deal_id: null, p_kind: 'lead' })
+          const secret = Deno.env.get('CRM_CRON_SECRET')
+          if (ev && secret) {
+            await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/crm-meta`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'x-crm-internal': secret }, body: JSON.stringify({ action: 'flush' }),
+            }).catch(() => { /* o cron envia no próximo minuto */ })
+          }
+        }
+      })().catch((e) => console.error('[WhatsApp Webhook] rastreamento:', (e as Error).message)))
+    }
+  }
+
+  if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
+    const photo = (async () => {
+      const { data: c } = await admin.from('crm_contacts').select('id, phone, avatar_url, avatar_checked_at').eq('id', crm.contact_id).maybeSingle()
+      if (c) await refreshAvatars(admin, cfg, [c])
+    })().catch((e) => console.error('[WhatsApp Webhook] foto:', (e as Error).message))
+    // espera a transcrição (a IA "ouve" o áudio pelo texto) e mais 8 s para juntar mensagens picadas.
+    // Mensagem antiga da fila do @lid não aciona a IA (a resposta seria fora de hora).
+    const agent = opts.replay ? transcription : transcription
+      .then(() => runAgent(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }))
+      .then((r) => { if (r.status !== 'skipped') console.log('[WhatsApp Webhook] IA:', r.status, r.status === 'done' ? r.decision.decision : '') })
+    if (rt?.waitUntil) { background(photo); background(agent) } else await Promise.all([photo, agent, transcription])
+  }
+
+  if (crmError) return { body: { error: crmError.message }, status: 500 }
+  // Mensagem que o próprio CRM enviou (crm-send já gravou)
+  if (crm?.duplicate) return { body: { status: 'duplicate' } }
+  return { body: { status: 'success', crm } }
 }
 
 serve(async (req) => {
@@ -72,121 +296,8 @@ serve(async (req) => {
     }
 
     // ---- Mensagem ----
-    const message = payload.data
-    const key = message?.key || {}
-    const fromMe = Boolean(key.fromMe)
-
-    const jid = resolveContactJid(key)
-    if (!jid) return json({ status: 'ignored', reason: 'not_direct_chat' })
-
-    const parsed = parseMessageBody(message, payload)
-    if (!parsed) return json({ status: 'ignored', reason: 'unsupported_message' })
-
-    const phone = jid.split('@')[0]
-    const pushName = message.pushName || 'Lead WhatsApp'
-    const at = resolveTimestamp(message?.messageTimestamp)
-    const rt = (globalThis as any).EdgeRuntime
-    const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p)
-
-    // Equipe da loja escrevendo no privado → assistente interno (relatório / venda no PDV), fora do CRM
-    if (!fromMe) {
-      const staff = await findStaff(admin, phone, storeId)
-      if (staff) {
-        const work = (async () => {
-          let text = ['text', 'image'].includes(parsed.kind) && parsed.content !== '[Imagem]' ? parsed.content : ''
-          if (parsed.kind === 'audio') {
-            let b64 = parsed.base64
-            if (!b64 && key.id) b64 = await evolution(cfg).mediaBase64(key.id).catch(() => undefined)
-            if (b64) text = (await transcribeAudio(base64ToBytes(b64), parsed.mimeType || 'audio/ogg').catch(() => ({ text: '' }))).text
-          }
-          const r = await handleStaffMessage(admin, cfg, staff, { text, messageId: key.id ?? null, jid, hasImage: parsed.kind === 'image' })
-          console.log('[WhatsApp Webhook] equipe:', r)
-        })().catch((e) => console.error('[WhatsApp Webhook] equipe:', (e as Error).message))
-        if (rt?.waitUntil) background(work); else await work
-        return json({ status: 'staff' })
-      }
-    }
-
-    // Mídia (imagem/áudio)
-    let media: { path: string; mime: string } | null = null
-    let audioBase64: string | undefined
-    if (parsed.kind === 'image' || parsed.kind === 'audio') {
-      let base64 = parsed.base64
-      if (!base64 && key.id) {
-        try { base64 = await evolution(cfg).mediaBase64(key.id) } catch (e) { console.error('[WhatsApp Webhook] mídia:', (e as Error).message) }
-      }
-      if (parsed.kind === 'audio') audioBase64 = base64
-      if (base64) {
-        try {
-          media = await uploadMedia(admin, storeId, key.id, base64, parsed.mimeType || '', parsed.kind)
-        } catch (e) { console.error('[WhatsApp Webhook] upload:', e) }
-      }
-    }
-
-    // 1. CRM novo: contato + conversa + mensagem numa transação (idempotente pelo id do WhatsApp)
-    const { data: crm, error: crmError } = await admin.rpc('crm_ingest_message', {
-      p_store_id: storeId,
-      p_channel: 'whatsapp',
-      p_direction: fromMe ? 'out' : 'in',
-      p_sender_kind: fromMe ? 'user' : 'contact',
-      p_kind: parsed.kind,
-      p_body: parsed.content,
-      p_phone: phone,
-      p_name: fromMe ? null : pushName,
-      p_external_thread_id: jid,
-      p_media_path: media?.path ?? null,
-      p_media_mime: media?.mime ?? parsed.mimeType ?? null,
-      p_external_id: key.id ?? null,
-      p_created_at: at,
-    })
-    if (crmError) console.error('[WhatsApp Webhook] CRM ingest:', crmError.message)
-
-    // Segundo plano (sem atrasar a resposta à Evolution): transcrição do áudio, foto e agente de IA
-    let transcription: Promise<unknown> = Promise.resolve()
-    if (audioBase64 && crm?.message_id && !crm.duplicate && !crm.ignored) {
-      transcription = transcribeMessage(admin, crm.message_id, base64ToBytes(audioBase64), parsed.mimeType || 'audio/ogg')
-      background(transcription)
-    }
-    // Rastreamento: código do link / dados do anúncio → origem do contato; 1º contato → evento Lead para a Meta
-    if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
-      // código do link de rastreio (cód. K7Q2M) ou do anúncio (#T21 / Ref. T21)
-      const code = extractTrackCode(parsed.content) ?? extractAdCode(parsed.content)
-      const native = extractAdAttribution(message)
-      if (code || crm.contact_created || hasAdData(native)) {
-        background((async () => {
-          const { error: attErr } = await admin.rpc('crm_track_attach', {
-            p_contact_id: crm.contact_id, p_code: code, p_native: native, p_is_new: Boolean(crm.contact_created),
-          })
-          if (attErr) console.error('[WhatsApp Webhook] origem:', attErr.message)
-          if (crm.contact_created) {
-            const { data: ev } = await admin.rpc('crm_meta_enqueue', { p_contact_id: crm.contact_id, p_deal_id: null, p_kind: 'lead' })
-            const secret = Deno.env.get('CRM_CRON_SECRET')
-            if (ev && secret) {
-              await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/crm-meta`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'x-crm-internal': secret }, body: JSON.stringify({ action: 'flush' }),
-              }).catch(() => { /* o cron envia no próximo minuto */ })
-            }
-          }
-        })().catch((e) => console.error('[WhatsApp Webhook] rastreamento:', (e as Error).message)))
-      }
-    }
-
-    if (!fromMe && crm?.contact_id && !crm.ignored && !crm.duplicate) {
-      const photo = (async () => {
-        const { data: c } = await admin.from('crm_contacts').select('id, phone, avatar_url, avatar_checked_at').eq('id', crm.contact_id).maybeSingle()
-        if (c) await refreshAvatars(admin, cfg, [c])
-      })().catch((e) => console.error('[WhatsApp Webhook] foto:', (e as Error).message))
-      // espera a transcrição (a IA "ouve" o áudio pelo texto) e mais 8 s para juntar mensagens picadas
-      const agent = transcription
-        .then(() => runAgent(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }))
-        .then((r) => { if (r.status !== 'skipped') console.log('[WhatsApp Webhook] IA:', r.status, r.status === 'done' ? r.decision.decision : '') })
-      if (rt?.waitUntil) { background(photo); background(agent) } else await Promise.all([photo, agent, transcription])
-    }
-
-    if (crmError) return json({ error: crmError.message }, 500)
-    // Mensagem que o próprio CRM enviou (crm-send já gravou)
-    if (crm?.duplicate) return json({ status: 'duplicate' })
-    return json({ status: 'success', crm })
+    const r = await handleUpsert(admin, cfg, payload)
+    return json(r.body, r.status ?? 200)
   } catch (error) {
     console.error('[WhatsApp Webhook] Erro:', error)
     return json({ error: (error as Error)?.message || 'Erro interno' }, 500)

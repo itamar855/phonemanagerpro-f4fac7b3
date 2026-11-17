@@ -90,6 +90,100 @@ export function isDirectChat(key: any): boolean {
   return resolveContactJid(key) !== null;
 }
 
+// ------------------------------------------------------------------ contatos ocultos (@lid)
+
+const LID_JID = /^\d{5,25}@lid$/;
+
+/**
+ * Identificador oculto (@lid) do contato numa conversa privada, venha ele em remoteJid
+ * (com ou sem o número em remoteJidAlt) ou em remoteJidAlt (remoteJid já com o número).
+ * null para grupos, transmissões, canais e status.
+ */
+export function contactLid(key: any): string | null {
+  const jid: string = key?.remoteJid || "";
+  if (LID_JID.test(jid)) return jid;
+  if (key?.participant) return null;
+  if (PHONE_JID.test(jid)) {
+    for (const alt of [key?.remoteJidAlt, key?.participantAlt]) {
+      if (typeof alt === "string" && LID_JID.test(alt)) return alt;
+    }
+  }
+  return null;
+}
+
+/** Telefone em jid ("5587...@s.whatsapp.net") a partir de jid, "@c.us" ou só dígitos (10 a 15). */
+export function phoneJidFrom(raw: unknown): string | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) raw = String(Math.trunc(raw));
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (PHONE_JID.test(s)) return s;
+  const cus = /^(\d{8,15})@c\.us$/.exec(s);
+  if (cus) return `${cus[1]}@s.whatsapp.net`;
+  if (s.includes("@")) return null;
+  if (!/^\+?[\d\s().-]+$/.test(s)) return null;
+  const digits = s.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15 ? `${digits}@s.whatsapp.net` : null;
+}
+
+/** Campos em que a Evolution (versões diferentes) pode trazer o número de um contato. */
+const CONTACT_PHONE_FIELDS = ["remoteJidAlt", "phoneNumber", "phone", "number", "pn", "senderPn", "jid", "remoteJid", "id"];
+
+/**
+ * Número de um contato @lid na resposta de /chat/findContacts. Só considera registros
+ * desse lid; se a resposta trouxer números diferentes, não arrisca (null).
+ */
+export function phoneFromEvolutionContacts(records: unknown, lid: string): string | null {
+  const list = Array.isArray(records) ? records : records && typeof records === "object" ? [records] : [];
+  const found = new Set<string>();
+  for (const r of list as any[]) {
+    if (!r || typeof r !== "object") continue;
+    const values = Object.values(r);
+    if (!values.includes(lid)) continue;
+    for (const f of CONTACT_PHONE_FIELDS) {
+      const p = phoneJidFrom(r[f]);
+      if (p) found.add(p);
+    }
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
+/** Nome comparável: sem acento, minúsculo, espaços simples. */
+export function normalizeName(raw: unknown): string {
+  return String(raw ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const GENERIC_NAMES = new Set(["lead whatsapp", "contato", "cliente", "whatsapp", "."]);
+
+/**
+ * Último recurso: o contato do CRM (mesma loja) com o mesmo nome do pushName —
+ * só se houver exatamente um, com telefone. Nomes genéricos ou curtos não valem.
+ */
+export function matchContactByName(contacts: Array<{ name?: string | null; phone?: string | null }>, pushName: unknown): string | null {
+  const target = normalizeName(pushName);
+  if (target.replace(/[^a-z0-9]/g, "").length < 3 || GENERIC_NAMES.has(target)) return null;
+  const same = (contacts ?? []).filter((c) => normalizeName(c?.name) === target);
+  if (same.length !== 1) return null;
+  return phoneJidFrom(String(same[0].phone ?? "").replace(/\D/g, ""));
+}
+
+/** Cópia do evento sem o base64 das mídias (vai para a fila de espera; a mídia é baixada de novo depois). */
+export function stripBase64<T>(payload: T): T {
+  return JSON.parse(JSON.stringify(payload ?? null, (k, v) => (k === "base64" ? undefined : v)));
+}
+
+/** Cópia do evento com o número descoberto em key.remoteJidAlt, para reprocessar como mensagem comum. */
+export function withResolvedPhone<T>(payload: T, phoneJid: string): T {
+  const copy: any = JSON.parse(JSON.stringify(payload ?? {}));
+  copy.data = copy.data && typeof copy.data === "object" ? copy.data : {};
+  copy.data.key = { ...(copy.data.key ?? {}), remoteJidAlt: phoneJid };
+  return copy;
+}
+
 // ------------------------------------------------------------------ rastreamento
 
 export interface NativeAttribution {
