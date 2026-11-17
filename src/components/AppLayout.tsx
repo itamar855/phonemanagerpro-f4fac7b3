@@ -26,7 +26,7 @@ const navItems = [
   { label: "Estoque", icon: Package, path: "/estoque", permission: "estoque" },
   { label: "OS", icon: Wrench, path: "/ordens-servico", permission: "os" },
   { label: "Clientes", icon: UserCircle, path: "/clientes", permission: "clientes" },
-  { label: "CRM", icon: MessageSquare, path: "/crm" },
+  { label: "CRM", icon: MessageSquare, path: "/crm", permission: "leads" },
   { label: "Transações", icon: ArrowUpDown, path: "/transacoes", permission: "transacoes" },
   { label: "Relatórios", icon: FileText, path: "/relatorios", permission: "relatorios" },
   { label: "Notas Fiscais", icon: ReceiptText, path: "/notas-fiscais", permission: "fiscal" },
