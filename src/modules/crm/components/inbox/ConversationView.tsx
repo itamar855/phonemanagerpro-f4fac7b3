@@ -18,6 +18,8 @@ import type { CrmMessage } from "../../lib/types";
 import { CHANNEL_LABEL } from "../../lib/constants";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { StoreTag } from "../shared/StoreTag";
+import { KindChips, OwnerChip } from "../shared/LeadChips";
+import { ownerLabel } from "../../lib/labels";
 import { EmptyState } from "../shared/EmptyState";
 import { Composer, type ComposerMode } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
@@ -157,6 +159,12 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
           <p className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-sm font-semibold">{conv.contact.name}</span>
             <StoreTag storeId={conv.store_id} />
+            <KindChips contact={conv.contact} className="max-sm:hidden" />
+          </p>
+          {/* no celular o seletor de responsável fica escondido: mostra de quem é o lead */}
+          <p className="flex items-center gap-1 sm:hidden">
+            <OwnerChip label={ownerLabel(conv.assigned_to, new Map(team.map((t) => [t.user_id, t.display_name])), userId)} />
+            <KindChips contact={conv.contact} />
           </p>
           <p className="truncate text-xs text-muted-foreground">
             {CHANNEL_LABEL[conv.channel]} · {subtitle}

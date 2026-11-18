@@ -27,6 +27,7 @@ export interface CrmContact {
   origin_channel: OriginChannel;
   handoff_code: string | null;
   tags: string[];
+  lead_kind?: "assistencia" | "venda" | null;
   ignored: boolean;
   ignored_reason: string | null;
   notes: string | null;
@@ -59,7 +60,7 @@ export interface CrmConversation {
 }
 
 export interface CrmConversationWithContact extends CrmConversation {
-  contact: Pick<CrmContact, "id" | "name" | "phone" | "instagram_username" | "avatar_url" | "origin_channel" | "ignored" | "customer_id" | "tags">;
+  contact: Pick<CrmContact, "id" | "name" | "phone" | "instagram_username" | "avatar_url" | "origin_channel" | "ignored" | "customer_id" | "tags" | "lead_kind">;
 }
 
 export interface CrmMessage {

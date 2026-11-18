@@ -2,12 +2,18 @@
 // Agente de IA do CRM — ações chamadas pela tela.
 //  simulate: testa a IA com uma conversa digitada (gerência). Não grava nem envia nada.
 //  suggest:  pede uma sugestão de resposta para uma conversa real (qualquer membro). Sempre rascunho.
+//  tag:      a IA etiqueta uma conversa agora (qualquer membro). tag_recent: etiqueta as conversas
+//            recentes ainda sem etiqueta da IA (gerência; em lotes, para não estourar o tempo).
 // O atendimento automático (mensagem chegando) roda dentro do whatsapp-webhook.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, corsHeaders, errorResponse, HttpError, json, requireManager, requireMember, requireUser } from "../_shared/http.ts";
 import { decide, runAgent, similarExamples, type AiSettings } from "../_shared/ai-agent.ts";
 import type { TranscriptMessage } from "../_shared/ai-agent-core.ts";
 import { loadMessageAudio, transcribeMessage } from "../_shared/transcribe.ts";
+import { tagConversation } from "../_shared/ai-tagger.ts";
+
+const TAG_BATCH = 24;
+const TAG_PARALLEL = 4;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -102,6 +108,39 @@ serve(async (req) => {
       const r = await runAgent(admin, { conversationId, forceDraft: true });
       if (r.status === "error") throw new HttpError(502, `A IA não respondeu: ${r.error}`);
       return json(r);
+    }
+
+    if (action === "tag") {
+      const conversationId = String(body.conversation_id || "");
+      const { data: conv } = await admin.from("crm_conversations").select("id, store_id").eq("id", conversationId).maybeSingle();
+      if (!conv) throw new HttpError(404, "Conversa não encontrada.");
+      await requireMember(admin, user.id, conv.store_id);
+      const r = await tagConversation(admin, { conversationId });
+      if (r.status === "error") throw new HttpError(502, `A IA não respondeu: ${r.error}`);
+      return json(r);
+    }
+
+    if (action === "tag_recent") {
+      await requireManager(admin, user.id);
+      const days = Math.min(Math.max(Number(body.days) || 30, 1), 90);
+      const since = new Date(Date.now() - days * 86400_000).toISOString();
+      let q = admin.from("crm_conversations")
+        .select("id, contact:crm_contacts!inner(ai_tagged_at, ignored)")
+        .is("contact.ai_tagged_at", null).eq("contact.ignored", false)
+        .gt("last_inbound_at", since).order("last_inbound_at", { ascending: false }).limit(TAG_BATCH);
+      if (body.store_id) q = q.eq("store_id", String(body.store_id));
+      const { data: convs, error } = await q;
+      if (error) throw new HttpError(500, error.message);
+      const ids = (convs ?? []).map((c: any) => c.id as string);
+      let tagged = 0, failed = 0;
+      for (let i = 0; i < ids.length; i += TAG_PARALLEL) {
+        const rs = await Promise.all(ids.slice(i, i + TAG_PARALLEL).map((id) => tagConversation(admin, { conversationId: id })));
+        for (const r of rs) {
+          if (r.status === "done") tagged++;
+          else if (r.status === "error") failed++;
+        }
+      }
+      return json({ processed: ids.length, tagged, failed, more: ids.length === TAG_BATCH });
     }
 
     throw new HttpError(400, "Ação inválida.");

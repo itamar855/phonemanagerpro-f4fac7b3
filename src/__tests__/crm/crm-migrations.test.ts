@@ -33,6 +33,7 @@ const DISPATCH_SVC = read("20261116120000_crm_dispatch_service.sql");
 const WATCHDOG = read("20261117020000_whatsapp_watchdog.sql");
 const MULTI_STORE = read("20261118000000_crm_multi_store.sql");
 const OWNER_GUARD = read("20261118010000_crm_lead_owner_guard.sql");
+const LEAD_LABELS = read("20261119000000_crm_lead_labels.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -137,6 +138,7 @@ beforeAll(async () => {
   await db.exec(DISPATCH_SVC);
   await db.exec(MULTI_STORE);
   await db.exec(OWNER_GUARD);
+  await db.exec(LEAD_LABELS);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -1158,5 +1160,44 @@ describe("CRM — funil do técnico e 'não tomar a vez'", () => {
   it("sistema (sem usuário) redistribui livremente", async () => {
     await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, U1]);
     expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(U1);
+  });
+});
+
+describe("CRM — etiquetas do lead", () => {
+  it("cada loja recebe as 12 etiquetas prontas, com cor; loja nova também", async () => {
+    expect(await val(`select count(*)::int from crm_tags where store_id = $1`, [A])).toBe(12);
+    expect(await val(`select color from crm_tags where store_id = $1 and name = 'Quente'`, [B])).toBe("red");
+    const novo = await val<string>(`insert into stores (name) values ('Loja C') returning id`);
+    expect(await val(`select count(*)::int from crm_tags where store_id = $1`, [novo])).toBe(12);
+    // rodar de novo não duplica
+    await db.query(`select crm_seed_tags($1)`, [A]);
+    expect(await val(`select count(*)::int from crm_tags where store_id = $1`, [A])).toBe(12);
+  });
+
+  it("negócio criado marca o tipo do lead pelo funil", async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "quero um iphone",
+      p_phone: "5511977700099", p_external_id: "LABEL1" });
+    expect(await val(`select lead_kind from crm_contacts where id = $1`, [r.contact_id])).toBeNull();
+    const deal = (kind: string) => db.query(
+      `insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title)
+       select $1, p.id, (select id from crm_stages where pipeline_id = p.id order by position limit 1), $2, 'X' from crm_pipelines p where p.store_id = $1 and p.kind = $3`,
+      [A, r.contact_id, kind]);
+    await deal("sales");
+    expect(await val(`select lead_kind from crm_contacts where id = $1`, [r.contact_id])).toBe("venda");
+    await deal("service");
+    expect(await val(`select lead_kind from crm_contacts where id = $1`, [r.contact_id])).toBe("assistencia");
+    // a equipe pode marcar à mão; valor fora da lista é recusado
+    await asUser(U1, () => db.query(`update crm_contacts set lead_kind = 'venda' where id = $1`, [r.contact_id]));
+    expect(await val(`select lead_kind from crm_contacts where id = $1`, [r.contact_id])).toBe("venda");
+    expect(await errorOf(`update crm_contacts set lead_kind = 'outro' where id = $1`, [r.contact_id])).toMatch(/lead_kind_check/);
+  });
+
+  it("vendedor lê e usa as etiquetas, mas só a gerência muda a lista", async () => {
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_tags where store_id = $1`, [A]))).toBe(12);
+    await asUser(U1, () => db.query(`delete from crm_tags where store_id = $1`, [A]));
+    expect(await val(`select count(*)::int from crm_tags where store_id = $1`, [A])).toBe(12);
+    expect(await asUser(U1, () => errorOf(`insert into crm_tags (store_id, name, color) values ($1, 'Minha', 'red')`, [A]))).toMatch(/row-level security/);
+    await asUser(ADM, () => db.query(`update crm_tags set color = 'pink' where store_id = $1 and name = 'Frio'`, [A]));
+    expect(await val(`select color from crm_tags where store_id = $1 and name = 'Frio'`, [A])).toBe("pink");
   });
 });

@@ -13,6 +13,7 @@ import { InstagramChannelCard } from "../components/settings/InstagramChannelCar
 import { AutomationSettingsCard } from "../components/settings/AutomationSettingsCard";
 import { AiAgentSettings } from "../components/settings/AiAgentSettings";
 import { TrackingSettings } from "../components/settings/TrackingSettings";
+import { TagsSettingsCard } from "../components/settings/TagsSettingsCard";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext, useQuickReplies } from "../hooks/useInbox";
 
@@ -25,6 +26,7 @@ export default function SettingsPage() {
           <TabsList className="h-auto w-full justify-start overflow-x-auto [scrollbar-width:none] sm:w-auto">
             <TabsTrigger value="canais">Canais</TabsTrigger>
             <TabsTrigger value="respostas">Respostas rápidas</TabsTrigger>
+            <TabsTrigger value="etiquetas">Etiquetas</TabsTrigger>
             <TabsTrigger value="automacoes">Automações</TabsTrigger>
             <TabsTrigger value="ia">Agente de IA</TabsTrigger>
             <TabsTrigger value="rastreamento">Rastreamento</TabsTrigger>
@@ -35,6 +37,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="respostas" className="pt-2">
             <QuickRepliesSettings />
+          </TabsContent>
+          <TabsContent value="etiquetas" className="pt-2">
+            <TagsSettingsCard />
           </TabsContent>
           <TabsContent value="automacoes" className="pt-2">
             <AutomationSettingsCard />

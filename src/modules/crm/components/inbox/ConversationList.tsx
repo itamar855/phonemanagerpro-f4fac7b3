@@ -5,13 +5,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { ChannelTab, ConversationQuery, InboxFilter } from "../../api/inbox";
-import { useConversations, useInboxCounts } from "../../hooks/useInbox";
+import { useConversations, useInboxCounts, useTeam } from "../../hooks/useInbox";
 import { useAvatarRefresh } from "../../hooks/useAvatarRefresh";
 import { formatPhone } from "../../lib/phone";
 import { shortTime } from "../../lib/format";
 import type { CrmConversationWithContact } from "../../lib/types";
 import { EmptyState } from "../shared/EmptyState";
 import { StoreTag } from "../shared/StoreTag";
+import { KindChips, OwnerChip, TagChips } from "../shared/LeadChips";
+import { ownerLabel } from "../../lib/labels";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { ChannelIcon } from "../shared/ChannelIcon";
 import { Button } from "@/components/ui/button";
@@ -55,6 +57,8 @@ export function ConversationList({ storeId, userId, selectedId, onSelect, channe
   const items = useMemo(() => data?.pages.flat() ?? [], [data]);
   const avatarRows = useMemo(() => items.filter((c) => c.channel === "whatsapp").map((c) => c.contact), [items]);
   useAvatarRefresh(avatarRows, storeId);
+  const { data: team = [] } = useTeam(storeId);
+  const names = useMemo(() => new Map(team.map((m) => [m.user_id, m.display_name])), [team]);
 
   // carrega mais ao chegar no fim da lista
   const sentinel = useRef<HTMLDivElement>(null);
@@ -162,7 +166,7 @@ export function ConversationList({ storeId, userId, selectedId, onSelect, channe
           />
         )}
         {items.map((c) => (
-          <ConversationRow key={c.id} c={c} selected={c.id === selectedId} onSelect={onSelect} />
+          <ConversationRow key={c.id} c={c} selected={c.id === selectedId} onSelect={onSelect} owner={ownerLabel(c.assigned_to, names, userId)} />
         ))}
         <div ref={sentinel} />
         {isFetchingNextPage && (
@@ -175,7 +179,7 @@ export function ConversationList({ storeId, userId, selectedId, onSelect, channe
   );
 }
 
-function ConversationRow({ c, selected, onSelect }: { c: CrmConversationWithContact; selected: boolean; onSelect: (id: string) => void }) {
+function ConversationRow({ c, selected, onSelect, owner }: { c: CrmConversationWithContact; selected: boolean; onSelect: (id: string) => void; owner: string | null }) {
   const unread = c.unread_count > 0;
   const subtitle = c.channel === "instagram" && c.contact.instagram_username ? `@${c.contact.instagram_username}` : formatPhone(c.contact.phone);
   return (
@@ -215,11 +219,17 @@ function ConversationRow({ c, selected, onSelect }: { c: CrmConversationWithCont
             )}
           </div>
         </div>
-        {c.contact.origin_channel === "instagram" && c.channel === "whatsapp" && (
-          <span className="mt-1 inline-flex items-center gap-1 rounded bg-pink-500/10 px-1.5 py-0.5 text-[10px] font-medium text-pink-600 dark:text-pink-400">
-            Veio do Instagram
-          </span>
-        )}
+        {/* responsável · tipo do lead · etiquetas (a IA coloca) */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+          <OwnerChip label={owner} />
+          <KindChips contact={c.contact} />
+          <TagChips storeId={c.store_id} tags={c.contact.tags ?? []} />
+          {c.contact.origin_channel === "instagram" && c.channel === "whatsapp" && (
+            <span className="inline-flex items-center gap-1 rounded bg-pink-500/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-pink-600 dark:text-pink-400">
+              Veio do Instagram
+            </span>
+          )}
+        </div>
       </div>
     </button>
   );
