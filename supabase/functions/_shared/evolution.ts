@@ -118,6 +118,10 @@ export function evolution(cfg: EvolutionConfig) {
       const d = must(await call("POST", `/chat/findMessages/${instance}`, { where: { key: { remoteJid } }, page, limit }, 30000), "Ler mensagens");
       return { records: d?.messages?.records ?? [], pages: Number(d?.messages?.pages ?? 1) };
     },
+    /** Mensagens mais recentes da instância, de todas as conversas (vigia do "zumbi"). */
+    async recentMessages(limit = 50): Promise<any> {
+      return must(await call("POST", `/chat/findMessages/${instance}`, { where: {}, page: 1, limit }, 20000), "Ler mensagens recentes");
+    },
     /** Link da foto de perfil (null se a pessoa não tem foto ou esconde). */
     async profilePicture(number: string): Promise<string | null> {
       const r = await call("POST", `/chat/fetchProfilePictureUrl/${instance}`, { number }, 6000);
