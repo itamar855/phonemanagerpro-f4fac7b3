@@ -34,6 +34,7 @@ const WATCHDOG = read("20261117020000_whatsapp_watchdog.sql");
 const MULTI_STORE = read("20261118000000_crm_multi_store.sql");
 const OWNER_GUARD = read("20261118010000_crm_lead_owner_guard.sql");
 const LEAD_LABELS = read("20261119000000_crm_lead_labels.sql");
+const PUSH = read("20261119010000_crm_push.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -139,6 +140,7 @@ beforeAll(async () => {
   await db.exec(MULTI_STORE);
   await db.exec(OWNER_GUARD);
   await db.exec(LEAD_LABELS);
+  await db.exec(PUSH);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -1199,5 +1201,48 @@ describe("CRM — etiquetas do lead", () => {
     expect(await asUser(U1, () => errorOf(`insert into crm_tags (store_id, name, color) values ($1, 'Minha', 'red')`, [A]))).toMatch(/row-level security/);
     await asUser(ADM, () => db.query(`update crm_tags set color = 'pink' where store_id = $1 and name = 'Frio'`, [A]));
     expect(await val(`select color from crm_tags where store_id = $1 and name = 'Frio'`, [A])).toBe("pink");
+  });
+});
+
+describe("CRM — avisos no celular", () => {
+  let conv = "";
+  const subs = async () => (await db.query<{ user_id: string }>(`select user_id from crm_push_recipients($1) order by user_id`, [conv])).rows.map((r) => r.user_id);
+
+  beforeAll(async () => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi", p_phone: "5511977700555", p_external_id: "PUSH1" });
+    conv = r.conversation_id;
+    // um aparelho por pessoa: vendedor A, vendedor B (outra loja) e admin
+    for (const [u, n] of [[U1, 1], [U2, 2], [ADM, 3]] as const) {
+      await db.query(`insert into crm_push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, $2, 'k', 'a')`, [u, `https://push.example/${n}`]);
+    }
+  });
+
+  it("sem responsável: avisa todos que acessam o CRM da loja (não quem é só da outra)", async () => {
+    await db.query(`update crm_conversations set assigned_to = null where id = $1`, [conv]);
+    expect(await subs()).toEqual([U1, ADM].sort());
+    // vendedor da outra loja com a permissão CRM passa a receber
+    await db.query(`update user_roles set permissions = '{"leads": true}' where user_id = $1`, [U2]);
+    expect(await subs()).toEqual([U1, U2, ADM].sort());
+    await db.query(`update user_roles set permissions = null where user_id = $1`, [U2]);
+  });
+
+  it("com responsável: só ele e o admin", async () => {
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, U1]);
+    expect(await subs()).toEqual([U1, ADM].sort());
+  });
+
+  it("rajada: um aviso por conversa a cada 45 s", async () => {
+    expect(await val(`select crm_push_claim($1)`, [conv])).toBe(true);
+    expect(await val(`select crm_push_claim($1)`, [conv])).toBe(false);
+    await db.query(`update crm_conversations set push_notified_at = now() - interval '1 minute' where id = $1`, [conv]);
+    expect(await val(`select crm_push_claim($1)`, [conv])).toBe(true);
+  });
+
+  it("cada pessoa só vê e apaga os próprios aparelhos; funções do aviso são só do servidor", async () => {
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_push_subscriptions`))).toBe(1);
+    await asUser(U1, () => db.query(`delete from crm_push_subscriptions where user_id = $1`, [ADM]));
+    expect(await val(`select count(*)::int from crm_push_subscriptions where user_id = $1`, [ADM])).toBe(1);
+    expect(await asUser(U1, () => errorOf(`insert into crm_push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://x', 'k', 'a')`, [ADM]))).toMatch(/row-level security/);
+    expect(await asUser(U1, () => errorOf(`select * from crm_push_recipients($1)`, [conv]))).toMatch(/permission denied/);
   });
 });
