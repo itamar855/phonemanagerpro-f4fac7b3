@@ -30,6 +30,7 @@ const OS_SYNC = read("20261116090000_crm_os_sync.sql");
 const NO_DUP = read("20261116100000_crm_tasks_no_dup.sql");
 const DISPATCH = read("20261116110000_crm_dispatch.sql");
 const DISPATCH_SVC = read("20261116120000_crm_dispatch_service.sql");
+const MULTI_STORE = read("20261118000000_crm_multi_store.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -75,7 +76,7 @@ beforeAll(async () => {
     create type public.app_role as enum ('admin','gerente','vendedor','tecnico','dono');
     create table public.stores (id uuid primary key default gen_random_uuid(), name text, created_at timestamptz default now());
     create table public.member_stores (id uuid primary key default gen_random_uuid(), user_id uuid, store_id uuid, created_at timestamptz default now());
-    create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role);
+    create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role, permissions jsonb);
     create table public.profiles (id uuid primary key default gen_random_uuid(), user_id uuid, display_name text);
     create table public.customers (id uuid primary key default gen_random_uuid(), name text, phone text, store_id uuid, created_at timestamptz default now());
     create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid, order_number serial, customer_id uuid,
@@ -132,6 +133,7 @@ beforeAll(async () => {
   await db.exec(`alter table public.profiles add column phone text;`);
   await db.exec(DISPATCH);
   await db.exec(DISPATCH_SVC);
+  await db.exec(MULTI_STORE);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -755,7 +757,7 @@ describe("CRM — códigos de anúncio e investimento", () => {
       expect(await errorOf(`insert into crm_ad_codes (store_id, code, campaign_name) values ($1, 'X11', 'x')`, [A])).not.toBeNull();
     });
     await db.query(`insert into crm_campaign_spend (store_id, campaign, period_start, period_end, amount) values ($1, 'Tela Novembro', '2026-11-01', '2026-11-30', 3000)`, [A]);
-    const r = await asUser(U1, () => one(`select * from crm_campaign_spend_report($1, '2026-11-01', '2026-11-10')`, [A]));
+    const r = await asUser(ADM, () => one(`select * from crm_campaign_spend_report($1, '2026-11-01', '2026-11-10')`, [A]));
     expect(r).toMatchObject({ campaign: "Tela Novembro" });
     expect(Number(r.spend)).toBe(1000);
     const rows = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where source = 'Anúncio (código)'`, [A]));
@@ -971,5 +973,40 @@ describe("CRM — distribuição com aviso no WhatsApp", () => {
     await db.query(`select crm_ai_handoff($1, 'iPhone 13', 'Quer iPhone 13', 'warm', 'device', null)`, [sale]);
     expect(await active(sale)).toMatchObject({ user_id: U1, queue: "sales" });
     await db.query(`update crm_automation_settings set dispatch_enabled = false where store_id = $1`, [A]);
+  });
+});
+
+describe("CRM — duas lojas (permissão CRM)", () => {
+  it("sem a permissão CRM, o vendedor continua só na própria loja", async () => {
+    const convA = await val<number>(`select count(*)::int from crm_conversations where store_id = $1`, [A]);
+    expect(convA).toBeGreaterThan(0);
+    expect(await asUser(U2, () => val(`select count(*)::int from crm_conversations where store_id = $1`, [A]))).toBe(0);
+    expect(await asUser(U2, () => val(`select crm_is_member($1)`, [A]))).toBe(false);
+  });
+
+  it("com a permissão CRM, vê e atende as conversas das duas lojas", async () => {
+    await db.query(`update user_roles set permissions = '{"leads": true}' where user_id = $1`, [U2]);
+    const convA = await val<number>(`select count(*)::int from crm_conversations where store_id = $1`, [A]);
+    expect(await asUser(U2, () => val(`select count(*)::int from crm_conversations where store_id = $1`, [A]))).toBe(convA);
+    expect(await asUser(U2, () => val(`select crm_is_member($1)`, [A]))).toBe(true);
+    // aparece na equipe da outra loja (para receber a conversa)
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_team($1) where user_id = $2`, [A, U2]))).toBe(1);
+    // mas não altera configurações da outra loja
+    expect(await asUser(U2, () => errorOf(`insert into crm_pipelines (store_id, name, kind) values ($1, 'X', 'sales')`, [A]))).toMatch(/row-level security/);
+  });
+
+  it("regra das Edge Functions igual à do banco", async () => {
+    expect(await val(`select crm_can_access($1, $2)`, [U2, A])).toBe(true);
+    expect(await val(`select crm_can_access($1, $2)`, [U1, B])).toBe(false);
+    expect(await val(`select crm_can_access($1, $2)`, [ADM, B])).toBe(true);
+    expect(await val(`select crm_can_access(null, $1)`, [A])).toBe(false);
+    expect(await asUser(U1, () => errorOf(`select crm_can_access($1, $2)`, [U1, B]))).toMatch(/permission denied/);
+    await db.query(`update user_roles set permissions = null where user_id = $1`, [U2]);
+  });
+
+  it("gasto com campanhas só a gerência lê", async () => {
+    await db.query(`insert into crm_campaign_spend (store_id, campaign, period_start, period_end, amount) values ($1, 'Teste', current_date, current_date, 10)`, [A]);
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_campaign_spend`))).toBe(0);
+    expect(await asUser(ADM, () => val(`select count(*)::int from crm_campaign_spend`))).toBeGreaterThan(0);
   });
 });

@@ -221,6 +221,7 @@ Esta seção serve como memória persistente de features implementadas, bugs cor
 | 17/11/2026 | `Feature` | `whatsapp-webhook`, `_shared/staff-assistant*`, `20261117010000_staff_assistant.sql` | **Assistente da equipe no WhatsApp da loja:** relatório do dia e venda de acessórios no PDV com confirmação (ver seção 13). |
 | 17/11/2026 | `Security` | `whatsapp-financial-assistant` | Assistente financeiro do dono religado com segredo obrigatório, sem fallback para o "primeiro perfil" e sem log do corpo da mensagem. |
 | 17/11/2026 | `Security` / `Cleanup` | `AppLayout.tsx`, `Equipe.tsx`, `modules/crm` | **Permissão do CRM:** menu e rotas `/crm/*` exigem a permissão `leads` (rótulo "CRM" em Equipe); admin sempre entra; sem permissão a tela mostra "Sem acesso ao CRM". **Tabelas `leads`, `lead_messages`, `lead_responses` apagadas** com autorização do dono (`20261117000000_drop_legacy_leads.sql`); cópia JSON entregue ao dono. RLS das tabelas `crm_*` continua por loja (não checa a permissão). |
+| 17/11/2026 | `Feature` / `Security` | `20261118000000_crm_multi_store.sql`, `_shared/http.ts`, `modules/crm` | **CRM com duas lojas:** `crm_is_member` = membro da loja **ou** admin **ou** permissão CRM (`leads`) → quem atende vê as conversas de todas as lojas (vendas/caixa/estoque seguem por `member_stores`). `crm_can_access(user, store)` é a mesma regra para as Edge Functions (`requireMember`). `crm_team` lista membros da loja + todos com CRM. Gasto com campanhas só gerência lê. Abas **Relatórios** e **Configurações** só para admin (`crmTabVisible`). |
 
 
 ---

@@ -9,3 +9,15 @@ export function crmAccess(role: string | null, permissions: Record<string, boole
   if (role === "admin") return "allowed";
   return permissions?.[CRM_PERMISSION] === true ? "allowed" : "denied";
 }
+
+/** Abas do CRM que só o admin vê (Relatórios e Configurações). */
+export const CRM_ADMIN_ONLY_PATHS = ["/crm/relatorios", "/crm/config"] as const;
+
+export function crmIsAdmin(role: string | null): boolean {
+  return role === "admin";
+}
+
+/** A aba aparece para este papel? (enquanto o perfil carrega, esconde as do admin) */
+export function crmTabVisible(path: string, role: string | null): boolean {
+  return crmIsAdmin(role) || !(CRM_ADMIN_ONLY_PATHS as readonly string[]).includes(path);
+}
