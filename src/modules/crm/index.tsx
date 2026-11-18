@@ -6,6 +6,7 @@ import { Lock, MessagesSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { CrmNav } from "./components/shared/CrmNav";
 import { StoreFilter } from "./components/shared/StoreTag";
+import { PushToggle } from "./components/shared/PushToggle";
 import { crmAccess, crmIsAdmin } from "./lib/access";
 
 const InboxPage = lazy(() => import("./pages/InboxPage"));
@@ -49,7 +50,8 @@ export default function CrmModule() {
         <div className="flex items-center gap-2">
           <MessagesSquare className="hidden h-5 w-5 text-primary sm:block" aria-hidden="true" />
           <h1 className="hidden font-display text-lg font-bold tracking-tight sm:block md:text-xl">CRM</h1>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <PushToggle />
             <StoreFilter />
           </div>
         </div>

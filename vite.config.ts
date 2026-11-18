@@ -19,6 +19,8 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallbackDenylist: [/^\/~oauth/],
+        // avisos do CRM no celular (push + toque abre a conversa)
+        importScripts: ["crm-push-sw.js"],
       },
     }),
   ].filter(Boolean),

@@ -7,6 +7,7 @@ import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/
 import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
 import { tagConversation } from "../_shared/ai-tagger.ts"
+import { notifyInbound } from "../_shared/push.ts"
 import { base64ToBytes, transcribeAudio, transcribeMessage } from "../_shared/transcribe.ts"
 import { findStaff, handleStaffMessage } from "../_shared/staff-assistant.ts"
 import { checkWebhookAuth } from "./auth.ts"
@@ -253,7 +254,9 @@ async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload
     const tagging = opts.replay ? Promise.resolve() : transcription
       .then(() => tagConversation(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }))
       .then((r) => { if (r.status === 'error') console.error('[WhatsApp Webhook] etiquetas:', r.error) })
-    if (rt?.waitUntil) { background(photo); background(agent); background(tagging) } else await Promise.all([photo, agent, transcription, tagging])
+    // aviso no celular de quem atende (mensagem antiga da fila do @lid não avisa)
+    const push = opts.replay ? Promise.resolve() : notifyInbound(admin, crm.conversation_id)
+    if (rt?.waitUntil) { background(photo); background(agent); background(tagging); background(push) } else await Promise.all([photo, agent, transcription, tagging, push])
   }
 
   if (crmError) return { body: { error: crmError.message }, status: 500 }

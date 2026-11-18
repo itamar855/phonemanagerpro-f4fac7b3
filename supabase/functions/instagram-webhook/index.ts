@@ -8,6 +8,7 @@ import { adminClient, corsHeaders, json } from "../_shared/http.ts";
 import { igProfile, loadInstagramAccount, validMetaSignature, type InstagramAccount } from "../_shared/instagram.ts";
 import { safeEqual } from "../whatsapp-webhook/auth.ts";
 import { tagConversation } from "../_shared/ai-tagger.ts";
+import { notifyInbound } from "../_shared/push.ts";
 
 const rt = (globalThis as any).EdgeRuntime;
 const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p);
@@ -90,8 +91,9 @@ async function handleEvent(admin: SupabaseClient, acct: InstagramAccount, ev: an
     p_created_at: ev.timestamp ? new Date(Number(ev.timestamp)).toISOString() : null,
   });
   if (error) console.error("[IG Webhook] ingest:", error.message);
-  // mensagem nova do cliente: a IA etiqueta o lead em segundo plano
+  // mensagem nova do cliente: aviso no celular e a IA etiqueta o lead, em segundo plano
   if (!echo && crm?.conversation_id && !crm.duplicate && !crm.ignored) {
+    background(notifyInbound(admin, crm.conversation_id));
     background(tagConversation(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }));
   }
 }
