@@ -129,6 +129,12 @@ export function evolution(cfg: EvolutionConfig) {
       const url = r.data?.profilePictureUrl ?? r.data?.picture ?? null;
       return typeof url === "string" && /^https:\/\//.test(url) ? url : null;
     },
+    /** Contatos da instância filtrados (ex.: { remoteJid: "123@lid" }); [] se a Evolution falhar. */
+    async findContacts(where: Record<string, unknown>): Promise<any[]> {
+      const r = await call("POST", `/chat/findContacts/${instance}`, { where }, 6000);
+      if (!r.ok) return [];
+      return Array.isArray(r.data) ? r.data : r.data ? [r.data] : [];
+    },
     async mediaBase64(messageId: string): Promise<string | undefined> {
       const r = await call("POST", `/chat/getBase64FromMediaMessage/${instance}`, { message: { key: { id: messageId } }, convertToMp4: false }, 20000);
       if (!r.ok) return undefined;
