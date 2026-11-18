@@ -3,6 +3,7 @@ import { BarChart3, Columns3, Inbox, ListTodo, Settings2, Users } from "lucide-r
 import { cn } from "@/lib/utils";
 import { useCrmContext } from "../../hooks/useInbox";
 import { useTaskCounts } from "../../hooks/useTasks";
+import { crmTabVisible } from "../../lib/access";
 
 const TABS = [
   { to: "/crm/inbox", label: "Caixa de Entrada", short: "Conversas", icon: Inbox },
@@ -14,20 +15,22 @@ const TABS = [
 ];
 
 export function CrmNav() {
-  const { storeId } = useCrmContext();
+  const { storeId, userRole } = useCrmContext();
+  const tabs = TABS.filter((t) => crmTabVisible(t.to, userRole));
   const { data: counts } = useTaskCounts(storeId);
   const dueToday = counts?.today ?? 0;
   const late = (counts?.overdue ?? 0) > 0;
 
   return (
-    <nav aria-label="Seções do CRM" className="grid grid-cols-6 gap-0.5 sm:-mx-1 sm:flex sm:gap-1 sm:overflow-x-auto sm:px-1 sm:[scrollbar-width:none]">
-      {TABS.map(({ to, label, short, icon: Icon }) => (
+    <nav aria-label="Seções do CRM" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      className="grid gap-0.5 sm:-mx-1 sm:flex sm:gap-1 sm:overflow-x-auto sm:px-1 sm:[scrollbar-width:none]">
+      {tabs.map(({ to, label, short, icon: Icon }) => (
         <NavLink
           key={to}
           to={to}
           className={({ isActive }) =>
             cn(
-              // celular: barra de app (ícone em cima, nome embaixo, 6 colunas iguais)
+              // celular: barra de app (ícone em cima, nome embaixo, colunas iguais)
               "relative flex min-h-[48px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-0.5 text-[10.5px] font-medium leading-tight transition-colors duration-150",
               "sm:inline-flex sm:min-h-[40px] sm:shrink-0 sm:flex-row sm:gap-2 sm:px-3 sm:text-sm",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

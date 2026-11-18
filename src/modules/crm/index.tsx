@@ -5,7 +5,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Lock, MessagesSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { CrmNav } from "./components/shared/CrmNav";
-import { crmAccess } from "./lib/access";
+import { crmAccess, crmIsAdmin } from "./lib/access";
 
 const InboxPage = lazy(() => import("./pages/InboxPage"));
 const PipelinePage = lazy(() => import("./pages/PipelinePage"));
@@ -37,6 +37,7 @@ function NoAccess() {
 export default function CrmModule() {
   const { userRole, userPermissions } = useAuth();
   const access = crmAccess(userRole, userPermissions);
+  const isAdmin = crmIsAdmin(userRole);
   if (access === "loading") return <PageFallback />;
   if (access === "denied") return <NoAccess />;
 
@@ -60,8 +61,9 @@ export default function CrmModule() {
             <Route path="contatos" element={<ContactsPage />} />
             <Route path="contatos/:contactId" element={<ContactsPage />} />
             <Route path="tarefas" element={<TasksPage />} />
-            <Route path="relatorios" element={<ReportsPage />} />
-            <Route path="config" element={<SettingsPage />} />
+            {/* Relatórios e Configurações só do admin; os demais voltam para a caixa de entrada */}
+            <Route path="relatorios" element={isAdmin ? <ReportsPage /> : <Navigate to="/crm/inbox" replace />} />
+            <Route path="config" element={isAdmin ? <SettingsPage /> : <Navigate to="/crm/inbox" replace />} />
             <Route path="*" element={<Navigate to="inbox" replace />} />
           </Routes>
         </Suspense>
