@@ -11,6 +11,7 @@ import { formatPhone } from "../../lib/phone";
 import { shortTime } from "../../lib/format";
 import type { CrmConversationWithContact } from "../../lib/types";
 import { EmptyState } from "../shared/EmptyState";
+import { StoreTag } from "../shared/StoreTag";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { ChannelIcon } from "../shared/ChannelIcon";
 import { Button } from "@/components/ui/button";
@@ -190,8 +191,11 @@ function ConversationRow({ c, selected, onSelect }: { c: CrmConversationWithCont
       <ContactAvatar name={c.contact.name} avatarUrl={c.contact.avatar_url} channel={c.channel} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("truncate text-sm", unread ? "font-semibold text-foreground" : "font-medium text-foreground/90")}>
-            {c.contact.name}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className={cn("truncate text-sm", unread ? "font-semibold text-foreground" : "font-medium text-foreground/90")}>
+              {c.contact.name}
+            </span>
+            <StoreTag storeId={c.store_id} />
           </span>
           <span className={cn("shrink-0 text-[11px] tabular-nums", unread ? "font-semibold text-primary" : "text-muted-foreground")}>
             {shortTime(c.last_message_at)}

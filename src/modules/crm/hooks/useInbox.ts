@@ -7,6 +7,8 @@ import {
   type ConversationQuery,
 } from "../api/inbox";
 import type { CrmMessage } from "../lib/types";
+import { ALL } from "../lib/stores";
+import { useCrmStoreFilter, useCrmStores } from "./useCrmStores";
 
 export const crmKeys = {
   all: ["crm"] as const,
@@ -20,10 +22,15 @@ export const crmKeys = {
   channel: (storeId: string | null) => ["crm", "channel", storeId] as const,
 };
 
-/** Loja ativa e usuário, no formato que o CRM usa. */
+/**
+ * Loja do CRM e usuário. A loja vem do filtro próprio do CRM (Todas · cada loja), não do seletor
+ * geral: quem tem a permissão CRM atende as conversas de todas as lojas. null = todas.
+ */
 export function useCrmContext() {
-  const { activeStoreId, user, userRole, userStoreIds } = useAuth();
-  const storeId = activeStoreId && activeStoreId !== "all" ? activeStoreId : null;
+  const { user, userRole, userStoreIds } = useAuth();
+  const { stores } = useCrmStores();
+  const filter = useCrmStoreFilter(stores);
+  const storeId = filter !== ALL ? filter : null;
   // Loja para criar coisas novas: a ativa ou, na visão "todas", a primeira do usuário
   const writeStoreId = storeId ?? userStoreIds[0] ?? null;
   return { storeId, writeStoreId, userId: user?.id ?? null, userRole };
