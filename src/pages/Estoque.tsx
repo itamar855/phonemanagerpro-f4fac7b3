@@ -30,6 +30,8 @@ import { ProductTransferDialog } from "@/components/features/estoque/ProductTran
 import { ProductEditDialog } from "@/components/features/estoque/ProductEditDialog";
 import { ProductDeleteDialog } from "@/components/features/estoque/ProductDeleteDialog";
 import { AccessoryModal } from "@/components/features/estoque/AccessoryModal";
+import { EstoqueConsulta } from "@/components/features/estoque/EstoqueConsulta";
+import { isConsultOnly } from "@/components/features/estoque/consultaRules";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela",
@@ -85,7 +87,9 @@ type Accessory = {
 };
 
 const Estoque = () => {
-  const { user, userRole, activeStoreId, setActiveStoreId } = useAuth();
+  const { user, userRole, userStoreIds, activeStoreId, setActiveStoreId } = useAuth();
+  // funcionário pode CONSULTAR o estoque de outra loja (só leitura); null = a própria loja
+  const [consultStoreId, setConsultStoreId] = useState<string | null>(null);
   const [products, setProducts] = useState<Tables<"products">[]>([]);
   const [accessories, setAccessories] = useState<Accessory[]>([]);
   const [stores, setStores] = useState<Tables<"stores">[]>([]);
@@ -846,8 +850,31 @@ const Estoque = () => {
             </Select>
           </div>
         )}
+        {userRole !== "admin" && stores.length > 1 && activeStoreId && (
+          <div className="flex items-center gap-2">
+            <Store className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Select value={consultStoreId ?? activeStoreId} onValueChange={(v) => setConsultStoreId(v === activeStoreId ? null : v)}>
+              <SelectTrigger className="h-9 w-[220px]" aria-label="Ver estoque da loja">
+                <SelectValue placeholder="Loja" />
+              </SelectTrigger>
+              <SelectContent>
+                {stores.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}{isConsultOnly(s.id, userStoreIds, false) ? " (só consulta)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
+      {consultStoreId && isConsultOnly(consultStoreId, userStoreIds, userRole === "admin") ? (
+        <EstoqueConsulta
+          storeId={consultStoreId}
+          storeName={(stores.find((s) => s.id === consultStoreId)?.name ?? "outra loja").replace(/^.*\(([^)]+)\)\s*$/, "$1")}
+        />
+      ) : (<>
       {/* Alertas */}
       {(lowStockStores.length > 0 || lowStockAcc.length > 0) && (
         <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 overflow-hidden">
@@ -1015,6 +1042,7 @@ const Estoque = () => {
           />
         </TabsContent>
       </Tabs>
+      </>)}
 
       {/* Dialog Acessório */}
       <AccessoryModal
