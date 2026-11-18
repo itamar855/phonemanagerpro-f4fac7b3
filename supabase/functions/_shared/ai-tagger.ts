@@ -51,7 +51,8 @@ export async function tagConversation(admin: any, opts: { conversationId: string
       turns, schema: TAGGING_SCHEMA, model: settings?.model ?? null, timeoutMs: 15_000,
     });
     const d = parseTagging(llm.text, available);
-    const tags = mergeTags(currentTags, d.tags);
+    // fornecedor: só o tipo; nada de temperatura/interesse
+    const tags = d.lead_kind === "fornecedor" || contact.lead_kind === "fornecedor" ? currentTags : mergeTags(currentTags, d.tags);
     const leadKind = contact.lead_kind ?? d.lead_kind; // tipo marcado pela equipe ou pelo funil não é desfeito
     const changed = !sameTags(tags, currentTags) || leadKind !== (contact.lead_kind ?? null);
     const patch: Record<string, unknown> = { ai_tagged_at: new Date().toISOString() };

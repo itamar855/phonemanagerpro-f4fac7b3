@@ -27,7 +27,7 @@ export interface CrmContact {
   origin_channel: OriginChannel;
   handoff_code: string | null;
   tags: string[];
-  lead_kind?: "assistencia" | "venda" | null;
+  lead_kind?: "assistencia" | "venda" | "fornecedor" | null;
   ignored: boolean;
   ignored_reason: string | null;
   notes: string | null;

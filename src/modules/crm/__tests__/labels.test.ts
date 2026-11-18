@@ -7,6 +7,8 @@ describe("etiquetas do lead", () => {
     expect(leadKinds({ lead_kind: "assistencia" }).map((k) => k.label)).toEqual(["Assistência"]);
     expect(leadKinds({ lead_kind: "venda", customer_id: "c1" }).map((k) => k.label)).toEqual(["Venda", "Cliente"]);
     expect(leadKinds({ lead_kind: "outra", customer_id: null }).map((k) => k.label)).toEqual([]);
+    // fornecedor com cadastro de cliente: mostra só Fornecedor
+    expect(leadKinds({ lead_kind: "fornecedor", customer_id: "c1" }).map((k) => k.label)).toEqual(["Fornecedor"]);
   });
 
   it("responsável: Você, primeiro nome, Colega ou sem responsável", () => {

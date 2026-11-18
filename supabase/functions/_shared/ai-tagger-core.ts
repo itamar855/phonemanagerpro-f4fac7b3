@@ -1,7 +1,7 @@
 // Parte pura da IA que etiqueta o lead (sem rede nem banco): prompt, leitura da resposta e junção das etiquetas.
 // Usada pelo ai-tagger.ts (Deno) e testada no Vitest.
 
-export type LeadKind = "assistencia" | "venda";
+export type LeadKind = "assistencia" | "venda" | "fornecedor";
 
 /** Etiquetas de temperatura: o lead tem no máximo uma (a nova troca a antiga). */
 export const TEMPERATURE_TAGS = ["quente", "morno", "frio"];
@@ -11,7 +11,7 @@ export interface TagDecision { lead_kind: LeadKind | null; tags: string[] }
 export const TAGGING_SCHEMA = {
   type: "OBJECT",
   properties: {
-    lead_kind: { type: "STRING", enum: ["assistencia", "venda", "desconhecido"] },
+    lead_kind: { type: "STRING", enum: ["assistencia", "venda", "fornecedor", "desconhecido"] },
     tags: { type: "ARRAY", items: { type: "STRING" } },
   },
   required: ["lead_kind", "tags"],
@@ -23,7 +23,8 @@ export function taggingSystemPrompt(storeName: string, available: string[], curr
   return [
     `Você classifica conversas de WhatsApp/Instagram da loja de celulares "${storeName}" (vende aparelhos e acessórios e faz assistência técnica).`,
     "Leia a conversa e devolva JSON com:",
-    `- lead_kind: "assistencia" se a pessoa quer conserto/reparo/orçamento de reparo; "venda" se quer comprar aparelho ou acessório; "desconhecido" se ainda não dá para saber.`,
+    `- lead_kind: "assistencia" se a pessoa quer conserto/reparo/orçamento de reparo; "venda" se quer comprar aparelho ou acessório; "fornecedor" se é empresa ou vendedor que oferece/vende peças, aparelhos ou produtos PARA a loja (atacado, distribuidora, representante, laboratório parceiro); "desconhecido" se ainda não dá para saber.`,
+    `- Fornecedor não leva etiqueta de temperatura nem de interesse de compra.`,
     `- tags: as etiquetas que se aplicam, escolhidas SOMENTE desta lista (escreva exatamente igual): ${available.map((t) => `"${t}"`).join(", ")}.`,
     "Regras das etiquetas:",
     "- Temperatura (use no máximo uma): Quente = quer fechar logo, pergunta preço/forma de pagamento/disponibilidade para hoje; Morno = interessado mas sem pressa; Frio = só curiosidade, sumiu ou disse que vai pensar.",
@@ -42,7 +43,7 @@ export function parseTagging(raw: unknown, available: string[]): TagDecision {
     try { o = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { o = null; }
   } else if (raw && typeof raw === "object") o = raw as Record<string, unknown>;
   if (!o) return { lead_kind: null, tags: [] };
-  const lead_kind = o.lead_kind === "assistencia" || o.lead_kind === "venda" ? o.lead_kind : null;
+  const lead_kind = o.lead_kind === "assistencia" || o.lead_kind === "venda" || o.lead_kind === "fornecedor" ? o.lead_kind : null;
   const byNorm = new Map(available.map((t) => [norm(t), t]));
   const tags: string[] = [];
   for (const t of Array.isArray(o.tags) ? o.tags : []) {

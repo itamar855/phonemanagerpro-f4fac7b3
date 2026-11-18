@@ -1,6 +1,6 @@
 // Etiquetas do lead: cores das etiquetas, tipo do lead (Assistência / Venda / Cliente) e nome do responsável.
 
-export type LeadKind = "assistencia" | "venda";
+export type LeadKind = "assistencia" | "venda" | "fornecedor";
 
 /** Chave de cor gravada em crm_tags.color → classes com texto legível no claro e no escuro. */
 export const TAG_TONES: Record<string, string> = {
@@ -39,21 +39,23 @@ export function tagColorMap(tags: CrmTag[]): Map<string, string | null> {
   return new Map(tags.map((t) => [tagKey(t.store_id, t.name), t.color]));
 }
 
-export type KindId = "assistencia" | "venda" | "cliente";
+export type KindId = "assistencia" | "venda" | "fornecedor" | "cliente";
 export interface KindChip { id: KindId; label: string; tone: string }
 
 export const KIND_CHIPS: Record<KindId, KindChip> = {
   // tipo do lead = contorno + ícone; etiquetas = preenchidas. Assim não se confundem mesmo com cores parecidas.
   assistencia: { id: "assistencia", label: "Assistência", tone: "border border-orange-500/50 text-orange-700 dark:text-orange-300" },
   venda: { id: "venda", label: "Venda", tone: "border border-sky-500/50 text-sky-700 dark:text-sky-300" },
+  fornecedor: { id: "fornecedor", label: "Fornecedor", tone: "border border-slate-500/60 bg-slate-500/10 text-slate-700 dark:text-slate-200" },
   cliente: { id: "cliente", label: "Cliente", tone: "border border-emerald-500/50 text-emerald-700 dark:text-emerald-300" },
 };
 
-/** Tipo do lead: Assistência ou Venda (pelo funil / IA / equipe) e Cliente (já tem cadastro). Pode ter dois. */
+/** Tipo do lead: Assistência, Venda ou Fornecedor (funil / IA / equipe) e Cliente (já tem cadastro). Pode ter dois. */
 export function leadKinds(contact: { lead_kind?: string | null; customer_id?: string | null }): KindChip[] {
   const out: KindChip[] = [];
-  if (contact.lead_kind === "assistencia" || contact.lead_kind === "venda") out.push(KIND_CHIPS[contact.lead_kind]);
-  if (contact.customer_id) out.push(KIND_CHIPS.cliente);
+  const k = contact.lead_kind;
+  if (k === "assistencia" || k === "venda" || k === "fornecedor") out.push(KIND_CHIPS[k]);
+  if (contact.customer_id && k !== "fornecedor") out.push(KIND_CHIPS.cliente);
   return out;
 }
 
