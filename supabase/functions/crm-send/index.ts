@@ -34,6 +34,10 @@ serve(async (req) => {
       .maybeSingle();
     if (!conv) throw new HttpError(404, "Conversa não encontrada.");
     await requireMember(admin, user.id, conv.store_id);
+    // na vez de outra pessoa (oferta ativa da fila), só ela ou o admin respondem
+    const { data: blocked, error: turnErr } = await admin.rpc("crm_turn_blocker", { p_conversation_id: conv.id, p_user: user.id });
+    if (turnErr) throw new HttpError(500, "Não foi possível conferir o responsável.");
+    if (blocked) throw new HttpError(409, String(blocked));
     const contact: any = Array.isArray(conv.contact) ? conv.contact[0] : conv.contact;
 
     if (mediaPath && !mediaPath.startsWith(`${conv.store_id}/`)) throw new HttpError(403, "Arquivo de outra loja.");
