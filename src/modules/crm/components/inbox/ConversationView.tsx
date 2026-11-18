@@ -17,6 +17,7 @@ import { formatPhone } from "../../lib/phone";
 import type { CrmMessage } from "../../lib/types";
 import { CHANNEL_LABEL } from "../../lib/constants";
 import { ContactAvatar } from "../shared/ContactAvatar";
+import { StoreTag } from "../shared/StoreTag";
 import { EmptyState } from "../shared/EmptyState";
 import { Composer, type ComposerMode } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
@@ -153,7 +154,10 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
         </Button>
         <ContactAvatar name={conv.contact.name} avatarUrl={conv.contact.avatar_url} channel={conv.channel} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{conv.contact.name}</p>
+          <p className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-semibold">{conv.contact.name}</span>
+            <StoreTag storeId={conv.store_id} />
+          </p>
           <p className="truncate text-xs text-muted-foreground">
             {CHANNEL_LABEL[conv.channel]} · {subtitle}
           </p>

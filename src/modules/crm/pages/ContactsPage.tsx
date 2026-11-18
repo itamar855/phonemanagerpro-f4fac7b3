@@ -10,6 +10,7 @@ import { CONTACTS_PAGE, listContacts, type ContactFilter } from "../api/pipeline
 import { ContactDeals } from "../components/contact/ContactDeals";
 import { ContactPanel } from "../components/contact/ContactPanel";
 import { ContactAvatar } from "../components/shared/ContactAvatar";
+import { StoreTag } from "../components/shared/StoreTag";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext } from "../hooks/useInbox";
 import { useAvatarRefresh } from "../hooks/useAvatarRefresh";
@@ -83,7 +84,10 @@ function ContactList() {
                   className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors duration-150 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none">
                   <ContactAvatar name={c.name} avatarUrl={c.avatar_url} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{c.name}</p>
+                    <p className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-medium">{c.name}</span>
+                      <StoreTag storeId={c.store_id} />
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {c.phone ? formatPhone(c.phone) : c.instagram_username ? `@${c.instagram_username}` : "Sem telefone"} · {ORIGIN_LABEL[c.origin_channel]}
                       {c.customer_id ? " · Cliente" : ""}
