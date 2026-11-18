@@ -22,6 +22,13 @@ import { CHANNEL_LABEL, ORIGIN_LABEL } from "../../lib/constants";
 import { ChannelIcon } from "../shared/ChannelIcon";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { ContactDeals } from "./ContactDeals";
+import { useCrmTags } from "../../hooks/useCrmTags";
+import { KIND_CHIPS, TAG_DOTS, tagTone } from "../../lib/labels";
+
+const KIND_OPTIONS = [
+  { value: "assistencia", label: KIND_CHIPS.assistencia.label },
+  { value: "venda", label: KIND_CHIPS.venda.label },
+] as const;
 
 // Mesmos códigos de status usados em Ordens de Serviço (src/utils/osStatus.ts)
 const OS_STATUS: Record<string, string> = {
@@ -49,6 +56,7 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
   const [notes, setNotes] = useState("");
   const [tag, setTag] = useState("");
   const [saving, setSaving] = useState(false);
+  const { tags: storeTags, colorOf } = useCrmTags();
 
   useEffect(() => {
     if (data) { setName(data.contact.name); setNotes(data.contact.notes ?? ""); }
@@ -80,6 +88,8 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
       setSaving(false);
     }
   }
+
+  const ready = storeTags.filter((t) => t.store_id === contact.store_id && !contact.tags.some((x) => x.toLowerCase() === t.name.toLowerCase()));
 
   const addTag = () => {
     const t = tag.trim().toLowerCase();
@@ -181,16 +191,52 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
 
       <section aria-labelledby="ct-tags" className="space-y-1.5">
         <h3 id="ct-tags" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Etiquetas</h3>
+        <div role="group" aria-label="Tipo do lead" className="flex gap-1.5">
+          {KIND_OPTIONS.map((k) => {
+            const on = contact.lead_kind === k.value;
+            return (
+              <Button
+                key={k.value}
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-pressed={on}
+                disabled={saving}
+                className={cn("h-8 flex-1", on && KIND_CHIPS[k.value].tone, on && "border-current bg-muted/40")}
+                onClick={() => save({ lead_kind: on ? null : k.value })}
+              >
+                {k.label}
+              </Button>
+            );
+          })}
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {contact.tags.map((t) => (
-            <span key={t} className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2 pr-1 text-xs text-primary">
+            <span key={t} className={cn("inline-flex items-center gap-1 rounded-full py-0.5 pl-2 pr-1 text-xs font-medium", tagTone(colorOf(contact.store_id, t)))}>
               {t}
-              <button onClick={() => save({ tags: contact.tags.filter((x) => x !== t) })} aria-label={`Remover etiqueta ${t}`} className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-primary/20">
+              <button onClick={() => save({ tags: contact.tags.filter((x) => x !== t) })} aria-label={`Remover etiqueta ${t}`} className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-foreground/10">
                 <X className="h-3 w-3" />
               </button>
             </span>
           ))}
+          {!contact.tags.length && <span className="text-xs text-muted-foreground">Nenhuma etiqueta. A IA marca sozinha conforme a conversa.</span>}
         </div>
+        {ready.length > 0 && (
+          <div className="flex flex-wrap gap-1" aria-label="Etiquetas prontas">
+            {ready.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                disabled={saving}
+                onClick={() => save({ tags: [...contact.tags, t.name] })}
+                className="inline-flex min-h-[28px] items-center gap-1.5 rounded-full border border-border/60 px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <span className={cn("h-2 w-2 rounded-full", TAG_DOTS[t.color ?? ""] ?? "bg-muted-foreground")} aria-hidden="true" />
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )}
         <form onSubmit={(e) => { e.preventDefault(); addTag(); }} className="flex gap-1.5">
           <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Nova etiqueta" aria-label="Nova etiqueta" className="h-9" maxLength={30} />
           <Button type="submit" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label="Adicionar etiqueta"><Plus className="h-4 w-4" /></Button>

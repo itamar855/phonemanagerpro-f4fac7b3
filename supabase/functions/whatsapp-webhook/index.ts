@@ -6,6 +6,7 @@ import { adminClient, corsHeaders, json } from "../_shared/http.ts"
 import { evolution, loadWhatsAppConfig, type EvolutionConfig } from "../_shared/evolution.ts"
 import { refreshAvatars } from "../_shared/contact-avatar.ts"
 import { runAgent } from "../_shared/ai-agent.ts"
+import { tagConversation } from "../_shared/ai-tagger.ts"
 import { base64ToBytes, transcribeAudio, transcribeMessage } from "../_shared/transcribe.ts"
 import { findStaff, handleStaffMessage } from "../_shared/staff-assistant.ts"
 import { checkWebhookAuth } from "./auth.ts"
@@ -248,7 +249,11 @@ async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload
     const agent = opts.replay ? transcription : transcription
       .then(() => runAgent(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }))
       .then((r) => { if (r.status !== 'skipped') console.log('[WhatsApp Webhook] IA:', r.status, r.status === 'done' ? r.decision.decision : '') })
-    if (rt?.waitUntil) { background(photo); background(agent) } else await Promise.all([photo, agent, transcription])
+    // IA que etiqueta o lead (tipo + etiquetas prontas): roda mesmo com o atendimento por IA desligado
+    const tagging = opts.replay ? Promise.resolve() : transcription
+      .then(() => tagConversation(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }))
+      .then((r) => { if (r.status === 'error') console.error('[WhatsApp Webhook] etiquetas:', r.error) })
+    if (rt?.waitUntil) { background(photo); background(agent); background(tagging) } else await Promise.all([photo, agent, transcription, tagging])
   }
 
   if (crmError) return { body: { error: crmError.message }, status: 500 }

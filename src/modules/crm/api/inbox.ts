@@ -18,7 +18,7 @@ export interface ConversationQuery {
   userId: string | null;
 }
 
-const CONTACT_FIELDS = "id, name, phone, instagram_username, avatar_url, origin_channel, ignored, customer_id, tags";
+const CONTACT_FIELDS = "id, name, phone, instagram_username, avatar_url, origin_channel, ignored, customer_id, tags, lead_kind";
 
 /** Remove caracteres que quebram o filtro "or" do PostgREST. */
 const safeTerm = (s: string) => s.replace(/[,()*%\\]/g, " ").trim();
@@ -207,7 +207,7 @@ export async function getContactDetail(contactId: string): Promise<ContactDetail
   return { contact: c, customer: (customerRes.data as ContactDetail["customer"]) ?? null, orders, conversations: convRes.data ?? [] };
 }
 
-export async function updateContact(id: string, patch: Partial<Pick<CrmContact, "name" | "tags" | "ignored" | "ignored_reason" | "notes" | "email">>) {
+export async function updateContact(id: string, patch: Partial<Pick<CrmContact, "name" | "tags" | "lead_kind" | "ignored" | "ignored_reason" | "notes" | "email">>) {
   const { error } = await crmDb.from("crm_contacts").update(patch).eq("id", id);
   throwIf(error);
 }

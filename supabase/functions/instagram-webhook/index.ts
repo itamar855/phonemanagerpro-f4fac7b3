@@ -7,6 +7,10 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { adminClient, corsHeaders, json } from "../_shared/http.ts";
 import { igProfile, loadInstagramAccount, validMetaSignature, type InstagramAccount } from "../_shared/instagram.ts";
 import { safeEqual } from "../whatsapp-webhook/auth.ts";
+import { tagConversation } from "../_shared/ai-tagger.ts";
+
+const rt = (globalThis as any).EdgeRuntime;
+const background = (p: Promise<unknown>) => (rt?.waitUntil ? rt.waitUntil(p) : p);
 
 const MAX_MEDIA = 16 * 1024 * 1024;
 const KIND: Record<string, "image" | "audio" | "video" | "document"> = {
@@ -68,7 +72,7 @@ async function handleEvent(admin: SupabaseClient, acct: InstagramAccount, ev: an
     if (!known || known.length === 0) profile = await igProfile(acct.access_token, igsid);
   }
 
-  const { error } = await admin.rpc("crm_ingest_message", {
+  const { data: crm, error } = await admin.rpc("crm_ingest_message", {
     p_store_id: acct.store_id,
     p_channel: "instagram",
     p_direction: echo ? "out" : "in",
@@ -86,6 +90,10 @@ async function handleEvent(admin: SupabaseClient, acct: InstagramAccount, ev: an
     p_created_at: ev.timestamp ? new Date(Number(ev.timestamp)).toISOString() : null,
   });
   if (error) console.error("[IG Webhook] ingest:", error.message);
+  // mensagem nova do cliente: a IA etiqueta o lead em segundo plano
+  if (!echo && crm?.conversation_id && !crm.duplicate && !crm.ignored) {
+    background(tagConversation(admin, { conversationId: crm.conversation_id, triggerMessageId: crm.message_id, debounceMs: 8000 }));
+  }
 }
 
 serve(async (req) => {
