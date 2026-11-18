@@ -16,6 +16,11 @@ describe("IA que etiqueta o lead", () => {
     expect(d).toEqual({ lead_kind: "assistencia", tags: ["Não liga", "Quente"] });
   });
 
+  it("reconhece fornecedor e o prompt explica quando usar", () => {
+    expect(parseTagging('{"lead_kind":"fornecedor","tags":[]}', LIST)).toEqual({ lead_kind: "fornecedor", tags: [] });
+    expect(taggingSystemPrompt("Loja X", LIST, { lead_kind: null, tags: [] })).toMatch(/"fornecedor" se é empresa/);
+  });
+
   it("tipo desconhecido vira null; resposta inválida não etiqueta nada", () => {
     expect(parseTagging('{"lead_kind":"desconhecido","tags":[]}', LIST)).toEqual({ lead_kind: null, tags: [] });
     expect(parseTagging("isso não é json", LIST)).toEqual({ lead_kind: null, tags: [] });

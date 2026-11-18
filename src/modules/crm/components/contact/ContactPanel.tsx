@@ -23,11 +23,15 @@ import { ChannelIcon } from "../shared/ChannelIcon";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { ContactDeals } from "./ContactDeals";
 import { useCrmTags } from "../../hooks/useCrmTags";
+import { createTag } from "../../api/tags";
+import { crmTagsKey } from "../../hooks/useCrmTags";
 import { KIND_CHIPS, TAG_DOTS, tagTone } from "../../lib/labels";
+import { TagColorPicker } from "../shared/TagColorPicker";
 
 const KIND_OPTIONS = [
   { value: "assistencia", label: KIND_CHIPS.assistencia.label },
   { value: "venda", label: KIND_CHIPS.venda.label },
+  { value: "fornecedor", label: KIND_CHIPS.fornecedor.label },
 ] as const;
 
 // Mesmos códigos de status usados em Ordens de Serviço (src/utils/osStatus.ts)
@@ -55,6 +59,7 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [tag, setTag] = useState("");
+  const [tagColor, setTagColor] = useState("blue");
   const [saving, setSaving] = useState(false);
   const { tags: storeTags, colorOf } = useCrmTags();
 
@@ -91,11 +96,24 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
 
   const ready = storeTags.filter((t) => t.store_id === contact.store_id && !contact.tags.some((x) => x.toLowerCase() === t.name.toLowerCase()));
 
-  const addTag = () => {
-    const t = tag.trim().toLowerCase();
-    if (!t || contact.tags.includes(t)) { setTag(""); return; }
-    void save({ tags: [...contact.tags, t] });
+  // etiqueta nova: entra na lista da loja com a cor escolhida (vale para todos os leads e para a IA)
+  const addTag = async () => {
+    const typed = tag.trim();
+    if (!typed) return;
+    const known = storeTags.find((t) => t.store_id === contact.store_id && t.name.toLowerCase() === typed.toLowerCase());
+    const name = known?.name ?? typed;
     setTag("");
+    if (contact.tags.some((x) => x.toLowerCase() === name.toLowerCase())) return;
+    if (!known) {
+      try {
+        await createTag(contact.store_id, name, tagColor);
+        qc.invalidateQueries({ queryKey: crmTagsKey });
+      } catch (e) {
+        toast.error((e as Error).message);
+        return;
+      }
+    }
+    void save({ tags: [...contact.tags, name] });
   };
 
   return (
@@ -202,7 +220,7 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
                 variant="outline"
                 aria-pressed={on}
                 disabled={saving}
-                className={cn("h-8 flex-1", on && KIND_CHIPS[k.value].tone, on && "border-current bg-muted/40")}
+                className={cn("h-8 min-w-0 flex-1 px-2 text-xs", on && KIND_CHIPS[k.value].tone, on && "border-current bg-muted/40")}
                 onClick={() => save({ lead_kind: on ? null : k.value })}
               >
                 {k.label}
@@ -237,7 +255,8 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
             ))}
           </div>
         )}
-        <form onSubmit={(e) => { e.preventDefault(); addTag(); }} className="flex gap-1.5">
+        <form onSubmit={(e) => { e.preventDefault(); void addTag(); }} className="flex gap-1.5">
+          <TagColorPicker compact value={tagColor} onChange={setTagColor} label="Cor da nova etiqueta" />
           <Input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Nova etiqueta" aria-label="Nova etiqueta" className="h-9" maxLength={30} />
           <Button type="submit" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label="Adicionar etiqueta"><Plus className="h-4 w-4" /></Button>
         </form>

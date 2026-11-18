@@ -5,44 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { createTag, deleteTag, tagRecentConversations, updateTag } from "../../api/tags";
 import { crmTagsKey, useCrmTags } from "../../hooks/useCrmTags";
 import { useCrmContext } from "../../hooks/useInbox";
 import { useCrmStores } from "../../hooks/useCrmStores";
-import { TAG_COLOR_KEYS, TAG_DOTS, tagTone, type CrmTag } from "../../lib/labels";
+import { tagTone, type CrmTag } from "../../lib/labels";
 import { EmptyState } from "../shared/EmptyState";
-
-function ColorPicker({ value, onChange, label }: { value: string | null; onChange: (c: string) => void; label: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button type="button" aria-label={label} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/60 hover:bg-muted">
-          <span className={cn("h-4 w-4 rounded-full", TAG_DOTS[value ?? ""] ?? "bg-muted-foreground")} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-2" align="start">
-        <div className="grid grid-cols-6 gap-1.5" role="radiogroup" aria-label="Cor">
-          {TAG_COLOR_KEYS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              role="radio"
-              aria-checked={value === c}
-              aria-label={c}
-              onClick={() => { onChange(c); setOpen(false); }}
-              className={cn("flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted", value === c && "ring-2 ring-ring")}
-            >
-              <span className={cn("h-4 w-4 rounded-full", TAG_DOTS[c])} />
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
+import { TagColorPicker } from "../shared/TagColorPicker";
 
 function TagRow({ tag, onChanged }: { tag: CrmTag; onChanged: () => void }) {
   const [name, setName] = useState(tag.name);
@@ -51,7 +21,7 @@ function TagRow({ tag, onChanged }: { tag: CrmTag; onChanged: () => void }) {
   };
   return (
     <li className="flex items-center gap-2 p-2.5">
-      <ColorPicker value={tag.color} label={`Cor de ${tag.name}`} onChange={(c) => run(() => updateTag(tag.id, { color: c }))} />
+      <TagColorPicker compact value={tag.color} label={`Cor de ${tag.name}`} onChange={(c) => run(() => updateTag(tag.id, { color: c }))} />
       <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
@@ -126,7 +96,7 @@ export function TagsSettingsCard() {
         </Button>
       </div>
       <form onSubmit={add} className="flex items-end gap-2 rounded-xl border border-border/60 bg-card p-3">
-        <ColorPicker value={color} onChange={setColor} label="Cor da nova etiqueta" />
+        <TagColorPicker value={color} onChange={setColor} label="Cor da nova etiqueta" />
         <div className="min-w-0 flex-1 space-y-1.5">
           <Label htmlFor="tag-name">Nova etiqueta</Label>
           <Input id="tag-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Quer parcelar" maxLength={30} required />

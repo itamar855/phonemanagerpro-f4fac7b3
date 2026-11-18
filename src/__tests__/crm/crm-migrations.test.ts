@@ -35,6 +35,7 @@ const MULTI_STORE = read("20261118000000_crm_multi_store.sql");
 const OWNER_GUARD = read("20261118010000_crm_lead_owner_guard.sql");
 const LEAD_LABELS = read("20261119000000_crm_lead_labels.sql");
 const PUSH = read("20261119010000_crm_push.sql");
+const SUPPLIER = read("20261119020000_crm_lead_kind_supplier.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -141,6 +142,7 @@ beforeAll(async () => {
   await db.exec(OWNER_GUARD);
   await db.exec(LEAD_LABELS);
   await db.exec(PUSH);
+  await db.exec(SUPPLIER);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -1192,13 +1194,20 @@ describe("CRM — etiquetas do lead", () => {
     await asUser(U1, () => db.query(`update crm_contacts set lead_kind = 'venda' where id = $1`, [r.contact_id]));
     expect(await val(`select lead_kind from crm_contacts where id = $1`, [r.contact_id])).toBe("venda");
     expect(await errorOf(`update crm_contacts set lead_kind = 'outro' where id = $1`, [r.contact_id])).toMatch(/lead_kind_check/);
+    await asUser(U1, () => db.query(`update crm_contacts set lead_kind = 'fornecedor' where id = $1`, [r.contact_id]));
+    expect(await val(`select lead_kind from crm_contacts where id = $1`, [r.contact_id])).toBe("fornecedor");
   });
 
-  it("vendedor lê e usa as etiquetas, mas só a gerência muda a lista", async () => {
+  it("vendedor usa e cria etiquetas com cor, mas só a gerência altera ou apaga a lista", async () => {
     expect(await asUser(U1, () => val(`select count(*)::int from crm_tags where store_id = $1`, [A]))).toBe(12);
     await asUser(U1, () => db.query(`delete from crm_tags where store_id = $1`, [A]));
     expect(await val(`select count(*)::int from crm_tags where store_id = $1`, [A])).toBe(12);
-    expect(await asUser(U1, () => errorOf(`insert into crm_tags (store_id, name, color) values ($1, 'Minha', 'red')`, [A]))).toMatch(/row-level security/);
+    await asUser(U1, () => db.query(`insert into crm_tags (store_id, name, color) values ($1, 'Quer parcelar', 'cyan')`, [A]));
+    expect(await val(`select color from crm_tags where store_id = $1 and name = 'Quer parcelar'`, [A])).toBe("cyan");
+    await asUser(U1, () => db.query(`update crm_tags set color = 'red' where store_id = $1 and name = 'Quer parcelar'`, [A]));
+    expect(await val(`select color from crm_tags where store_id = $1 and name = 'Quer parcelar'`, [A])).toBe("cyan");
+    expect(await asUser(U1, () => errorOf(`insert into crm_tags (store_id, name, color) values ($1, 'Outra loja', 'red')`, [B]))).toMatch(/row-level security/);
+    await db.query(`delete from crm_tags where name = 'Quer parcelar'`);
     await asUser(ADM, () => db.query(`update crm_tags set color = 'pink' where store_id = $1 and name = 'Frio'`, [A]));
     expect(await val(`select color from crm_tags where store_id = $1 and name = 'Frio'`, [A])).toBe("pink");
   });

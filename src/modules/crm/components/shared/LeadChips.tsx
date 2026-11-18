@@ -1,10 +1,10 @@
-import { BadgeCheck, ShoppingBag, UserRound, Wrench } from "lucide-react";
+import { BadgeCheck, ShoppingBag, Truck, UserRound, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCrmTags } from "../../hooks/useCrmTags";
 import { leadKinds, tagTone, visibleTags, type KindId } from "../../lib/labels";
 
 const chip = "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none";
-const KIND_ICON: Record<KindId, typeof Wrench> = { assistencia: Wrench, venda: ShoppingBag, cliente: BadgeCheck };
+const KIND_ICON: Record<KindId, typeof Wrench> = { assistencia: Wrench, venda: ShoppingBag, fornecedor: Truck, cliente: BadgeCheck };
 
 /** Responsável pelo lead: primeiro nome (ou "Você"); sem responsável fica apagado. */
 export function OwnerChip({ label, className }: { label: string | null; className?: string }) {
