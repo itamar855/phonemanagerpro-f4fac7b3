@@ -30,6 +30,9 @@ const OS_SYNC = read("20261116090000_crm_os_sync.sql");
 const NO_DUP = read("20261116100000_crm_tasks_no_dup.sql");
 const DISPATCH = read("20261116110000_crm_dispatch.sql");
 const DISPATCH_SVC = read("20261116120000_crm_dispatch_service.sql");
+const WATCHDOG = read("20261117020000_whatsapp_watchdog.sql");
+const MULTI_STORE = read("20261118000000_crm_multi_store.sql");
+const OWNER_GUARD = read("20261118010000_crm_lead_owner_guard.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -75,7 +78,7 @@ beforeAll(async () => {
     create type public.app_role as enum ('admin','gerente','vendedor','tecnico','dono');
     create table public.stores (id uuid primary key default gen_random_uuid(), name text, created_at timestamptz default now());
     create table public.member_stores (id uuid primary key default gen_random_uuid(), user_id uuid, store_id uuid, created_at timestamptz default now());
-    create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role);
+    create table public.user_roles (id uuid primary key default gen_random_uuid(), user_id uuid, role public.app_role, permissions jsonb);
     create table public.profiles (id uuid primary key default gen_random_uuid(), user_id uuid, display_name text);
     create table public.customers (id uuid primary key default gen_random_uuid(), name text, phone text, store_id uuid, created_at timestamptz default now());
     create table public.service_orders (id uuid primary key default gen_random_uuid(), store_id uuid, order_number serial, customer_id uuid,
@@ -132,6 +135,8 @@ beforeAll(async () => {
   await db.exec(`alter table public.profiles add column phone text;`);
   await db.exec(DISPATCH);
   await db.exec(DISPATCH_SVC);
+  await db.exec(MULTI_STORE);
+  await db.exec(OWNER_GUARD);
 }, 60_000);
 
 describe("CRM — fundação", () => {
@@ -755,7 +760,7 @@ describe("CRM — códigos de anúncio e investimento", () => {
       expect(await errorOf(`insert into crm_ad_codes (store_id, code, campaign_name) values ($1, 'X11', 'x')`, [A])).not.toBeNull();
     });
     await db.query(`insert into crm_campaign_spend (store_id, campaign, period_start, period_end, amount) values ($1, 'Tela Novembro', '2026-11-01', '2026-11-30', 3000)`, [A]);
-    const r = await asUser(U1, () => one(`select * from crm_campaign_spend_report($1, '2026-11-01', '2026-11-10')`, [A]));
+    const r = await asUser(ADM, () => one(`select * from crm_campaign_spend_report($1, '2026-11-01', '2026-11-10')`, [A]));
     expect(r).toMatchObject({ campaign: "Tela Novembro" });
     expect(Number(r.spend)).toBe(1000);
     const rows = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute') where source = 'Anúncio (código)'`, [A]));
@@ -879,6 +884,12 @@ describe("CRM — distribuição com aviso no WhatsApp", () => {
     await asUser(U2, async () => {
       expect(await errorOf(`select crm_dispatch_accept($1)`, [conv])).toMatch(/Sem acesso/);
     });
+    // a vez é de quem recebeu a oferta: outro vendedor não toma (regra de 18/11); o admin passa para quem quiser
+    const offeredTo = await val<string>(`select assigned_to from crm_conversations where id = $1`, [conv]);
+    if (offeredTo && offeredTo !== U3) {
+      expect(await asUser(U3, () => errorOf(`select crm_dispatch_accept($1)`, [conv]))).toMatch(/Este lead é de/);
+      await asUser(ADM, () => db.query(`update crm_conversations set assigned_to = null where id = $1`, [conv]));
+    }
     await asUser(U3, async () => {
       await db.query(`select crm_dispatch_accept($1)`, [conv]);
       // vendedor vê a fila da própria loja
@@ -935,7 +946,8 @@ describe("CRM — distribuição com aviso no WhatsApp", () => {
     expect(await active(conv)).toBeUndefined();
 
     const conv2 = await handedOff();
-    await asUser(U1, () => db.query(`select crm_dispatch_accept($1)`, [conv2]));
+    const turn = await val<string>(`select assigned_to from crm_conversations where id = $1`, [conv2]); // quem está na vez assume
+    await asUser(turn, () => db.query(`select crm_dispatch_accept($1)`, [conv2]));
     await db.query(`update crm_conversations set handler = 'ai' where id = $1`, [conv2]);
     expect(await val(`select accepted_at from crm_conversations where id = $1`, [conv2])).toBeNull();
     await db.query(`select crm_ai_handoff($1, 'x', 'de novo', 'warm', 'repair', null)`, [conv2]);
@@ -1006,5 +1018,145 @@ describe("WhatsApp — contatos ocultos (@lid)", () => {
     expect(await asUser(ADM, () => errorOf(`select * from crm_lid_map`))).toMatch(/permission denied/);
     expect(await asUser(ADM, () => errorOf(`select * from crm_lid_pending`))).toMatch(/permission denied/);
     expect(await asUser(ADM, () => errorOf(`select crm_lid_remember('${A}', '${LID}', '5587999112233', 'message')`))).toMatch(/permission denied/);
+  });
+});
+
+describe("WhatsApp da loja — vigia do zumbi", () => {
+  it("cria a tabela do último aviso fechada para a tela e acha o celular do admin", async () => {
+    const ADM2 = "00000000-0000-0000-0000-0000000000ae";
+    await db.exec(`
+      create table if not exists public.whatsapp_config (id uuid primary key default gen_random_uuid(), store_id uuid,
+        api_url text not null, api_key text not null, instance_name text not null, is_active boolean default true);
+    `);
+    await db.exec(WATCHDOG);
+    const original = await val<string | null>(`select phone from profiles where user_id = $1`, [ADM]);
+    await db.exec(`
+      insert into auth.users values ('${ADM2}');
+      insert into public.user_roles (user_id, role) values ('${ADM2}', 'admin');
+      insert into public.profiles (user_id, display_name, phone) values ('${ADM2}', 'Outro admin', '(81) 97777-6655');
+      update public.profiles set phone = '(87) 99123-4567' where user_id = '${ADM}';
+    `);
+    // admin da loja vem primeiro; vendedor com celular nunca recebe
+    expect(await val(`select whatsapp_watchdog_admin_phone($1)`, [A])).toBe("5587991234567");
+    await db.query(`update profiles set phone = null where user_id = $1`, [ADM]);
+    expect(await val(`select whatsapp_watchdog_admin_phone($1)`, [A])).toBe("5581977776655");
+
+    const cfg = await val<string>(`insert into whatsapp_config (store_id, api_url, api_key, instance_name) values ($1, 'https://evo', 'k', 'Loja') returning id`, [A]);
+    await db.query(`insert into whatsapp_watchdog (config_id, last_alert_at) values ($1, now())`, [cfg]);
+    expect(await asUser(ADM, () => errorOf(`select * from whatsapp_watchdog`))).toMatch(/permission denied/);
+    expect(await asUser(ADM, () => errorOf(`select whatsapp_watchdog_admin_phone('${A}')`))).toMatch(/permission denied/);
+    await db.query(`delete from whatsapp_config where id = $1`, [cfg]);
+    expect(await val(`select count(*)::int from whatsapp_watchdog`)).toBe(0);
+
+    await db.query(`update profiles set phone = $2 where user_id = $1`, [ADM, original]);
+  });
+});
+
+describe("CRM — duas lojas (permissão CRM)", () => {
+  it("sem a permissão CRM, o vendedor continua só na própria loja", async () => {
+    const convA = await val<number>(`select count(*)::int from crm_conversations where store_id = $1`, [A]);
+    expect(convA).toBeGreaterThan(0);
+    expect(await asUser(U2, () => val(`select count(*)::int from crm_conversations where store_id = $1`, [A]))).toBe(0);
+    expect(await asUser(U2, () => val(`select crm_is_member($1)`, [A]))).toBe(false);
+  });
+
+  it("com a permissão CRM, vê e atende as conversas das duas lojas", async () => {
+    await db.query(`update user_roles set permissions = '{"leads": true}' where user_id = $1`, [U2]);
+    const convA = await val<number>(`select count(*)::int from crm_conversations where store_id = $1`, [A]);
+    expect(await asUser(U2, () => val(`select count(*)::int from crm_conversations where store_id = $1`, [A]))).toBe(convA);
+    expect(await asUser(U2, () => val(`select crm_is_member($1)`, [A]))).toBe(true);
+    // aparece na equipe da outra loja (para receber a conversa)
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_team($1) where user_id = $2`, [A, U2]))).toBe(1);
+    // mas não altera configurações da outra loja
+    expect(await asUser(U2, () => errorOf(`insert into crm_pipelines (store_id, name, kind) values ($1, 'X', 'sales')`, [A]))).toMatch(/row-level security/);
+  });
+
+  it("regra das Edge Functions igual à do banco", async () => {
+    expect(await val(`select crm_can_access($1, $2)`, [U2, A])).toBe(true);
+    expect(await val(`select crm_can_access($1, $2)`, [U1, B])).toBe(false);
+    expect(await val(`select crm_can_access($1, $2)`, [ADM, B])).toBe(true);
+    expect(await val(`select crm_can_access(null, $1)`, [A])).toBe(false);
+    expect(await asUser(U1, () => errorOf(`select crm_can_access($1, $2)`, [U1, B]))).toMatch(/permission denied/);
+    await db.query(`update user_roles set permissions = null where user_id = $1`, [U2]);
+  });
+
+  it("gasto com campanhas só a gerência lê", async () => {
+    await db.query(`insert into crm_campaign_spend (store_id, campaign, period_start, period_end, amount) values ($1, 'Teste', current_date, current_date, 10)`, [A]);
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_campaign_spend`))).toBe(0);
+    expect(await asUser(ADM, () => val(`select count(*)::int from crm_campaign_spend`))).toBeGreaterThan(0);
+  });
+});
+
+describe("CRM — funil do técnico e 'não tomar a vez'", () => {
+  const T2 = "00000000-0000-0000-0000-0000000000a5"; // técnico da loja A
+  let contact = "";
+  let pipe = "";
+  let conv = "";
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into auth.users values ('${T2}');
+      insert into public.member_stores (user_id, store_id) values ('${T2}', '${A}');
+      insert into public.user_roles (user_id, role) values ('${T2}', 'tecnico');
+      insert into public.profiles (user_id, display_name) values ('${T2}', 'Daniel Técnico');
+    `);
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "minha tela quebrou",
+      p_phone: "5511977700001", p_external_id: "GUARD1" });
+    conv = r.conversation_id;
+    contact = r.contact_id;
+    pipe = await val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'service'`, [A]);
+  });
+
+  const newDeal = async (owner: string | null, title: string) =>
+    val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, owner_id) values ($1, $2, (select id from crm_stages where pipeline_id = $2 order by position limit 1), $3, $4, $5) returning id`,
+      [A, pipe, contact, title, owner]);
+
+  it("técnico vê e mexe só nos negócios dele; vendedor vê todos", async () => {
+    const mine = await newDeal(T2, "Tela do Daniel");
+    const other = await newDeal(U1, "Tela da vendedora");
+    const ids = [mine, other];
+    expect(await asUser(T2, () => val(`select count(*)::int from crm_deals where id = any($1)`, [ids]))).toBe(1);
+    expect(await asUser(U1, () => val(`select count(*)::int from crm_deals where id = any($1)`, [ids]))).toBe(2);
+    await asUser(T2, () => db.query(`update crm_deals set title = 'mexi' where id = $1`, [other]));
+    expect(await val(`select title from crm_deals where id = $1`, [other])).toBe("Tela da vendedora");
+  });
+
+  it("técnico criando negócio sem dono fica com ele; para outra pessoa é recusado", async () => {
+    const id = await asUser(T2, () => val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title) values ($1, $2, (select id from crm_stages where pipeline_id = $2 order by position limit 1), $3, 'Bateria') returning id`, [A, pipe, contact]));
+    expect(await val(`select owner_id from crm_deals where id = $1`, [id])).toBe(T2);
+    expect(await asUser(T2, () => errorOf(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, owner_id) values ($1, $2, (select id from crm_stages where pipeline_id = $2 order by position limit 1), $3, 'X', $4)`, [A, pipe, contact, U1]))).toMatch(/row-level security/);
+  });
+
+  it("pegar lead sem dono pode; tomar o lead de outra pessoa é bloqueado com o nome", async () => {
+    await db.query(`update crm_conversations set assigned_to = null where id = $1`, [conv]);
+    await asUser(U1, () => db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, T2]));
+    expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(T2);
+    expect(await asUser(U1, () => errorOf(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, U1]))).toMatch(/Este lead é de Daniel Técnico/);
+    // o dono passa adiante
+    await asUser(T2, () => db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, U1]));
+    expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(U1);
+    // o admin transfere
+    await asUser(ADM, () => db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, T2]));
+    expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(T2);
+    // dono do negócio também é protegido
+    const deal = await newDeal(T2, "Conector");
+    expect(await asUser(U1, () => errorOf(`update crm_deals set owner_id = $2 where id = $1`, [deal, U1]))).toMatch(/Este lead é de Daniel Técnico/);
+  });
+
+  it("'Assumir' de quem não está na vez é recusado; quem está na vez assume", async () => {
+    await db.query(`insert into crm_dispatches (store_id, conversation_id, cycle_id, user_id, status, offered_at, expires_at) values ($1, $2, gen_random_uuid(), $3, 'offered', now(), now() + interval '5 minutes')`, [A, conv, T2]);
+    expect(await val(`select crm_turn_blocker($1, $2)`, [conv, U1])).toMatch(/na vez de Daniel Técnico/);
+    expect(await val(`select crm_turn_blocker($1, $2)`, [conv, T2])).toBeNull();
+    expect(await val(`select crm_turn_blocker($1, $2)`, [conv, ADM])).toBeNull();
+    expect(await asUser(U1, () => errorOf(`select crm_dispatch_accept($1)`, [conv]))).toMatch(/Este lead é de Daniel Técnico/);
+    await asUser(T2, () => db.query(`select crm_dispatch_accept($1)`, [conv]));
+    expect(await val(`select status from crm_dispatches where conversation_id = $1 order by created_at desc limit 1`, [conv])).toBe("accepted");
+    // depois de assumido, ajudar respondendo não é bloqueado (e não troca o dono)
+    expect(await val(`select crm_turn_blocker($1, $2)`, [conv, U1])).toBeNull();
+  });
+
+  it("sistema (sem usuário) redistribui livremente", async () => {
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [conv, U1]);
+    expect(await val(`select assigned_to from crm_conversations where id = $1`, [conv])).toBe(U1);
   });
 });

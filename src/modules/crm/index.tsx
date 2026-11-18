@@ -5,7 +5,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Lock, MessagesSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { CrmNav } from "./components/shared/CrmNav";
-import { crmAccess } from "./lib/access";
+import { StoreFilter } from "./components/shared/StoreTag";
+import { crmAccess, crmIsAdmin } from "./lib/access";
 
 const InboxPage = lazy(() => import("./pages/InboxPage"));
 const PipelinePage = lazy(() => import("./pages/PipelinePage"));
@@ -37,6 +38,7 @@ function NoAccess() {
 export default function CrmModule() {
   const { userRole, userPermissions } = useAuth();
   const access = crmAccess(userRole, userPermissions);
+  const isAdmin = crmIsAdmin(userRole);
   if (access === "loading") return <PageFallback />;
   if (access === "denied") return <NoAccess />;
 
@@ -44,9 +46,12 @@ export default function CrmModule() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex flex-col gap-2 border-b border-border/50 px-1.5 pb-1.5 pt-1.5 sm:px-3 sm:pb-2 sm:pt-3 md:px-6 md:pt-5">
         {/* no celular o título some: o cabeçalho do app já mostra onde a pessoa está */}
-        <div className="hidden items-center gap-2 sm:flex">
-          <MessagesSquare className="h-5 w-5 text-primary" aria-hidden="true" />
-          <h1 className="font-display text-lg font-bold tracking-tight md:text-xl">CRM</h1>
+        <div className="flex items-center gap-2">
+          <MessagesSquare className="hidden h-5 w-5 text-primary sm:block" aria-hidden="true" />
+          <h1 className="hidden font-display text-lg font-bold tracking-tight sm:block md:text-xl">CRM</h1>
+          <div className="ml-auto">
+            <StoreFilter />
+          </div>
         </div>
         <CrmNav />
       </header>
@@ -60,8 +65,9 @@ export default function CrmModule() {
             <Route path="contatos" element={<ContactsPage />} />
             <Route path="contatos/:contactId" element={<ContactsPage />} />
             <Route path="tarefas" element={<TasksPage />} />
-            <Route path="relatorios" element={<ReportsPage />} />
-            <Route path="config" element={<SettingsPage />} />
+            {/* Relatórios e Configurações só do admin; os demais voltam para a caixa de entrada */}
+            <Route path="relatorios" element={isAdmin ? <ReportsPage /> : <Navigate to="/crm/inbox" replace />} />
+            <Route path="config" element={isAdmin ? <SettingsPage /> : <Navigate to="/crm/inbox" replace />} />
             <Route path="*" element={<Navigate to="inbox" replace />} />
           </Routes>
         </Suspense>

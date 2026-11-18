@@ -30,3 +30,20 @@ export function daysInStage(stageEnteredAt: string, now = Date.now()): number {
 export function visibleStages(stages: CrmStage[]): CrmStage[] {
   return stages.filter((s) => !s.hidden).sort((a, b) => a.position - b.position);
 }
+
+/**
+ * Funil aberto: o da URL se ainda está na lista; senão o padrão da loja da pessoa;
+ * senão qualquer padrão; senão o primeiro.
+ */
+export function pickPipelineId(
+  pipelines: { id: string; store_id: string; is_default: boolean }[],
+  fromUrl: string | null,
+  preferredStoreId: string | null,
+): string | undefined {
+  if (fromUrl && pipelines.some((p) => p.id === fromUrl)) return fromUrl;
+  return (
+    pipelines.find((p) => p.is_default && p.store_id === preferredStoreId)?.id ??
+    pipelines.find((p) => p.is_default)?.id ??
+    pipelines[0]?.id
+  );
+}

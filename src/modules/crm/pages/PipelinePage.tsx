@@ -13,17 +13,17 @@ import { PipelineBoard } from "../components/pipeline/PipelineBoard";
 import { EmptyState } from "../components/shared/EmptyState";
 import { useCrmContext, useTeam } from "../hooks/useInbox";
 import { pipelineKeys, useBoardDeals, useDealsRealtime, useInvalidateDeals, usePipelines, usePipelineSummary, useStages } from "../hooks/usePipeline";
-import { visibleStages } from "../lib/board";
+import { pickPipelineId, visibleStages } from "../lib/board";
 import { brl } from "../lib/format";
 import type { CrmDealWithContact } from "../lib/types";
 
 export default function PipelinePage() {
-  const { storeId, userId } = useCrmContext();
+  const { storeId, userId, writeStoreId } = useCrmContext();
   const qc = useQueryClient();
   const invalidate = useInvalidateDeals();
   const [params, setParams] = useSearchParams();
   const { data: pipelines = [], isLoading: loadingPipes } = usePipelines(storeId);
-  const pipelineId = params.get("funil") ?? pipelines.find((p) => p.is_default)?.id ?? pipelines[0]?.id;
+  const pipelineId = pickPipelineId(pipelines, params.get("funil"), writeStoreId);
   const pipeline = pipelines.find((p) => p.id === pipelineId);
   const [mine, setMine] = useState(false);
   const ownerFilter = mine ? userId : null;

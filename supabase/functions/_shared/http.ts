@@ -54,9 +54,11 @@ export async function requireUser(req: Request, admin: SupabaseClient): Promise<
   return data.user;
 }
 
+/** Acesso ao CRM da loja: membro da loja, admin ou quem tem a permissão CRM (mesma regra de crm_is_member). */
 export async function requireMember(admin: SupabaseClient, userId: string, storeId: string) {
-  const { data } = await admin.from("member_stores").select("id").eq("user_id", userId).eq("store_id", storeId).limit(1);
-  if (!data || data.length === 0) throw new HttpError(403, "Você não tem acesso a esta loja.");
+  const { data, error } = await admin.rpc("crm_can_access", { p_user: userId, p_store_id: storeId });
+  if (error) throw new HttpError(500, "Não foi possível conferir o acesso.");
+  if (data !== true) throw new HttpError(403, "Você não tem acesso a esta loja.");
 }
 
 export const MANAGER_ROLES = ["admin", "gerente", "dono"];
