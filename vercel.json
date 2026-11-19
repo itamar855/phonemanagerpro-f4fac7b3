@@ -5,7 +5,7 @@
       "destination": "https://hzrqtolfbwnmmeliazmh.supabase.co/functions/v1/crm-track?l=:slug"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ]
