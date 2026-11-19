@@ -33,3 +33,20 @@ export function checkWebhookAuth(headers: HeaderReader, envSecret: string | unde
   }
   return { ok: true };
 }
+
+export const INTERNAL_HEADER = "x-crm-internal";
+
+/**
+ * Reenvio interno de mensagem antiga (sincronizar o CRM com a Evolution): `replay: true` no
+ * corpo só vale com o segredo interno do cron (CRM_CRON_SECRET) no header x-crm-internal.
+ * Em replay a mensagem é gravada sem IA, etiquetas, aviso no celular nem assistente da equipe.
+ */
+export function checkReplay(headers: HeaderReader, body: { replay?: unknown; [key: string]: unknown } | null, cronSecret: string | undefined):
+  { ok: true; replay: boolean } | { ok: false; status: 401; error: string } {
+  if (body?.replay !== true) return { ok: true, replay: false };
+  const received = headers.get(INTERNAL_HEADER);
+  if (!cronSecret || !received || !safeEqual(received, cronSecret)) {
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
+  return { ok: true, replay: true };
+}

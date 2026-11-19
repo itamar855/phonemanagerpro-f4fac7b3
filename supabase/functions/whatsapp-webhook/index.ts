@@ -10,7 +10,7 @@ import { tagConversation } from "../_shared/ai-tagger.ts"
 import { notifyInbound } from "../_shared/push.ts"
 import { base64ToBytes, transcribeAudio, transcribeMessage } from "../_shared/transcribe.ts"
 import { findStaff, handleStaffMessage } from "../_shared/staff-assistant.ts"
-import { checkWebhookAuth } from "./auth.ts"
+import { checkReplay, checkWebhookAuth } from "./auth.ts"
 import {
   contactLid, extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, matchContactByName, mediaExt, mediaMime,
   parseMessageBody, phoneFromEvolutionContacts, phoneJidFrom, resolveContactJid, resolveTimestamp, stripBase64, withResolvedPhone,
@@ -279,6 +279,9 @@ serve(async (req) => {
     const admin = adminClient()
     const payload = await req.json()
     const eventName = String(payload.event || '').toLowerCase().replace(/_/g, '.')
+    // reenvio interno (sincronizar mensagens que não chegaram): só com o segredo do cron
+    const replay = checkReplay(req.headers, payload, Deno.env.get('CRM_CRON_SECRET'))
+    if (!replay.ok) return json({ error: replay.error }, replay.status)
 
     if (eventName !== 'messages.upsert' && eventName !== 'messages.update') {
       return json({ status: 'ignored', event: payload.event })
@@ -304,7 +307,7 @@ serve(async (req) => {
     }
 
     // ---- Mensagem ----
-    const r = await handleUpsert(admin, cfg, payload)
+    const r = await handleUpsert(admin, cfg, payload, { replay: replay.replay })
     return json(r.body, r.status ?? 200)
   } catch (error) {
     console.error('[WhatsApp Webhook] Erro:', error)

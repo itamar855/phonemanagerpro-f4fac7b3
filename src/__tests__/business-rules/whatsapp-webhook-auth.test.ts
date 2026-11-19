@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkWebhookAuth, safeEqual, WEBHOOK_SECRET_HEADER } from "../../../supabase/functions/whatsapp-webhook/auth.ts";
+import { checkReplay, checkWebhookAuth, INTERNAL_HEADER, safeEqual, WEBHOOK_SECRET_HEADER } from "../../../supabase/functions/whatsapp-webhook/auth.ts";
 import { isDirectChat, mapAckStatus, mediaExt, mediaMime, parseMessageBody, resolveContactJid, resolveTimestamp } from "../../../supabase/functions/whatsapp-webhook/parse.ts";
 
 const headers = (h: Record<string, string>) => new Headers(h);
@@ -97,5 +97,26 @@ describe("whatsapp-webhook — interpretação da mensagem", () => {
     expect(mediaMime(undefined, "image")).toBe("image/jpeg");
     expect(mediaExt("audio/ogg")).toBe("ogg");
     expect(mediaExt("image/jpeg")).toBe("jpg");
+  });
+});
+
+describe("whatsapp-webhook — reenvio interno (replay)", () => {
+  const CRON = "segredo_do_cron_para_teste_1234567890";
+
+  it("evento normal da Evolution não é replay", () => {
+    expect(checkReplay(headers({}), { event: "messages.upsert" }, CRON)).toEqual({ ok: true, replay: false });
+    expect(checkReplay(headers({}), null, CRON)).toEqual({ ok: true, replay: false });
+    expect(checkReplay(headers({}), { replay: "true" }, CRON)).toEqual({ ok: true, replay: false });
+  });
+
+  it("replay com o segredo do cron desliga IA/aviso (modo replay)", () => {
+    expect(checkReplay(headers({ [INTERNAL_HEADER]: CRON }), { replay: true }, CRON)).toEqual({ ok: true, replay: true });
+  });
+
+  it("replay sem segredo, com segredo errado ou sem segredo no servidor é recusado", () => {
+    const denied = { ok: false, status: 401, error: "Unauthorized" };
+    expect(checkReplay(headers({}), { replay: true }, CRON)).toEqual(denied);
+    expect(checkReplay(headers({ [INTERNAL_HEADER]: "outro" }), { replay: true }, CRON)).toEqual(denied);
+    expect(checkReplay(headers({ [INTERNAL_HEADER]: CRON }), { replay: true }, undefined)).toEqual(denied);
   });
 });
