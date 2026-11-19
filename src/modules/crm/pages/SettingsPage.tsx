@@ -16,9 +16,47 @@ import { TrackingSettings } from "../components/settings/TrackingSettings";
 import { TagsSettingsCard } from "../components/settings/TagsSettingsCard";
 import { EmptyState } from "../components/shared/EmptyState";
 import { crmKeys, useCrmContext, useQuickReplies } from "../hooks/useInbox";
+import { useCrmStores } from "../hooks/useCrmStores";
+import { cn } from "@/lib/utils";
+
+/** Conexões (WhatsApp/Instagram) são de cada loja: a loja é escolhida aqui, à vista, e não pelo filtro "Todas". */
+function ChannelsSettings() {
+  const { storeId } = useCrmContext();
+  const { stores, byId, multi } = useCrmStores();
+  const [picked, setPicked] = useState<string | null>(null);
+  const current = picked ?? storeId ?? stores[0]?.id ?? null;
+  const label = current ? byId.get(current)?.label : undefined;
+  return (
+    <div className="space-y-4">
+      {multi && (
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">Conexões da loja</p>
+          <div role="group" aria-label="Loja das conexões" className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-1">
+            {stores.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                aria-pressed={current === s.id}
+                onClick={() => setPicked(s.id)}
+                className={cn(
+                  "min-h-[36px] rounded-md px-3 text-sm transition-colors",
+                  current === s.id ? "bg-background font-semibold text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Cada loja tem o próprio número de WhatsApp e a própria conta do Instagram.</p>
+        </div>
+      )}
+      <WhatsAppChannelCard key={`wa-${current}`} storeId={current} storeLabel={multi ? label : undefined} />
+      <InstagramChannelCard key={`ig-${current}`} storeId={current} />
+    </div>
+  );
+}
 
 export default function SettingsPage() {
-  const { storeId } = useCrmContext();
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl p-3 md:p-6">
@@ -31,9 +69,8 @@ export default function SettingsPage() {
             <TabsTrigger value="ia">Agente de IA</TabsTrigger>
             <TabsTrigger value="rastreamento">Rastreamento</TabsTrigger>
           </TabsList>
-          <TabsContent value="canais" className="space-y-4 pt-2">
-            <WhatsAppChannelCard storeId={storeId} />
-            <InstagramChannelCard storeId={storeId} />
+          <TabsContent value="canais" className="pt-2">
+            <ChannelsSettings />
           </TabsContent>
           <TabsContent value="respostas" className="pt-2">
             <QuickRepliesSettings />

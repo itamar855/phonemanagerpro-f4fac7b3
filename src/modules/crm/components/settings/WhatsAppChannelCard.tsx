@@ -20,7 +20,11 @@ const STATE_LABEL: Record<string, { text: string; tone: "ok" | "warn" | "bad" }>
   unknown: { text: "Estado desconhecido", tone: "warn" },
 };
 
-export function WhatsAppChannelCard({ storeId }: { storeId: string | null }) {
+/** "Santa Luzia" → "loja-santa-luzia" (sugestão de nome da instância). */
+const instanceHint = (label?: string) =>
+  `loja-${(label ?? "nova").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+
+export function WhatsAppChannelCard({ storeId, storeLabel }: { storeId: string | null; storeLabel?: string }) {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: crmKeys.channel(storeId), queryFn: () => channelStatus(storeId), staleTime: 10_000, retry: false });
   const [qr, setQr] = useState<string | null>(null);
@@ -28,8 +32,17 @@ export function WhatsAppChannelCard({ storeId }: { storeId: string | null }) {
   const [form, setForm] = useState({ api_url: "", instance_name: "", api_key: "" });
 
   const s = status.data;
+  // sem número próprio, o status mostra o da outra loja: não é desta loja
+  const shared = Boolean(s?.configured && s.shared_from_other_store);
+  const own = Boolean(s?.configured && !s.shared_from_other_store);
   useEffect(() => {
-    if (s?.configured) setForm((f) => ({ ...f, instance_name: f.instance_name || s.instance_name || "", api_url: f.api_url || (s.api_host ? `https://${s.api_host}` : "") }));
+    if (!s?.configured) return;
+    // mesma Evolution serve as duas lojas; a instância é própria de cada loja
+    setForm((f) => ({
+      ...f,
+      instance_name: f.instance_name || (s.shared_from_other_store ? "" : s.instance_name || ""),
+      api_url: f.api_url || (s.api_host ? `https://${s.api_host}` : ""),
+    }));
   }, [s]);
 
   // enquanto o QR estiver na tela, confere a conexão a cada 5 s
@@ -61,13 +74,15 @@ export function WhatsAppChannelCard({ storeId }: { storeId: string | null }) {
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-emerald-500/10 p-2"><ChannelIcon channel="whatsapp" className="h-5 w-5" /></div>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold">WhatsApp (Evolution API)</h3>
+          <h3 className="font-semibold">WhatsApp{storeLabel ? ` · ${storeLabel}` : " (Evolution API)"}</h3>
           {status.isLoading ? (
             <p className="text-sm text-muted-foreground">Verificando…</p>
           ) : status.isError ? (
             <p className="text-sm text-destructive">{(status.error as Error).message}</p>
-          ) : !s?.configured ? (
-            <p className="text-sm text-muted-foreground">Nenhum número configurado.</p>
+          ) : !s?.configured || shared ? (
+            <p className="text-sm text-muted-foreground">
+              {storeLabel ? <><strong className="text-foreground">{storeLabel}</strong> ainda não tem WhatsApp conectado.</> : "Nenhum número configurado."}
+            </p>
           ) : (
             <p className="flex items-center gap-1.5 text-sm">
               {state.tone === "ok" ? <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden="true" /> : <AlertTriangle className={state.tone === "bad" ? "h-4 w-4 text-destructive" : "h-4 w-4 text-amber-500"} aria-hidden="true" />}
@@ -75,7 +90,6 @@ export function WhatsAppChannelCard({ storeId }: { storeId: string | null }) {
               <span className="text-muted-foreground">· {s.instance_name}</span>
             </p>
           )}
-          {s?.shared_from_other_store && <p className="mt-1 text-xs text-muted-foreground">Usando o número configurado em outra loja.</p>}
         </div>
         <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => status.refetch()} aria-label="Atualizar status">
           <RefreshCw className={status.isFetching ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
@@ -89,7 +103,15 @@ export function WhatsAppChannelCard({ storeId }: { storeId: string | null }) {
         </div>
       )}
 
-      {canManage && s?.configured && (
+      {canManage && shared && (
+        <ol className="list-decimal space-y-1 rounded-lg bg-muted/40 p-3 pl-7 text-sm">
+          <li>No painel da Evolution, crie uma instância nova para {storeLabel ?? "esta loja"} (ex.: <code>{instanceHint(storeLabel)}</code>).</li>
+          <li>Preencha abaixo o nome da instância e a API Key e clique em <strong>Salvar configuração</strong>.</li>
+          <li>Clique em <strong>Conectar (QR Code)</strong>, leia com o WhatsApp do celular desta loja e depois em <strong>Configurar webhook</strong>.</li>
+        </ol>
+      )}
+
+      {canManage && own && s && (
         <div className="flex flex-wrap gap-2">
           {s.state !== "open" && (
             <Button size="sm" disabled={busy !== null || s.state === "unreachable"} onClick={() => run("qr", async () => { const r = await channelConnect(storeId); if (r.base64) setQr(r.base64); else toast.info("O servidor não devolveu QR Code. Verifique se a instância existe."); })}>
