@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isConsultOnly, matchesStock, splitStock, type ConsultaProduct } from "@/components/features/estoque/consultaRules";
+import { isConsultOnly, matchesStock, splitStock, stockAccess, type ConsultaProduct } from "@/components/features/estoque/consultaRules";
 
 const p = (o: Partial<ConsultaProduct>): ConsultaProduct => ({
   id: "x", name: "iPhone 13", brand: "Apple", model: "A2633", color: "Azul", capacity: "128GB",
@@ -27,5 +27,29 @@ describe("estoque de outra loja (só consulta)", () => {
     expect(matchesStock(p({}), "IPHONE azul")).toBe(true);
     expect(matchesStock(p({}), "iphone 256")).toBe(false);
     expect(matchesStock({ name: "Película de vidro" }, "pelicula")).toBe(true);
+  });
+});
+
+describe("permissão de consultar o estoque da outra loja (Equipe)", () => {
+  const stores = ["VE", "SL"];
+  it("com Estoque e a consulta: própria loja + consulta às outras", () => {
+    expect(stockAccess({ isAdmin: false, permissions: { estoque: true, estoque_outra_loja: true }, userStoreIds: ["SL"], storeIds: stores }))
+      .toEqual({ own: true, consultStoreIds: ["VE"] });
+  });
+  it("com Estoque e sem a consulta: só a própria loja", () => {
+    expect(stockAccess({ isAdmin: false, permissions: { estoque: true }, userStoreIds: ["SL"], storeIds: stores }))
+      .toEqual({ own: true, consultStoreIds: [] });
+  });
+  it("só a consulta (ex. técnico): vê a outra loja, sem o estoque da própria", () => {
+    expect(stockAccess({ isAdmin: false, permissions: { os: true, estoque_outra_loja: true }, userStoreIds: ["VE"], storeIds: stores }))
+      .toEqual({ own: false, consultStoreIds: ["SL"] });
+  });
+  it("sem nenhuma das duas, ou sem permissões salvas: nada", () => {
+    expect(stockAccess({ isAdmin: false, permissions: null, userStoreIds: ["VE"], storeIds: stores }))
+      .toEqual({ own: false, consultStoreIds: [] });
+  });
+  it("admin: tudo pelo seletor geral, sem modo consulta", () => {
+    expect(stockAccess({ isAdmin: true, permissions: null, userStoreIds: [], storeIds: stores }))
+      .toEqual({ own: true, consultStoreIds: [] });
   });
 });

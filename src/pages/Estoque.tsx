@@ -31,7 +31,7 @@ import { ProductEditDialog } from "@/components/features/estoque/ProductEditDial
 import { ProductDeleteDialog } from "@/components/features/estoque/ProductDeleteDialog";
 import { AccessoryModal } from "@/components/features/estoque/AccessoryModal";
 import { EstoqueConsulta } from "@/components/features/estoque/EstoqueConsulta";
-import { isConsultOnly } from "@/components/features/estoque/consultaRules";
+import { isConsultOnly, stockAccess } from "@/components/features/estoque/consultaRules";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela",
@@ -87,7 +87,7 @@ type Accessory = {
 };
 
 const Estoque = () => {
-  const { user, userRole, userStoreIds, activeStoreId, setActiveStoreId } = useAuth();
+  const { user, userRole, userPermissions, userStoreIds, activeStoreId, setActiveStoreId } = useAuth();
   // funcionário pode CONSULTAR o estoque de outra loja (só leitura); null = a própria loja
   const [consultStoreId, setConsultStoreId] = useState<string | null>(null);
   const [products, setProducts] = useState<Tables<"products">[]>([]);
@@ -819,15 +819,21 @@ const Estoque = () => {
     setAccDialogOpen(true);
   };
 
+  // Estoque da própria loja (permissão "Estoque") e/ou consulta às outras ("Consultar estoque da outra loja")
+  const access = stockAccess({ isAdmin: userRole === "admin", permissions: userPermissions, userStoreIds, storeIds: stores.map((s) => s.id) });
+  // loja em consulta: a escolhida no seletor (se permitida) ou, sem acesso à própria, a primeira outra loja
+  const viewStoreId = (consultStoreId && access.consultStoreIds.includes(consultStoreId) ? consultStoreId : null)
+    ?? (access.own ? null : access.consultStoreIds[0] ?? null);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="font-display text-xl md:text-3xl font-bold tracking-tight">Estoque</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
+          {access.own && <p className="text-muted-foreground text-sm mt-0.5">
             {inStock.length} aparelhos · {filteredAccessories.length} acessórios · {formatCurrency(totalInvestedProducts + totalInvestedAcc)} investido
             {activeStoreId === "all" && " (Global)"}
-          </p>
+          </p>}
         </div>
         {userRole === "admin" && (
           <div className="flex items-center gap-2">
@@ -850,15 +856,15 @@ const Estoque = () => {
             </Select>
           </div>
         )}
-        {userRole !== "admin" && stores.length > 1 && activeStoreId && (
+        {userRole !== "admin" && access.consultStoreIds.length > 0 && (access.own ? Boolean(activeStoreId) : access.consultStoreIds.length > 1) && (
           <div className="flex items-center gap-2">
             <Store className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-            <Select value={consultStoreId ?? activeStoreId} onValueChange={(v) => setConsultStoreId(v === activeStoreId ? null : v)}>
+            <Select value={viewStoreId ?? activeStoreId} onValueChange={(v) => setConsultStoreId(access.own && v === activeStoreId ? null : v)}>
               <SelectTrigger className="h-9 w-[220px]" aria-label="Ver estoque da loja">
                 <SelectValue placeholder="Loja" />
               </SelectTrigger>
               <SelectContent>
-                {stores.map((s) => (
+                {stores.filter((s) => (access.own && s.id === activeStoreId) || access.consultStoreIds.includes(s.id)).map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {s.name}{isConsultOnly(s.id, userStoreIds, false) ? " (só consulta)" : ""}
                   </SelectItem>
@@ -869,11 +875,15 @@ const Estoque = () => {
         )}
       </div>
 
-      {consultStoreId && isConsultOnly(consultStoreId, userStoreIds, userRole === "admin") ? (
+      {viewStoreId && isConsultOnly(viewStoreId, userStoreIds, userRole === "admin") ? (
         <EstoqueConsulta
-          storeId={consultStoreId}
-          storeName={(stores.find((s) => s.id === consultStoreId)?.name ?? "outra loja").replace(/^.*\(([^)]+)\)\s*$/, "$1")}
+          storeId={viewStoreId}
+          storeName={(stores.find((s) => s.id === viewStoreId)?.name ?? "outra loja").replace(/^.*\(([^)]+)\)\s*$/, "$1")}
         />
+      ) : !access.own ? (
+        <p className="rounded-lg border border-border/50 p-6 text-center text-sm text-muted-foreground">
+          Você não tem acesso ao Estoque. Peça ao administrador em Equipe.
+        </p>
       ) : (<>
       {/* Alertas */}
       {(lowStockStores.length > 0 || lowStockAcc.length > 0) && (
