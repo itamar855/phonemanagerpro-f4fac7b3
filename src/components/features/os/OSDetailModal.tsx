@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ServicesPerformedEditor } from "./ServicesPerformedEditor";
+import { recalcFinalPrice, type ServiceFormRow } from "./osPdfRules";
 import {
   Select,
   SelectContent,
@@ -61,7 +62,8 @@ interface OSDetailModalProps {
     payment_notes: string;
     exit_checklist: ChecklistData;
     warranty_end_date: string;
-    service_performed: string;
+    services: ServiceFormRow[];
+    discount_amount: string;
     justification: string;
   };
   setUpdateForm: React.Dispatch<React.SetStateAction<any>>;
@@ -130,6 +132,8 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
   onToggleWaiveCommission,
   isCommissionWaived = false,
 }) => {
+  // valor cobrado das peças desta OS (para somar com os serviços no valor final)
+  const [partsTotal, setPartsTotal] = React.useState(0);
   return (
     <Dialog open={!!detailOrder} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl max-h-[92dvh] overflow-y-auto p-4 sm:p-6">
@@ -342,7 +346,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
               <OsPhotoGallery orderId={detailOrder.id} />
 
               {/* Peças da OS */}
-              <OsParts orderId={detailOrder.id} storeId={detailOrder.store_id} />
+              <OsParts orderId={detailOrder.id} storeId={detailOrder.store_id} onChargeTotalChange={setPartsTotal} />
 
               {/* Pagamento atual */}
               {totalPaid(detailOrder) > 0 && (
@@ -455,18 +459,24 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                   <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
                     <DollarSign className="h-3.5 w-3.5" /> Atualizar Serviço
                   </p>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="os-service-performed" className="text-xs">
-                      Serviço executado <span className="text-[10px] font-normal text-muted-foreground">(aparece para o cliente no PDF)</span>
-                    </Label>
-                    <Textarea
-                      id="os-service-performed"
-                      value={updateForm.service_performed}
-                      onChange={(e) => setUpdateForm((f: any) => ({ ...f, service_performed: e.target.value }))}
-                      placeholder="Ex.: Limpeza da placa após contato com água, troca do conector de carga e teste geral."
-                      className="min-h-[64px] text-sm"
-                    />
-                  </div>
+                  <ServicesPerformedEditor
+                    services={updateForm.services}
+                    discount={updateForm.discount_amount}
+                    partsTotal={partsTotal}
+                    finalPrice={updateForm.final_price}
+                    onChange={(next) =>
+                      setUpdateForm((f: any) => ({
+                        ...f,
+                        services: next.services,
+                        discount_amount: next.discount_amount,
+                        final_price: recalcFinalPrice(
+                          { final_price: f.final_price, discount_amount: f.discount_amount, services: f.services },
+                          next,
+                          partsTotal,
+                        ),
+                      }))
+                    }
+                  />
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs">Valor Final (R$)</Label>

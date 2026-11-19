@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checklistSummary, formatDay, hasChecklist, serviceBreakdown } from "@/components/features/os/osPdfRules";
+import { checklistSummary, cleanServiceRows, formatDay, hasChecklist, performedServices, recalcFinalPrice, serviceBreakdown } from "@/components/features/os/osPdfRules";
 import { generateOSPdf, generateThermalPdf } from "@/components/features/os/osPdf";
 
 describe("PDF da OS: checklist", () => {
@@ -21,18 +21,17 @@ describe("PDF da OS: checklist", () => {
 describe("PDF da OS: serviço executado e valor cobrado", () => {
   const tela = { name: "Tela Samsung A15 OLED", quantity: 1, unit_price: 450 };
 
-  it("sem peças: o serviço inteiro é uma linha com o valor final", () => {
+  const L = (label: string, total: number | null, kind: string, quantity: number | null = null) => ({ label, quantity, total, kind });
+
+  it("sem peças nem serviços: uma linha com o valor final", () => {
     expect(serviceBreakdown({ final_price: 700, requested_service: "Outro" }, [])).toEqual({
-      lines: [{ label: "Serviço", quantity: 1, total: 700 }], total: 700,
+      lines: [L("Serviço", 700, "labor")], total: 700, discount: 0,
     });
   });
 
   it("peça com o valor cobrado; a diferença para o valor final vira mão de obra", () => {
     const r = serviceBreakdown({ final_price: 500, requested_service: "Troca de Tela" }, [tela]);
-    expect(r.lines).toEqual([
-      { label: "Tela Samsung A15 OLED", quantity: 1, total: 450 },
-      { label: "Mão de obra - Troca de Tela", quantity: 1, total: 50 },
-    ]);
+    expect(r.lines).toEqual([L("Tela Samsung A15 OLED", 450, "part", 1), L("Mão de obra - Troca de Tela", 50, "labor")]);
     expect(r.total).toBe(500);
   });
 
@@ -40,15 +39,59 @@ describe("PDF da OS: serviço executado e valor cobrado", () => {
     expect(serviceBreakdown({ final_price: 450 }, [tela]).lines).toHaveLength(1);
   });
 
-  it("valor final menor que as peças: mostra o desconto e o total é o valor final", () => {
+  it("valor final menor que as peças: a diferença aparece como desconto", () => {
     const r = serviceBreakdown({ final_price: 400 }, [tela]);
-    expect(r.lines.at(-1)).toEqual({ label: "Desconto", quantity: 1, total: -50 });
+    expect(r.lines.at(-1)).toEqual(L("Desconto", -50, "discount"));
     expect(r.total).toBe(400);
   });
 
-  it("sem valor final: total é a soma das peças (quantidade conta)", () => {
+  it("vários serviços com valor e desconto: total = soma − desconto = valor final", () => {
+    const r = serviceBreakdown({
+      final_price: 650, discount_amount: 50,
+      services_performed: [{ description: "Troca do módulo frontal", price: 500 }, { description: "Desoxidação", price: 200 }],
+    }, []);
+    expect(r.lines).toEqual([L("Troca do módulo frontal", 500, "service"), L("Desoxidação", 200, "service"), L("Desconto", -50, "discount")]);
+    expect(r.total).toBe(650);
+  });
+
+  it("serviços só descritos (sem valor): o valor final entra como 'Valor dos serviços', antes do desconto", () => {
+    const r = serviceBreakdown({
+      final_price: 650, discount_amount: 50,
+      services_performed: [{ description: "Troca do módulo", price: null }, { description: "Desoxidação", price: null }],
+    }, []);
+    expect(r.lines).toEqual([L("Troca do módulo", null, "service"), L("Desoxidação", null, "service"), L("Valor dos serviços", 700, "labor"), L("Desconto", -50, "discount")]);
+    expect(r.total).toBe(650);
+  });
+
+  it("OS antiga com só o texto livre: cada linha vira um serviço", () => {
+    expect(performedServices({ service_performed: "Troca do módulo\r\n\nDesoxidação " })).toEqual([
+      { description: "Troca do módulo", price: null }, { description: "Desoxidação", price: null },
+    ]);
+    expect(performedServices({ services_performed: [{ description: " A ", price: "10" }, { description: "", price: 5 }], service_performed: "X" }))
+      .toEqual([{ description: "A", price: 10 }]);
+  });
+
+  it("sem valor final: total é a soma das peças (quantidade conta) menos o desconto", () => {
     expect(serviceBreakdown({ final_price: null }, [{ ...tela, quantity: 2 }]).total).toBe(900);
+    expect(serviceBreakdown({ final_price: null, discount_amount: 100 }, [{ ...tela, quantity: 2 }]).total).toBe(800);
     expect(serviceBreakdown({ final_price: 0 }, []).lines).toEqual([]);
+  });
+
+  it("formulário: linhas vazias somem e valor vazio vira null", () => {
+    expect(cleanServiceRows([{ description: " Troca ", price: "" }, { description: "", price: "50" }, { description: "B", price: "12.345" }]))
+      .toEqual([{ description: "Troca", price: null }, { description: "B", price: 12.35 }]);
+  });
+
+  it("valor final na tela: serviços com valor somam com as peças e tiram o desconto", () => {
+    const prev = { final_price: "", discount_amount: "", services: [] };
+    expect(recalcFinalPrice(prev, { discount_amount: "50", services: [{ price: "500" }, { price: "200" }] }, 100)).toBe("750.00");
+  });
+
+  it("valor final na tela: só descrições — mudar o desconto ajusta o valor final", () => {
+    const prev = { final_price: "700", discount_amount: "", services: [{ price: "" }] };
+    expect(recalcFinalPrice(prev, { discount_amount: "50", services: [{ price: "" }] }, 0)).toBe("650.00");
+    expect(recalcFinalPrice({ ...prev, final_price: "650", discount_amount: "50" }, { discount_amount: "", services: [{ price: "" }] }, 0)).toBe("700.00");
+    expect(recalcFinalPrice(prev, { discount_amount: "", services: [{ price: "" }, { price: "" }] }, 0)).toBe("700");
   });
 
   it("data da garantia não volta um dia pelo fuso", () => {
@@ -65,7 +108,7 @@ describe("PDF da OS: gera o documento com as seções novas", () => {
     reported_defect: "Caiu na água", requested_service: "Outro",
     estimated_price: 740, final_price: 700, warranty_end_date: "2026-12-19T00:00:00+00:00",
     device_condition: "Tela trincada no canto",
-    service_performed: "Limpeza da placa e troca do conector de carga",
+    services_performed: [{ description: "Limpeza da placa e troca do conector de carga", price: null }], discount_amount: 20,
     entry_checklist: { "Display / LCD": "defeito", "Wi-Fi": "na", "Botão Power": "ok" },
     exit_checklist: { "Display / LCD": "ok" },
     payment_pix: 700,
@@ -78,7 +121,7 @@ describe("PDF da OS: gera o documento com as seções novas", () => {
   it("A4 traz observações de entrada, checklist, serviço executado, valor cobrado e garantia", async () => {
     const doc = await generateOSPdf(order, { name: "Loja" }, "Rafael", "https://x/os/1", [{ name: "Conector de carga", quantity: 1, unit_price: 150 }]);
     const t = textOf(doc);
-    for (const s of ["SERVIÇO EXECUTADO", "Limpeza da placa", "Conector de carga", "150,00", "550,00", "Display / LCD", "Tela trincada", "19/12/2026", "TOTAL DO SERVIÇO", "Com defeito:"]) {
+    for (const s of ["SERVIÇO EXECUTADO", "Limpeza da placa", "Conector de carga", "150,00", "570,00", "Demais servi", "Display / LCD", "Tela trincada", "19/12/2026", "TOTAL DO SERVIÇO", "Com defeito:", "Desconto", "20,00"]) {
       expect(t, s).toContain(s);
     }
   });

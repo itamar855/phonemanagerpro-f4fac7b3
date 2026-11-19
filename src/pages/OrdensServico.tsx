@@ -45,6 +45,7 @@ import {
   loadOsPdfItems,
   saveAndOpenPdf,
 } from "@/components/features/os/osPdf";
+import { cleanServiceRows, performedServices, type ServiceFormRow } from "@/components/features/os/osPdfRules";
 // Mapeamento de caixa da OS: utiliza a coluna oficial "cash_register_id" via helper modularizado
 import { createPendingCashEntry } from "@/components/features/os/osCashHelper";
 import { OS_STATUS_CONFIG as statusConfig, ALL_OS_STATUSES as allStatuses } from "@/utils/osStatus";
@@ -87,7 +88,8 @@ const OrdensServico = () => {
     payment_cash: "", payment_card: "", payment_pix: "", payment_other: "", payment_notes: "",
     exit_checklist: {} as ChecklistData,
     warranty_end_date: "",
-    service_performed: "",
+    services: [] as ServiceFormRow[],
+    discount_amount: "",
     justification: "",
   });
 
@@ -1089,10 +1091,14 @@ const OrdensServico = () => {
     if (updateForm.payment_pix !== "") updates.payment_pix = parseFloat(updateForm.payment_pix) || 0;
     if (updateForm.payment_other !== "") updates.payment_other = parseFloat(updateForm.payment_other) || 0;
     if (updateForm.payment_notes) updates.payment_notes = updateForm.payment_notes;
-    // O que foi feito no aparelho (vai para o PDF e o link do cliente)
-    if (updateForm.service_performed.trim() !== (detailOrder.service_performed ?? "").trim()) {
-      updates.service_performed = updateForm.service_performed.trim() || null;
+    // Serviços executados e desconto (vão para o PDF e o link do cliente)
+    const services = cleanServiceRows(updateForm.services);
+    const discount = Math.max(0, parseFloat(updateForm.discount_amount) || 0);
+    if (JSON.stringify(services) !== JSON.stringify(performedServices(detailOrder))) {
+      updates.services_performed = services;
+      updates.service_performed = services.map((s) => s.description).join("\n") || null;
     }
+    if (discount !== (Number(detailOrder.discount_amount) || 0)) updates.discount_amount = discount;
     
     updates.receipt_url = existingReceiptUrl;
 
@@ -1547,7 +1553,8 @@ const OrdensServico = () => {
       payment_notes: order.payment_notes ?? "",
       exit_checklist: (order.exit_checklist as ChecklistData) || {},
       warranty_end_date: order.warranty_end_date ? new Date(order.warranty_end_date).toISOString().split('T')[0] : "",
-      service_performed: order.service_performed ?? "",
+      services: performedServices(order).map((s) => ({ description: s.description, price: s.price === null ? "" : String(s.price) })),
+      discount_amount: Number(order.discount_amount) > 0 ? String(order.discount_amount) : "",
       justification: "",
     });
   };

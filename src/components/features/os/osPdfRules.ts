@@ -28,30 +28,110 @@ export function checklistSummary(data: unknown): ChecklistSummary {
 
 export const hasChecklist = (s: ChecklistSummary) => s.ok.length + s.defects.length + s.untested.length > 0;
 
-export type ServiceLine = { label: string; quantity: number; total: number };
+/** Serviço executado lançado pelo técnico: descrição e valor (opcional). */
+export type PerformedService = { description: string; price: number | null };
+
+/** Lista de serviços da OS; OS antigas com só o texto livre viram uma linha por serviço, sem valor. */
+export function performedServices(order: { services_performed?: unknown; service_performed?: string | null }): PerformedService[] {
+  const raw = Array.isArray(order.services_performed) ? order.services_performed : [];
+  const list = raw
+    .map((x: any) => ({
+      description: String(x?.description ?? "").trim(),
+      price: x?.price === null || x?.price === undefined || x?.price === "" || Number.isNaN(Number(x.price)) ? null : round2(Number(x.price)),
+    }))
+    .filter((x) => x.description);
+  if (list.length) return list;
+  return String(order.service_performed ?? "")
+    .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    .map((description) => ({ description, price: null }));
+}
+
+/** Linha do formulário (valores como texto dos inputs). */
+export type ServiceFormRow = { description: string; price: string };
+
+/** Formulário → o que vai para o banco: sem linhas vazias, valor vazio = null. */
+export function cleanServiceRows(rows: ServiceFormRow[]): PerformedService[] {
+  return rows
+    .map((r) => ({
+      description: r.description.trim(),
+      price: r.price.trim() === "" || Number.isNaN(Number(r.price)) ? null : Math.max(0, round2(Number(r.price))),
+    }))
+    .filter((r) => r.description);
+}
+
+export type ServiceLine = {
+  label: string;
+  /** só peças têm quantidade */
+  quantity: number | null;
+  /** null = serviço sem valor separado (o valor está no total) */
+  total: number | null;
+  kind: "part" | "service" | "labor" | "discount";
+};
 
 /**
- * Linhas do "Serviço executado": as peças com o valor cobrado e, se o valor final
- * for maior que a soma delas, a diferença como mão de obra. Sem peças, o serviço
- * inteiro vira uma linha com o valor final.
+ * Linhas do "Serviço executado": peças (valor cobrado), serviços, a diferença para
+ * o valor final como mão de obra e o desconto. O total é sempre o valor final
+ * (que já tem o desconto); sem valor final, é a soma menos o desconto.
  */
 export function serviceBreakdown(
-  order: { final_price?: number | string | null; requested_service?: string | null },
+  order: {
+    final_price?: number | string | null;
+    requested_service?: string | null;
+    discount_amount?: number | string | null;
+    services_performed?: unknown;
+    service_performed?: string | null;
+  },
   items: OsPdfItem[],
-): { lines: ServiceLine[]; total: number } {
+): { lines: ServiceLine[]; total: number; discount: number } {
   const lines: ServiceLine[] = items.map((i) => {
     const qty = Number(i.quantity) || 1;
-    return { label: i.name?.trim() || "Peça", quantity: qty, total: round2(qty * (Number(i.unit_price) || 0)) };
+    return { label: i.name?.trim() || "Peça", quantity: qty, total: round2(qty * (Number(i.unit_price) || 0)), kind: "part" };
   });
-  const partsTotal = round2(lines.reduce((s, l) => s + l.total, 0));
+  const services = performedServices(order);
+  services.forEach((sv) => lines.push({ label: sv.description, quantity: null, total: sv.price, kind: "service" }));
+
+  const priced = round2(lines.reduce((s, l) => s + (l.total ?? 0), 0));
   const finalPrice = Number(order.final_price) || 0;
-  const service = order.requested_service && order.requested_service !== "Outro" ? order.requested_service : "Serviço";
-  if (finalPrice > partsTotal + 0.009) {
-    lines.push({ label: lines.length ? `Mão de obra - ${service}` : service, quantity: 1, total: round2(finalPrice - partsTotal) });
-  } else if (finalPrice > 0 && finalPrice < partsTotal - 0.009) {
-    lines.push({ label: "Desconto", quantity: 1, total: round2(finalPrice - partsTotal) });
+  let discount = Math.max(0, round2(Number(order.discount_amount) || 0));
+
+  if (finalPrice > 0) {
+    const rest = round2(finalPrice + discount - priced);
+    if (rest > 0.009) {
+      const unpriced = services.some((sv) => sv.price === null);
+      const service = order.requested_service && order.requested_service !== "Outro" ? order.requested_service : "Serviço";
+      const label = unpriced
+        ? (priced > 0 ? "Demais serviços / mão de obra" : "Valor dos serviços")
+        : lines.length ? `Mão de obra - ${service}` : service;
+      lines.push({ label, quantity: null, total: rest, kind: "labor" });
+    } else if (rest < -0.009) {
+      discount = round2(priced - finalPrice); // cobrou menos que a soma: a diferença é desconto
+    }
   }
-  return { lines, total: finalPrice > 0 ? finalPrice : partsTotal };
+  if (discount > 0.009) lines.push({ label: "Desconto", quantity: null, total: -discount, kind: "discount" });
+  const total = finalPrice > 0 ? finalPrice : Math.max(0, round2(priced - discount));
+  return { lines, total, discount };
+}
+
+/**
+ * Valor final na tela de Atualizar Serviço quando o técnico mexe nos serviços ou no desconto:
+ * - com algum serviço com valor: peças + serviços − desconto;
+ * - só descrições: mudar o desconto tira (ou devolve) a diferença do valor final.
+ */
+export function recalcFinalPrice(
+  prev: { final_price: string; discount_amount: string; services: { price: string }[] },
+  next: { discount_amount: string; services: { price: string }[] },
+  partsTotal: number,
+): string {
+  const num = (v: string) => (v === "" || Number.isNaN(Number(v)) ? 0 : Number(v));
+  const priced = next.services.filter((s) => s.price !== "" && !Number.isNaN(Number(s.price)));
+  if (priced.length) {
+    const sum = partsTotal + priced.reduce((a, s) => a + Number(s.price), 0) - num(next.discount_amount);
+    return Math.max(0, round2(sum)).toFixed(2);
+  }
+  if (num(prev.discount_amount) !== num(next.discount_amount) && prev.final_price !== "") {
+    return Math.max(0, round2(num(prev.final_price) + num(prev.discount_amount) - num(next.discount_amount))).toFixed(2);
+  }
+  return prev.final_price;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
