@@ -196,7 +196,9 @@ serve(async (req) => {
       return json({ status: "saved" });
     }
 
-    const cfg = await loadWhatsAppConfig(admin, storeId, { fallback: false }) ?? await loadWhatsAppConfig(admin, null);
+    // número desta loja; sem ele, o status e as fotos usam o da outra loja (só para mostrar)
+    const own = await loadWhatsAppConfig(admin, storeId, { fallback: false });
+    const cfg = own ?? await loadWhatsAppConfig(admin, null);
     if (!cfg) return json({ configured: false, can_manage: await isManager(admin, user.id) });
 
     if (action === "status") {
@@ -241,7 +243,9 @@ serve(async (req) => {
     }
 
     await requireManager(admin, user.id);
-    const evo = evolution(cfg);
+    // conectar, desconectar e webhook só mexem no número DESTA loja (nunca no da outra)
+    if (!own) throw new HttpError(400, "Esta loja ainda não tem WhatsApp próprio. Preencha os dados da instância abaixo e salve.");
+    const evo = evolution(own);
 
     if (action === "connect") return json(await evo.connect());
     if (action === "logout") { await evo.logout(); return json({ status: "logged_out" }); }
