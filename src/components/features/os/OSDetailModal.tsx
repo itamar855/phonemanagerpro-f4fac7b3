@@ -492,7 +492,9 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Fim da Garantia (Opcional)</Label>
+                      <Label className="text-xs">
+                        Fim da Garantia <span className="text-[10px] font-normal text-muted-foreground">(vazio = 90 dias após a entrega)</span>
+                      </Label>
                       <Input
                         type="date"
                         value={updateForm.warranty_end_date}
