@@ -11,7 +11,7 @@ import {
   Camera, Eye, Loader2, DollarSign
 } from "lucide-react";
 import { toast } from "sonner";
-import { generateOSPdf, saveAndOpenPdf } from "@/components/features/os/osPdf";
+import { generateOSPdf, saveAndOpenPdf, type OsPdfItem } from "@/components/features/os/osPdf";
 
 interface PublicOrder {
   id?: string;
@@ -155,7 +155,12 @@ export default function OSPublica() {
         customer_phone: order.customer_phone || "",
       };
 
-      const doc = await generateOSPdf(orderObj, storeObj, "Técnico Especializado", window.location.href);
+      // Checklists, condição física, serviço executado e peças com o valor cobrado
+      const { data: extras } = await supabase.rpc("get_public_os_extras" as any, { p_order_id: order.id ?? id });
+      const ex = (extras ?? {}) as { items?: OsPdfItem[] } & Record<string, unknown>;
+      const { items = [], ...extraFields } = ex;
+
+      const doc = await generateOSPdf({ ...orderObj, ...extraFields }, storeObj, "Técnico Especializado", window.location.href, items);
       saveAndOpenPdf(doc, `OS_${order.order_number}_${order.device_model || 'aparelho'}`, true);
       toast.success("Download da Ordem de Serviço concluído!");
     } catch (err: any) {
