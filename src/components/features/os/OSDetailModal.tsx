@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -60,6 +61,7 @@ interface OSDetailModalProps {
     payment_notes: string;
     exit_checklist: ChecklistData;
     warranty_end_date: string;
+    service_performed: string;
     justification: string;
   };
   setUpdateForm: React.Dispatch<React.SetStateAction<any>>;
@@ -453,6 +455,18 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                   <p className="text-xs font-semibold text-primary flex items-center gap-1.5">
                     <DollarSign className="h-3.5 w-3.5" /> Atualizar Serviço
                   </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="os-service-performed" className="text-xs">
+                      Serviço executado <span className="text-[10px] font-normal text-muted-foreground">(aparece para o cliente no PDF)</span>
+                    </Label>
+                    <Textarea
+                      id="os-service-performed"
+                      value={updateForm.service_performed}
+                      onChange={(e) => setUpdateForm((f: any) => ({ ...f, service_performed: e.target.value }))}
+                      placeholder="Ex.: Limpeza da placa após contato com água, troca do conector de carga e teste geral."
+                      className="min-h-[64px] text-sm"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="text-xs">Valor Final (R$)</Label>

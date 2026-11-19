@@ -42,6 +42,7 @@ import {
   paymentLabels,
   generateOSPdf,
   generateThermalPdf,
+  loadOsPdfItems,
   saveAndOpenPdf,
 } from "@/components/features/os/osPdf";
 // Mapeamento de caixa da OS: utiliza a coluna oficial "cash_register_id" via helper modularizado
@@ -86,6 +87,7 @@ const OrdensServico = () => {
     payment_cash: "", payment_card: "", payment_pix: "", payment_other: "", payment_notes: "",
     exit_checklist: {} as ChecklistData,
     warranty_end_date: "",
+    service_performed: "",
     justification: "",
   });
 
@@ -1087,6 +1089,10 @@ const OrdensServico = () => {
     if (updateForm.payment_pix !== "") updates.payment_pix = parseFloat(updateForm.payment_pix) || 0;
     if (updateForm.payment_other !== "") updates.payment_other = parseFloat(updateForm.payment_other) || 0;
     if (updateForm.payment_notes) updates.payment_notes = updateForm.payment_notes;
+    // O que foi feito no aparelho (vai para o PDF e o link do cliente)
+    if (updateForm.service_performed.trim() !== (detailOrder.service_performed ?? "").trim()) {
+      updates.service_performed = updateForm.service_performed.trim() || null;
+    }
     
     updates.receipt_url = existingReceiptUrl;
 
@@ -1378,7 +1384,7 @@ const OrdensServico = () => {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
-      const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
+      const doc = await generateOSPdf(order, storeObj, techName, publicUrl, await loadOsPdfItems(order.id));
       const orderNum = order.order_number ?? order.id?.slice(0, 8) ?? "OS";
       saveAndOpenPdf(doc, `OS-${orderNum}.pdf`, true);
       toast.success("PDF gerado!");
@@ -1394,7 +1400,7 @@ const OrdensServico = () => {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
-      const doc = await generateThermalPdf(order, storeObj, techName, publicUrl);
+      const doc = await generateThermalPdf(order, storeObj, techName, publicUrl, await loadOsPdfItems(order.id));
       const orderNum = order.order_number ?? order.id?.slice(0, 8) ?? "Cupom";
       saveAndOpenPdf(doc, `OS-Cupom-${orderNum}.pdf`, true);
       toast.success("Cupom gerado (80mm)!");
@@ -1409,7 +1415,7 @@ const OrdensServico = () => {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
       const techName = profileMap.get(order.technician_id) ?? "";
       const publicUrl = getPublicUrl(order.id);
-      const doc = await generateOSPdf(order, storeObj, techName, publicUrl);
+      const doc = await generateOSPdf(order, storeObj, techName, publicUrl, await loadOsPdfItems(order.id));
 
       // Faz upload do PDF para o Supabase Storage e compartilha o link
       const pdfBlob = doc.output("blob");
@@ -1541,6 +1547,7 @@ const OrdensServico = () => {
       payment_notes: order.payment_notes ?? "",
       exit_checklist: (order.exit_checklist as ChecklistData) || {},
       warranty_end_date: order.warranty_end_date ? new Date(order.warranty_end_date).toISOString().split('T')[0] : "",
+      service_performed: order.service_performed ?? "",
       justification: "",
     });
   };

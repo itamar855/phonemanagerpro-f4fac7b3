@@ -1,4 +1,25 @@
 import { OS_STATUS_CONFIG as statusConfig } from "@/utils/osStatus";
+import { checklistSummary, formatDay, hasChecklist, serviceBreakdown, type ChecklistSummary, type OsPdfItem } from "./osPdfRules";
+import { supabase } from "@/integrations/supabase/client";
+
+export type { OsPdfItem } from "./osPdfRules";
+
+/** Peças lançadas na OS com o valor cobrado do cliente (sem custo nem fornecedor). */
+export const loadOsPdfItems = async (orderId: string): Promise<OsPdfItem[]> => {
+  const { data, error } = await supabase
+    .from("service_order_items")
+    .select("quantity, unit_price, created_at, products (name, brand, model)")
+    .eq("service_order_id", orderId)
+    .order("created_at");
+  if (error || !data) return [];
+  return (data as any[]).map((i) => ({
+    name: i.products?.name ?? "Peça",
+    brand: i.products?.brand ?? null,
+    model: i.products?.model ?? null,
+    quantity: Number(i.quantity) || 1,
+    unit_price: Number(i.unit_price) || 0,
+  }));
+};
 
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -20,7 +41,7 @@ export const paymentLabels: Record<string, string> = {
 };
 
 // ── Gera PDF via jsPDF (importado dinamicamente) ──────────────────────────
-export const generateOSPdf = async (order: any, store: any, techName: string, publicUrl: string) => {
+export const generateOSPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
@@ -41,7 +62,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     if (y + needed > 278) { doc.addPage(); y = M; }
   };
 
-  const storeName = store?.name || "Assistencia Tecnica";
+  const storeName = store?.name || "Assistência Técnica";
 
   // ═════════════════════════════════════════════════════════════════════════
   //  HEADER
@@ -76,7 +97,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
   doc.setFillColor(...WHITE);
   doc.roundedRect(W - M - 40, 5, 40, 18, 2, 2, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(...MID);
-  doc.text("ORDEM DE SERVICO", W - M - 20, 12, { align: "center" });
+  doc.text("ORDEM DE SERVIÇO", W - M - 20, 12, { align: "center" });
   doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...BLACK);
   doc.text(`#${order.order_number}`, W - M - 20, 20, { align: "center" });
 
@@ -105,16 +126,17 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
   const sectionBox = (title: string, contentFn: () => void) => {
     ensureSpace(35);
     const startY = y;
+    const startPage = (doc as any).internal.getNumberOfPages();
     doc.setFillColor(...BLACK);
     doc.rect(M, y, CW, 7, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
     doc.text(title.toUpperCase(), M + 4, y + 5);
     y += 10;
     contentFn();
-    const boxH = y - startY - 7;
     doc.setDrawColor(...LIGHT);
     doc.setLineWidth(0.35);
-    doc.rect(M, startY + 7, CW, boxH);
+    if ((doc as any).internal.getNumberOfPages() === startPage) doc.rect(M, startY + 7, CW, y - startY - 7);
+    else doc.line(M, y, W - M, y); // a seção virou a página: só fecha embaixo
     y += 4;
   };
 
@@ -163,6 +185,33 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     y += 4;
   };
 
+  // Checklist em três grupos: com defeito (vermelho), não testado e funcionando.
+  const checklistBlock = (title: string, sum: ChecklistSummary) => {
+    ensureSpace(14);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
+    doc.text(title.toUpperCase(), M + 4, y);
+    y += 4.5;
+    const group = (label: string, list: string[], color: [number, number, number]) => {
+      if (!list.length) return;
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "bold");
+      const lw = doc.getTextWidth(label + "  ");
+      doc.setFont("helvetica", "normal");
+      const lines = doc.splitTextToSize(list.join(", "), CW - 8 - lw);
+      ensureSpace(lines.length * 3.8 + 1);
+      doc.setFont("helvetica", "bold"); doc.setTextColor(...color);
+      doc.text(label, M + 4, y);
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...DARK);
+      doc.text(lines, M + 4 + lw, y);
+      y += lines.length * 3.8 + 1;
+    };
+    group("Com defeito:", sum.defects, [200, 30, 30]);
+    group("Não testado:", sum.untested, MID);
+    if (!sum.defects.length && !sum.untested.length) group("Funcionando:", [`todos os ${sum.ok.length} itens verificados`], [22, 120, 60]);
+    else group("Funcionando:", sum.ok, [22, 120, 60]);
+    y += 1;
+  };
+
   // ═════════════════════════════════════════════════════════════════════════
   //  CONTENT
   // ═════════════════════════════════════════════════════════════════════════
@@ -173,14 +222,16 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
 
   sectionBox("APARELHO RECEBIDO", () => {
     twoCol("Marca", order.device_brand || "", "Modelo", order.device_model || "");
-    divider();
-    threeCol("Cor", order.device_color || "-", "IMEI", order.device_imei || "-", "Acessorios", order.device_accessories || "-");
+    if (order.device_color || order.device_imei || order.device_accessories) {
+      divider();
+      threeCol("Cor", order.device_color || "-", "IMEI", order.device_imei || "-", "Acessórios", order.device_accessories || "-");
+    }
     if (order.device_password) {
       divider();
       doc.setFillColor(...BG); doc.rect(M + 3, y - 1, CW - 6, 12, "F");
       doc.setDrawColor(...BLACK); doc.setLineWidth(0.45); doc.rect(M + 3, y - 1, CW - 6, 12, "S");
       doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...MID);
-      doc.text("SENHA / PADRAO DE DESBLOQUEIO", M + 7, y + 3);
+      doc.text("SENHA / PADRÃO DE DESBLOQUEIO", M + 7, y + 3);
       doc.setFont("helvetica", "bold"); doc.setFontSize(12.5); doc.setTextColor(...BLACK);
       doc.text(String(order.device_password), M + 7, y + 8.5);
       y += 15;
@@ -193,22 +244,60 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
       doc.setLineWidth(0.4);
       doc.rect(M + 3, y - 1, CW - 6, 11, "S");
       doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(220, 38, 38);
-      doc.text("ATENCAO: APARELHO DEU ENTRADA DESLIGADO", M + 7, y + 3);
+      doc.text("ATENÇÃO: APARELHO DEU ENTRADA DESLIGADO", M + 7, y + 3);
       doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(120, 50, 50);
-      doc.text("Nao temos como testar seus perifericos e afirmar que estao em perfeito funcionamento.", M + 7, y + 7.5);
+      doc.text("Não temos como testar seus periféricos e afirmar que estão em perfeito funcionamento.", M + 7, y + 7.5);
       y += 14;
     }
-    if (order.device_condition) { divider(); fullField("Condicao Fisica", order.device_condition); }
+    if (order.device_condition) { divider(); fullField("Observações de entrada / condição física", order.device_condition); }
+    const entry = checklistSummary(order.entry_checklist);
+    if (hasChecklist(entry)) { divider(); checklistBlock("Checklist de entrada (como o aparelho chegou)", entry); }
   });
 
-  sectionBox("SERVICO SOLICITADO", () => {
+  sectionBox("SERVIÇO SOLICITADO", () => {
     fullField("Defeito Relatado", order.reported_defect || "");
     divider();
-    fullField("Servico a Realizar", order.requested_service || "");
-    if (techName) { divider(); fullField("Tecnico Responsavel", techName); }
+    fullField("Serviço a Realizar", order.requested_service || "");
+    if (techName) { divider(); fullField("Técnico Responsável", techName); }
   });
 
-  sectionBox("ORCAMENTO / VALORES", () => {
+  const { lines: svcLines, total: svcTotal } = serviceBreakdown(order, items);
+  const exit = checklistSummary(order.exit_checklist);
+  if (order.service_performed || svcLines.length || hasChecklist(exit)) {
+    sectionBox("SERVIÇO EXECUTADO", () => {
+      if (order.service_performed) {
+        fullField("O que foi feito", String(order.service_performed));
+        if (svcLines.length) divider();
+      }
+      if (svcLines.length) {
+        const qX = W - M - 46, vX = W - M - 6;
+        doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
+        doc.text("PEÇA / SERVIÇO", M + 6, y);
+        doc.text("QTD", qX, y, { align: "right" });
+        doc.text("VALOR COBRADO", vX, y, { align: "right" });
+        y += 5;
+        svcLines.forEach((l) => {
+          doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...DARK);
+          const name = doc.splitTextToSize(l.label, qX - M - 20);
+          ensureSpace(name.length * 4.2 + 2);
+          doc.text(name, M + 6, y);
+          doc.text(String(l.quantity), qX, y, { align: "right" });
+          doc.text(formatCurrency(l.total), vX, y, { align: "right" });
+          y += name.length * 4.2 + 1.5;
+        });
+        doc.setDrawColor(...BLACK); doc.setLineWidth(0.6); doc.line(M + 4, y, W - M - 4, y);
+        y += 5.5;
+        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...BLACK);
+        doc.text("TOTAL DO SERVIÇO", M + 6, y);
+        doc.text(formatCurrency(svcTotal), vX, y, { align: "right" });
+        y += 5;
+      }
+      if (order.warranty_end_date) { divider(); fullField("Garantia até", formatDay(order.warranty_end_date)); }
+      if (hasChecklist(exit)) { divider(); checklistBlock("Checklist de saída (como o aparelho foi entregue)", exit); }
+    });
+  }
+
+  sectionBox("ORÇAMENTO / VALORES", () => {
     const halfW = (CW - 8) / 2;
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
     doc.text("VALOR ESTIMADO", M + 4, y);
@@ -220,7 +309,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     doc.text(order.final_price ? formatCurrency(Number(order.final_price)) : "-", M + 4 + halfW + 4, y + 7);
     doc.setDrawColor(...MID); doc.setLineWidth(0.4); doc.line(M + halfW + 4, y - 2, M + halfW + 4, y + 10);
     y += 12;
-    if (order.estimated_completion) { divider(); fullField("Previsao de Entrega", new Date(order.estimated_completion).toLocaleString("pt-BR")); }
+    if (order.estimated_completion) { divider(); fullField("Previsão de Entrega", new Date(order.estimated_completion).toLocaleString("pt-BR")); }
   });
 
   const hasPay = [order.payment_cash, order.payment_card, order.payment_pix, order.payment_other].some(v => Number(v) > 0);
@@ -228,7 +317,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     sectionBox("PAGAMENTO RECEBIDO", () => {
       const pays: [string, number][] = [];
       if (Number(order.payment_cash) > 0)  pays.push(["Dinheiro", Number(order.payment_cash)]);
-      if (Number(order.payment_card) > 0)  pays.push(["Cartao",   Number(order.payment_card)]);
+      if (Number(order.payment_card) > 0)  pays.push(["Cartão",   Number(order.payment_card)]);
       if (Number(order.payment_pix)  > 0)  pays.push(["PIX",      Number(order.payment_pix)]);
       if (Number(order.payment_other) > 0) pays.push(["Outro",    Number(order.payment_other)]);
       const total = pays.reduce((s, [, v]) => s + v, 0);
@@ -247,7 +336,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     });
   }
 
-  sectionBox("TERMOS E CONDICOES", () => {
+  sectionBox("TERMOS E CONDIÇÕES", () => {
     doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...MID);
     const lines = doc.splitTextToSize(TERMS_TEXT, CW - 10);
     doc.text(lines, M + 5, y);
@@ -263,6 +352,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     y += 5;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MID);
     doc.text(order.customer_name || "Cliente", M, y);
+    y += 6;
   } else {
     const sigW = (CW - 24) / 2;
     doc.setDrawColor(...BLACK); doc.setLineWidth(0.5);
@@ -297,7 +387,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
 };
 
 // ── Gera Cupom 80mm ───────────────────────────────────────────────────────
-export const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string) => {
+export const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: [80, 200] }); // Formato contínuo 80mm
   let y = 10;
@@ -313,10 +403,21 @@ export const generateThermalPdf = async (order: any, store: any, techName: strin
   const textL = (l: string, v: string) => {
     doc.setFontSize(8); doc.setFont("helvetica", "bold");
     doc.text(l + ":", 5, y);
+    const lw = doc.getTextWidth(l + ": "); // medido em negrito, como o rótulo
     doc.setFont("helvetica", "normal");
-    const arr = doc.splitTextToSize(v, W - 10 - doc.getTextWidth(l + ": "));
-    doc.text(arr, 5 + doc.getTextWidth(l + ": "), y);
+    const arr = doc.splitTextToSize(v || "-", W - 10 - lw);
+    doc.text(arr, 5 + lw, y);
     y += arr.length * 3 + 3;
+  };
+
+  // Peça/serviço à esquerda, valor à direita
+  const priceLine = (l: string, v: string, bold = false) => {
+    doc.setFontSize(8); doc.setFont("helvetica", bold ? "bold" : "normal");
+    const vw = doc.getTextWidth(v) + 3;
+    const arr = doc.splitTextToSize(l, W - 10 - vw);
+    doc.text(arr, 5, y);
+    doc.text(v, W - 5, y, { align: "right" });
+    y += arr.length * 3 + 2;
   };
   
   const line = () => { doc.line(5, y, W-5, y); y += 4; };
@@ -334,12 +435,20 @@ export const generateThermalPdf = async (order: any, store: any, techName: strin
   textL("Aparelho", `${order.device_brand} ${order.device_model}`);
   if (order.device_is_off) {
     textC("ALERTA: APARELHO RECEBIDO DESLIGADO", 7, true);
-    textC("Nao testamos perifericos.", 7);
+    textC("Não testamos periféricos.", 7);
   }
   textL("Defeito", order.reported_defect);
   textL("Serviço", order.requested_service);
-  if (order.final_price) textL("Valor", formatCurrency(Number(order.final_price)));
+  if (order.service_performed) textL("Feito", String(order.service_performed));
+  const { lines: svc, total } = serviceBreakdown(order, items);
+  if (svc.length) {
+    y += 1;
+    svc.forEach((l) => priceLine(l.quantity > 1 ? `${l.quantity}x ${l.label}` : l.label, formatCurrency(l.total)));
+    priceLine("TOTAL", formatCurrency(total), true);
+    y += 1;
+  }
   else textL("Orçamento", formatCurrency(Number(order.estimated_price || 0)));
+  if (order.warranty_end_date) textL("Garantia até", formatDay(order.warranty_end_date));
   line();
   textC("Acompanhe online:", 8);
   textC(publicUrl, 7);
