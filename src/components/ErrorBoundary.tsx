@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import debugLogger from "@/utils/debugLogger";
+import { isChunkLoadError, reloadForNewVersion } from "@/lib/staleBuild";
 
 // ============================================================
 // CellManagerPro — Error Boundary
@@ -16,6 +17,8 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  /** Versão nova publicada: recarregando a página (não é erro do usuário). */
+  updating?: boolean;
 }
 
 class ErrorBoundary extends Component<Props, State> {
@@ -25,11 +28,20 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    return { hasError: true, error };
+    return { hasError: true, error, updating: isChunkLoadError(error) };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ errorInfo });
+
+    // Versão nova no ar e esta aba ainda na antiga: recarrega uma vez em vez de mostrar erro
+    if (isChunkLoadError(error)) {
+      if (reloadForNewVersion()) {
+        debugLogger.warn("Versão nova publicada: recarregando a página", { errorName: error.name });
+        return;
+      }
+      this.setState({ updating: false });
+    }
 
     // Log via debugLogger
     debugLogger.error("React Error Boundary caught an error", {
@@ -51,6 +63,17 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   render() {
+    if (this.state.hasError && this.state.updating) {
+      return (
+        <div role="status" style={{
+          minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+          background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)",
+          fontFamily: "'Inter', 'Segoe UI', sans-serif", color: "#e2e8f0", fontSize: "1rem",
+        }}>
+          Atualizando para a versão nova…
+        </div>
+      );
+    }
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
