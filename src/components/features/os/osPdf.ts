@@ -1,5 +1,5 @@
 import { OS_STATUS_CONFIG as statusConfig } from "@/utils/osStatus";
-import { checklistSummary, formatDay, hasChecklist, serviceBreakdown, type ChecklistSummary, type OsPdfItem } from "./osPdfRules";
+import { checklistCount, checklistRows, formatDay, serviceBreakdown, type CheckMark, type OsPdfItem } from "./osPdfRules";
 import { supabase } from "@/integrations/supabase/client";
 
 export type { OsPdfItem } from "./osPdfRules";
@@ -107,16 +107,33 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
   //  STATUS ROW
   // ═════════════════════════════════════════════════════════════════════════
   const statusLabel = statusConfig[order.status]?.label ?? order.status;
-  const dateStr = new Date(order.created_at).toLocaleString("pt-BR");
+  const fmtDT = (v: unknown) => {
+    if (!v) return "";
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
 
   doc.setFillColor(...BLACK);
   const statusW = doc.getStringUnitWidth(statusLabel.toUpperCase()) * 9 / doc.internal.scaleFactor + 12;
-  doc.roundedRect(M, y, Math.max(statusW, 42), 8, 1.5, 1.5, "F");
+  doc.roundedRect(M, y + 1, Math.max(statusW, 42), 8, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...WHITE);
-  doc.text(statusLabel.toUpperCase(), M + 5, y + 5.5);
+  doc.text(statusLabel.toUpperCase(), M + 5, y + 6.5);
 
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...MID);
-  doc.text(`Emitida em ${dateStr}`, W - M, y + 5.5, { align: "right" });
+  // Datas da OS à direita: entrada, previsão, conclusão e entrega
+  const dates = ([
+    ["ENTRADA", fmtDT(order.created_at)],
+    ["PREVISÃO", order.delivered_at ? "" : fmtDT(order.estimated_completion)],
+    ["CONCLUÍDA", order.delivered_at ? "" : fmtDT(order.completed_at)],
+    ["ENTREGUE", fmtDT(order.delivered_at)],
+  ] as [string, string][]).filter(([, v]) => v);
+  let dx = W - M;
+  [...dates].reverse().forEach(([label, value]) => {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...SOFT);
+    doc.text(label, dx, y + 3, { align: "right" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...DARK);
+    doc.text(value, dx, y + 7.5, { align: "right" });
+    dx -= 34;
+  });
 
   y += 13;
 
@@ -185,39 +202,11 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     y += 4;
   };
 
-  // Checklist em três grupos: com defeito (vermelho), não testado e funcionando.
-  const checklistBlock = (title: string, sum: ChecklistSummary) => {
-    ensureSpace(14);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
-    doc.text(title.toUpperCase(), M + 4, y);
-    y += 4.5;
-    const group = (label: string, list: string[], color: [number, number, number]) => {
-      if (!list.length) return;
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "bold");
-      const lw = doc.getTextWidth(label + "  ");
-      doc.setFont("helvetica", "normal");
-      const lines = doc.splitTextToSize(list.join(", "), CW - 8 - lw);
-      ensureSpace(lines.length * 3.8 + 1);
-      doc.setFont("helvetica", "bold"); doc.setTextColor(...color);
-      doc.text(label, M + 4, y);
-      doc.setFont("helvetica", "normal"); doc.setTextColor(...DARK);
-      doc.text(lines, M + 4 + lw, y);
-      y += lines.length * 3.8 + 1;
-    };
-    group("Com defeito:", sum.defects, [200, 30, 30]);
-    group("Não testado:", sum.untested, MID);
-    if (!sum.defects.length && !sum.untested.length) group("Funcionando:", [`todos os ${sum.ok.length} itens verificados`], [22, 120, 60]);
-    else group("Funcionando:", sum.ok, [22, 120, 60]);
-    y += 1;
-  };
-
   // ═════════════════════════════════════════════════════════════════════════
   //  CONTENT
   // ═════════════════════════════════════════════════════════════════════════
   sectionBox("DADOS DO CLIENTE", () => {
-    twoCol("Nome Completo", order.customer_name || "", "Telefone", order.customer_phone || "");
-    if (order.customer_cpf) { divider(); fullField("CPF / Documento", order.customer_cpf); }
+    threeCol("Nome Completo", order.customer_name || "", "Telefone", order.customer_phone || "", "CPF / Documento", order.customer_cpf || "");
   });
 
   sectionBox("APARELHO RECEBIDO", () => {
@@ -250,65 +239,168 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
       y += 14;
     }
     if (order.device_condition) { divider(); fullField("Observações de entrada / condição física", order.device_condition); }
-    const entry = checklistSummary(order.entry_checklist);
-    if (hasChecklist(entry)) { divider(); checklistBlock("Checklist de entrada (como o aparelho chegou)", entry); }
   });
 
   sectionBox("SERVIÇO SOLICITADO", () => {
-    fullField("Defeito Relatado", order.reported_defect || "");
-    divider();
-    fullField("Serviço a Realizar", order.requested_service || "");
-    if (techName) { divider(); fullField("Técnico Responsável", techName); }
+    threeCol("Defeito Relatado", order.reported_defect || "", "Serviço a Realizar", order.requested_service || "", "Técnico Responsável", techName || "");
   });
 
-  const { lines: svcLines, total: svcTotal } = serviceBreakdown(order, items);
-  const exit = checklistSummary(order.exit_checklist);
-  if (svcLines.length || hasChecklist(exit)) {
-    sectionBox("SERVIÇO EXECUTADO", () => {
-      if (svcLines.length) {
-        const qX = W - M - 46, vX = W - M - 6;
-        doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
-        doc.text("SERVIÇOS E PEÇAS", M + 6, y);
-        doc.text("QTD", qX, y, { align: "right" });
-        doc.text("VALOR COBRADO", vX, y, { align: "right" });
-        y += 5;
-        svcLines.forEach((l) => {
-          doc.setFont("helvetica", l.kind === "discount" ? "bold" : "normal"); doc.setFontSize(9.5);
-          if (l.kind === "discount") doc.setTextColor(22, 120, 60); else doc.setTextColor(...DARK);
-          const label = l.kind === "service" ? `- ${l.label}` : l.label;
-          const name = doc.splitTextToSize(label, qX - M - 20);
-          ensureSpace(name.length * 4.2 + 2);
-          doc.text(name, M + 6, y);
-          if (l.quantity !== null) doc.text(String(l.quantity), qX, y, { align: "right" });
-          if (l.total !== null) doc.text(l.total < 0 ? `- ${formatCurrency(-l.total)}` : formatCurrency(l.total), vX, y, { align: "right" });
-          y += name.length * 4.2 + 1.5;
-        });
-        doc.setDrawColor(...BLACK); doc.setLineWidth(0.6); doc.line(M + 4, y, W - M - 4, y);
-        y += 5.5;
-        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...BLACK);
-        doc.text("TOTAL DO SERVIÇO", M + 6, y);
-        doc.text(formatCurrency(svcTotal), vX, y, { align: "right" });
-        y += 5;
+  // ── Checklist de testes: cada item com a situação na entrada e na saída ──
+  const rows = checklistRows(order.entry_checklist, order.exit_checklist);
+  if (rows.length) {
+    const GREEN: [number, number, number] = [22, 128, 61];
+    const RED: [number, number, number] = [200, 30, 30];
+    const GRAY: [number, number, number] = [165, 165, 165];
+    const stages = (["entry", "exit"] as const).filter((st) => rows.some((r) => r[st]));
+    const half = Math.ceil(rows.length / 2);
+    const rowH = 5.2;
+    ensureSpace(42 + half * rowH);
+    sectionBox("CHECKLIST DE TESTES DO APARELHO", () => {
+      const drawMark = (m: CheckMark | null, cx: number, cy: number) => {
+        if (!m) {
+          doc.setDrawColor(...LIGHT); doc.setLineWidth(0.4); doc.line(cx - 1, cy, cx + 1, cy);
+          return;
+        }
+        doc.setFillColor(...(m === "ok" ? GREEN : m === "defeito" ? RED : GRAY));
+        doc.circle(cx, cy, 1.75, "F");
+        doc.setDrawColor(...WHITE); doc.setLineWidth(0.45);
+        if (m === "ok") { doc.line(cx - 0.85, cy + 0.05, cx - 0.25, cy + 0.7); doc.line(cx - 0.25, cy + 0.7, cx + 0.9, cy - 0.65); }
+        else if (m === "defeito") { doc.line(cx - 0.7, cy - 0.7, cx + 0.7, cy + 0.7); doc.line(cx - 0.7, cy + 0.7, cx + 0.7, cy - 0.7); }
+        else doc.line(cx - 0.8, cy, cx + 0.8, cy);
+      };
+
+      // Resumo de cada etapa
+      const stageName = { entry: "Na entrada", exit: "Na entrega" } as const;
+      stages.forEach((st) => {
+        const c = checklistCount(rows, st);
+        let x = M + 4;
+        const part = (text: string, color: [number, number, number], bold = false) => {
+          doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setTextColor(...color);
+          doc.text(text, x, y);
+          x += doc.getTextWidth(text);
+        };
+        doc.setFontSize(8.5);
+        part(`${stageName[st]}:  `, DARK, true);
+        if (c.ok === c.total) part(`${c.total} de ${c.total} itens funcionando`, GREEN, true);
+        else {
+          const bits: [string, [number, number, number]][] = [];
+          if (c.ok) bits.push([`${c.ok} funcionando`, GREEN]);
+          if (c.defects) bits.push([`${c.defects} com defeito`, RED]);
+          if (c.untested) bits.push([`${c.untested} não testado${c.untested > 1 ? "s" : ""}`, MID]);
+          bits.forEach(([t, col], i) => { if (i) part("  ·  ", SOFT); part(t, col, true); });
+        }
+        y += 4.5;
+      });
+      if (stages.includes("entry") && order.device_is_off) {
+        doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(...MID);
+        doc.text("O aparelho deu entrada desligado: as funções que dependem dele ligado não puderam ser testadas na entrada.", M + 4, y);
+        y += 4;
       }
-      if (order.warranty_end_date) { divider(); fullField("Garantia até", formatDay(order.warranty_end_date)); }
-      if (hasChecklist(exit)) { divider(); checklistBlock("Checklist de saída (como o aparelho foi entregue)", exit); }
+      y += 1.5;
+
+      // Tabela em duas colunas
+      const gap = 6;
+      const colW = (CW - 8 - gap) / 2;
+      const markW = 15;
+      const nameW = colW - markW * stages.length;
+      const stageHead = { entry: "ENTRADA", exit: "SAÍDA" } as const;
+      for (let c = 0; c < 2; c++) {
+        if (c === 1 && rows.length <= half) break;
+        const x0 = M + 4 + c * (colW + gap);
+        doc.setFillColor(235, 235, 235); doc.rect(x0, y - 3.4, colW, 5, "F");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(...MID);
+        doc.text("ITEM TESTADO", x0 + 2, y);
+        stages.forEach((st, i) => doc.text(stageHead[st], x0 + nameW + markW * (i + 0.5), y, { align: "center" }));
+      }
+      y += 1.6;
+      for (let r = 0; r < half; r++) {
+        const top = y + r * rowH;
+        for (let c = 0; c < 2; c++) {
+          const row = rows[c * half + r];
+          if (!row) continue;
+          const x0 = M + 4 + c * (colW + gap);
+          if (r % 2 === 1) { doc.setFillColor(...BG); doc.rect(x0, top, colW, rowH, "F"); }
+          doc.setDrawColor(232, 232, 232); doc.setLineWidth(0.2); doc.line(x0, top + rowH, x0 + colW, top + rowH);
+          const finalMark = row.exit ?? row.entry;
+          doc.setFont("helvetica", finalMark === "defeito" ? "bold" : "normal"); doc.setFontSize(8);
+          doc.setTextColor(...(finalMark === "defeito" ? RED : DARK));
+          doc.text(doc.splitTextToSize(row.item, nameW - 3)[0], x0 + 2, top + rowH / 2 + 1.1);
+          stages.forEach((st, i) => drawMark(row[st], x0 + nameW + markW * (i + 0.5), top + rowH / 2));
+        }
+      }
+      y += half * rowH + 4;
+
+      // Legenda
+      let lx = M + 4;
+      ([["ok", "Funcionando"], ["defeito", "Com defeito"], ["na", "Não testado"]] as [CheckMark, string][]).forEach(([m, label]) => {
+        drawMark(m, lx + 1.75, y - 1);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...MID);
+        doc.text(label, lx + 4.5, y);
+        lx += 4.5 + doc.getTextWidth(label) + 7;
+      });
+      y += 2;
     });
   }
 
-  sectionBox("ORÇAMENTO / VALORES", () => {
-    const halfW = (CW - 8) / 2;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
-    doc.text("VALOR ESTIMADO", M + 4, y);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...DARK);
-    doc.text(formatCurrency(Number(order.estimated_price || 0)), M + 4, y + 7);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
-    doc.text("VALOR FINAL", M + 4 + halfW + 4, y);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...BLACK);
-    doc.text(order.final_price ? formatCurrency(Number(order.final_price)) : "-", M + 4 + halfW + 4, y + 7);
-    doc.setDrawColor(...MID); doc.setLineWidth(0.4); doc.line(M + halfW + 4, y - 2, M + halfW + 4, y + 10);
-    y += 12;
-    if (order.estimated_completion) { divider(); fullField("Previsão de Entrega", new Date(order.estimated_completion).toLocaleString("pt-BR")); }
-  });
+  const { lines: svcLines, total: svcTotal } = serviceBreakdown(order, items);
+  if (svcLines.length) {
+    sectionBox("SERVIÇO EXECUTADO", () => {
+      const qX = W - M - 46, vX = W - M - 6;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
+      doc.text("SERVIÇOS E PEÇAS", M + 6, y);
+      doc.text("QTD", qX, y, { align: "right" });
+      doc.text("VALOR COBRADO", vX, y, { align: "right" });
+      y += 5;
+      svcLines.forEach((l) => {
+        doc.setFont("helvetica", l.kind === "discount" ? "bold" : "normal"); doc.setFontSize(9.5);
+        if (l.kind === "discount") doc.setTextColor(22, 120, 60); else doc.setTextColor(...DARK);
+        const label = l.kind === "service" ? `- ${l.label}` : l.label;
+        const name = doc.splitTextToSize(label, qX - M - 20);
+        ensureSpace(name.length * 4.2 + 2);
+        doc.text(name, M + 6, y);
+        if (l.quantity !== null) doc.text(String(l.quantity), qX, y, { align: "right" });
+        if (l.total !== null) doc.text(l.total < 0 ? `- ${formatCurrency(-l.total)}` : formatCurrency(l.total), vX, y, { align: "right" });
+        y += name.length * 4.2 + 1.5;
+      });
+      doc.setDrawColor(...BLACK); doc.setLineWidth(0.6); doc.line(M + 4, y, W - M - 4, y);
+      y += 5.5;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...BLACK);
+      doc.text("TOTAL DO SERVIÇO", M + 6, y);
+      doc.text(formatCurrency(svcTotal), vX, y, { align: "right" });
+      const estimated = Number(order.estimated_price) || 0;
+      if (estimated > 0 && Math.abs(estimated - svcTotal) > 0.009) {
+        y += 4.5;
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...SOFT);
+        doc.text(`Orçamento inicial: ${formatCurrency(estimated)}`, vX, y, { align: "right" });
+      }
+      y += 5;
+      if (order.warranty_end_date) {
+        ensureSpace(16);
+        divider();
+        doc.setFillColor(240, 249, 243); doc.setDrawColor(22, 128, 61); doc.setLineWidth(0.35);
+        doc.roundedRect(M + 4, y - 1, CW - 8, 9, 1.5, 1.5, "FD");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(22, 110, 55);
+        doc.text(`GARANTIA DO SERVIÇO ATÉ ${formatDay(order.warranty_end_date)}`, M + 8, y + 4.6);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...MID);
+        doc.text("Cobre o defeito reparado e as peças substituídas (ver termos).", W - M - 8, y + 4.6, { align: "right" });
+        y += 11;
+      }
+    });
+  } else {
+    sectionBox("ORÇAMENTO / VALORES", () => {
+      const halfW = (CW - 8) / 2;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
+      doc.text("VALOR ESTIMADO", M + 4, y);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...DARK);
+      doc.text(formatCurrency(Number(order.estimated_price || 0)), M + 4, y + 7);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
+      doc.text("VALOR FINAL", M + 4 + halfW + 4, y);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...BLACK);
+      doc.text(order.final_price ? formatCurrency(Number(order.final_price)) : "-", M + 4 + halfW + 4, y + 7);
+      doc.setDrawColor(...MID); doc.setLineWidth(0.4); doc.line(M + halfW + 4, y - 2, M + halfW + 4, y + 10);
+      y += 12;
+    });
+  }
 
   const hasPay = [order.payment_cash, order.payment_card, order.payment_pix, order.payment_other].some(v => Number(v) > 0);
   if (hasPay) {
@@ -387,74 +479,91 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
 // ── Gera Cupom 80mm ───────────────────────────────────────────────────────
 export const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ unit: "mm", format: [80, 200] }); // Formato contínuo 80mm
-  let y = 10;
-  const W = 80;
+  // Papel contínuo 80mm: desenha uma vez para medir e de novo no tamanho exato do conteúdo
+  const render = (doc: any) => {
+    let y = 10;
+    const W = 80;
   
-  const textC = (t: string, size=10, bold=false) => {
-    doc.setFontSize(size); doc.setFont("helvetica", bold ? "bold" : "normal");
-    const arr = doc.splitTextToSize(t, W - 10);
-    doc.text(arr, W / 2, y, { align: "center" });
-    y += arr.length * (size/2.5) + 3;
-  };
+    const textC = (t: string, size=10, bold=false) => {
+      doc.setFontSize(size); doc.setFont("helvetica", bold ? "bold" : "normal");
+      const arr = doc.splitTextToSize(t, W - 10);
+      doc.text(arr, W / 2, y, { align: "center" });
+      y += arr.length * (size/2.5) + 3;
+    };
   
-  const textL = (l: string, v: string) => {
-    doc.setFontSize(8); doc.setFont("helvetica", "bold");
-    doc.text(l + ":", 5, y);
-    const lw = doc.getTextWidth(l + ": "); // medido em negrito, como o rótulo
-    doc.setFont("helvetica", "normal");
-    const arr = doc.splitTextToSize(v || "-", W - 10 - lw);
-    doc.text(arr, 5 + lw, y);
-    y += arr.length * 3 + 3;
-  };
+    const textL = (l: string, v: string) => {
+      doc.setFontSize(8); doc.setFont("helvetica", "bold");
+      doc.text(l + ":", 5, y);
+      const lw = doc.getTextWidth(l + ": "); // medido em negrito, como o rótulo
+      doc.setFont("helvetica", "normal");
+      const arr = doc.splitTextToSize(v || "-", W - 10 - lw);
+      doc.text(arr, 5 + lw, y);
+      y += arr.length * 3 + 3;
+    };
 
-  // Peça/serviço à esquerda, valor à direita
-  const priceLine = (l: string, v: string, bold = false) => {
-    doc.setFontSize(8); doc.setFont("helvetica", bold ? "bold" : "normal");
-    const vw = doc.getTextWidth(v) + 3;
-    const arr = doc.splitTextToSize(l, W - 10 - vw);
-    doc.text(arr, 5, y);
-    doc.text(v, W - 5, y, { align: "right" });
-    y += arr.length * 3 + 2;
-  };
+    // Peça/serviço à esquerda, valor à direita
+    const priceLine = (l: string, v: string, bold = false) => {
+      doc.setFontSize(8); doc.setFont("helvetica", bold ? "bold" : "normal");
+      const vw = doc.getTextWidth(v) + 3;
+      const arr = doc.splitTextToSize(l, W - 10 - vw);
+      doc.text(arr, 5, y);
+      doc.text(v, W - 5, y, { align: "right" });
+      y += arr.length * 3 + 2;
+    };
   
-  const line = () => { doc.line(5, y, W-5, y); y += 4; };
+    const line = () => { doc.line(5, y, W-5, y); y += 4; };
 
-  textC(store?.name || "Assistência Técnica", 12, true);
-  if (store?.cnpj) textC(`CNPJ: ${store.cnpj}`, 8);
-  if (store?.phone) textC(`Tel: ${store.phone}`, 8);
-  line();
-  textC(`ORDEM DE SERVIÇO #${order.order_number}`, 10, true);
-  textC(new Date(order.created_at).toLocaleString("pt-BR"), 8);
-  line();
-  textL("Cliente", order.customer_name);
-  if (order.customer_phone) textL("Tel", order.customer_phone);
-  line();
-  textL("Aparelho", `${order.device_brand} ${order.device_model}`);
-  if (order.device_is_off) {
-    textC("ALERTA: APARELHO RECEBIDO DESLIGADO", 7, true);
-    textC("Não testamos periféricos.", 7);
-  }
-  textL("Defeito", order.reported_defect);
-  textL("Serviço", order.requested_service);
-  const { lines: svc, total } = serviceBreakdown(order, items);
-  if (svc.length) {
-    y += 1;
-    svc.forEach((l) => priceLine(
-      (l.quantity ?? 1) > 1 ? `${l.quantity}x ${l.label}` : l.kind === "service" ? `- ${l.label}` : l.label,
-      l.total === null ? "" : l.total < 0 ? `- ${formatCurrency(-l.total)}` : formatCurrency(l.total),
-    ));
-    priceLine("TOTAL", formatCurrency(total), true);
-    y += 1;
-  }
-  else textL("Orçamento", formatCurrency(Number(order.estimated_price || 0)));
-  if (order.warranty_end_date) textL("Garantia até", formatDay(order.warranty_end_date));
-  line();
-  textC("Acompanhe online:", 8);
-  textC(publicUrl, 7);
-  y += 10;
-  textC("-----------------------------", 8);
-  textC("Assinatura do Cliente", 8);
+    textC(store?.name || "Assistência Técnica", 12, true);
+    if (store?.cnpj) textC(`CNPJ: ${store.cnpj}`, 8);
+    if (store?.phone) textC(`Tel: ${store.phone}`, 8);
+    line();
+    textC(`ORDEM DE SERVIÇO #${order.order_number}`, 10, true);
+    textC(new Date(order.created_at).toLocaleString("pt-BR"), 8);
+    line();
+    textL("Cliente", order.customer_name);
+    if (order.customer_phone) textL("Tel", order.customer_phone);
+    line();
+    textL("Aparelho", `${order.device_brand} ${order.device_model}`);
+    if (order.device_is_off) {
+      textC("ALERTA: APARELHO RECEBIDO DESLIGADO", 7, true);
+      textC("Não testamos periféricos.", 7);
+    }
+    textL("Defeito", order.reported_defect);
+    textL("Serviço", order.requested_service);
+    const { lines: svc, total } = serviceBreakdown(order, items);
+    if (svc.length) {
+      y += 1;
+      svc.forEach((l) => priceLine(
+        (l.quantity ?? 1) > 1 ? `${l.quantity}x ${l.label}` : l.kind === "service" ? `- ${l.label}` : l.label,
+        l.total === null ? "" : l.total < 0 ? `- ${formatCurrency(-l.total)}` : formatCurrency(l.total),
+      ));
+      priceLine("TOTAL", formatCurrency(total), true);
+      y += 1;
+    }
+    else textL("Orçamento", formatCurrency(Number(order.estimated_price || 0)));
+    if (order.warranty_end_date) textL("Garantia até", formatDay(order.warranty_end_date));
+    const checks = checklistRows(order.entry_checklist, order.exit_checklist);
+    const stage = checks.some((r) => r.exit) ? "exit" : checks.some((r) => r.entry) ? "entry" : null;
+    if (stage) {
+      line();
+      const c = checklistCount(checks, stage);
+      textL(stage === "exit" ? "Testes na entrega" : "Testes na entrada", `${c.ok} de ${c.total} itens funcionando`);
+      const names = (m: CheckMark) => checks.filter((r) => r[stage] === m).map((r) => r.item).join(", ");
+      if (c.ok) textL("OK", names("ok"));
+      if (c.defects) textL("Com defeito", names("defeito"));
+      if (c.untested) textL("Não testado", names("na"));
+    }
+    line();
+    textC("Acompanhe online:", 8);
+    textC(publicUrl, 7);
+    y += 10;
+    textC("-----------------------------", 8);
+    textC("Assinatura do Cliente", 8);
+    return y;
+  };
+  const height = render(new jsPDF({ unit: "mm", format: [80, 2000] }));
+  const doc = new jsPDF({ unit: "mm", format: [80, Math.max(120, Math.ceil(height) + 6)] });
+  render(doc);
   return doc;
 };
 

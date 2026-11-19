@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checklistSummary, cleanServiceRows, formatDay, hasChecklist, performedServices, recalcFinalPrice, serviceBreakdown } from "@/components/features/os/osPdfRules";
+import { checklistCount, checklistRows, checklistSummary, cleanServiceRows, formatDay, hasChecklist, performedServices, recalcFinalPrice, serviceBreakdown } from "@/components/features/os/osPdfRules";
 import { generateOSPdf, generateThermalPdf } from "@/components/features/os/osPdf";
 
 describe("PDF da OS: checklist", () => {
@@ -121,15 +121,37 @@ describe("PDF da OS: gera o documento com as seções novas", () => {
   it("A4 traz observações de entrada, checklist, serviço executado, valor cobrado e garantia", async () => {
     const doc = await generateOSPdf(order, { name: "Loja" }, "Rafael", "https://x/os/1", [{ name: "Conector de carga", quantity: 1, unit_price: 150 }]);
     const t = textOf(doc);
-    for (const s of ["SERVIÇO EXECUTADO", "Limpeza da placa", "Conector de carga", "150,00", "570,00", "Demais servi", "Display / LCD", "Tela trincada", "19/12/2026", "TOTAL DO SERVIÇO", "Com defeito:", "Desconto", "20,00"]) {
+    for (const s of ["SERVIÇO EXECUTADO", "Limpeza da placa", "Conector de carga", "150,00", "570,00", "Demais servi", "Display / LCD", "Tela trincada", "19/12/2026", "TOTAL DO SERVIÇO", "Desconto", "20,00",
+      "CHECKLIST DE TESTES", "ITEM TESTADO", "ENTRADA", "SAÍDA", "Wi-Fi", "Botão Power", "Na entrada:", "Na entrega:", "1 de 1 itens funcionando", "Orçamento inicial"]) {
       expect(t, s).toContain(s);
     }
+    expect(t).not.toContain("ORÇAMENTO / VALORES"); // com serviço lançado, o total já está no Serviço executado
   });
 
-  it("cupom 80mm traz as peças e o total", async () => {
+  it("cupom 80mm traz as peças, o total e os testes, no tamanho do conteúdo", async () => {
     const doc = await generateThermalPdf(order, { name: "Loja" }, "Rafael", "https://x/os/1", [{ name: "Conector de carga", quantity: 1, unit_price: 150 }]);
     const t = textOf(doc);
     expect(t).toContain("Conector de carga");
     expect(t).toContain("TOTAL");
+    expect(t).toContain("Testes na entrega");
+    expect(doc.getNumberOfPages()).toBe(1);
+  });
+});
+
+describe("PDF da OS: tabela do checklist", () => {
+  it("junta entrada e saída por item, na ordem da tela, e ignora os não preenchidos", () => {
+    const rows = checklistRows(
+      { "Wi-Fi": "na", "Display / LCD": "defeito", "Câmera Frontal": "ok", "Lixo": 3 },
+      { "Display / LCD": "ok", "Wi-Fi": "nao_testado", "Extra": "ok" },
+    );
+    expect(rows).toEqual([
+      { item: "Câmera Frontal", entry: "ok", exit: null },
+      { item: "Wi-Fi", entry: "na", exit: "na" },
+      { item: "Display / LCD", entry: "defeito", exit: "ok" },
+      { item: "Extra", entry: null, exit: "ok" },
+    ]);
+    expect(checklistCount(rows, "exit")).toEqual({ total: 3, ok: 2, defects: 0, untested: 1 });
+    expect(checklistCount(rows, "entry")).toEqual({ total: 3, ok: 1, defects: 1, untested: 1 });
+    expect(checklistRows(null, [1])).toEqual([]);
   });
 });
