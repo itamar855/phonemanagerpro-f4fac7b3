@@ -23,7 +23,7 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", permission: "dashboard" },
   { label: "Ranking & Metas", icon: Trophy, path: "/ranking" },
   { label: "Vendas", icon: ShoppingBag, path: "/vendas", permission: "vendas" },
-  { label: "Estoque", icon: Package, path: "/estoque", permission: "estoque" },
+  { label: "Estoque", icon: Package, path: "/estoque", permission: "estoque", anyOf: ["estoque", "estoque_outra_loja"] },
   { label: "OS", icon: Wrench, path: "/ordens-servico", permission: "os" },
   { label: "Clientes", icon: UserCircle, path: "/clientes", permission: "clientes" },
   { label: "CRM", icon: MessageSquare, path: "/crm", permission: "leads" },
@@ -105,8 +105,8 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
     // If item has no specific permission required, it's public (for logged in users)
     if (!item.permission) return true;
     
-    // Check granular permission
-    return userPermissions?.[item.permission] === true;
+    // Check granular permission (anyOf: basta uma, ex. Estoque só para consultar a outra loja)
+    return (item.anyOf ?? [item.permission]).some((key) => userPermissions?.[key] === true);
   });
 
   return (

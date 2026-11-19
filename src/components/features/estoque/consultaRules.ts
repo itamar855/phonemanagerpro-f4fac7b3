@@ -26,6 +26,24 @@ export function matchesStock(item: { name: string; brand?: string | null; model?
   return words.every((w) => hay.includes(w));
 }
 
+/** Permissão (Equipe) para consultar o estoque das outras lojas. */
+export const CONSULT_PERMISSION = "estoque_outra_loja";
+
+/**
+ * O que a pessoa vê na tela Estoque:
+ * - own: o estoque da própria loja (permissão "Estoque");
+ * - consultStoreIds: as outras lojas que pode só consultar (permissão "Consultar estoque da outra loja").
+ * Admin vê e edita tudo pelo seletor geral.
+ */
+export function stockAccess(opts: {
+  isAdmin: boolean; permissions: Record<string, boolean> | null | undefined; userStoreIds: string[]; storeIds: string[];
+}): { own: boolean; consultStoreIds: string[] } {
+  if (opts.isAdmin) return { own: true, consultStoreIds: [] };
+  const own = opts.permissions?.estoque === true;
+  const consult = opts.permissions?.[CONSULT_PERMISSION] === true;
+  return { own, consultStoreIds: consult ? opts.storeIds.filter((id) => !opts.userStoreIds.includes(id)) : [] };
+}
+
 /** Loja que a pessoa só pode consultar: não é dela (admin edita todas). */
 export function isConsultOnly(storeId: string | null, userStoreIds: string[], isAdmin: boolean): boolean {
   if (!storeId || storeId === "all" || isAdmin) return false;

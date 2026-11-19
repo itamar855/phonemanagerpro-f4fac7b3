@@ -38,6 +38,7 @@ const MODULES = [
   {key: "vendas", label: "Vendas"},
   {key: "leads", label: "CRM"},
   {key: "estoque", label: "Estoque"},
+  { key: "estoque_outra_loja", label: "Consultar estoque da outra loja" },
   { key: "os", label: "Ordens de Serviço" },
   { key: "clientes", label: "Clientes" },
   { key: "transacoes", label: "Transações" },
@@ -61,10 +62,10 @@ const defaultPermissions = (role: string): Permissions => {
   }
   if (role === "tecnico") {
     // Conforme Salvaguarda 3: técnico recebe acesso operacional a OS, clientes e dashboard dedicado, sem estoque administrativo nem caixa
-    return Object.fromEntries(MODULES.map((m) => [m.key, ["os", "clientes", "dashboard"].includes(m.key)]));
+    return Object.fromEntries(MODULES.map((m) => [m.key, ["os", "clientes", "dashboard", "estoque_outra_loja"].includes(m.key)]));
   }
   // Para outros papéis, apenas módulos operacionais básicos, sem dashboard por padrão
-  return Object.fromEntries(MODULES.map((m) => [m.key, ["vendas", "os", "clientes", "caixa"].includes(m.key)]));
+  return Object.fromEntries(MODULES.map((m) => [m.key, ["vendas", "os", "clientes", "caixa", "estoque_outra_loja"].includes(m.key)]));
 };
 
 type ProfileWithRole = Tables<"profiles"> & {
