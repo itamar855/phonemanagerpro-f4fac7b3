@@ -28,6 +28,32 @@ export function checklistSummary(data: unknown): ChecklistSummary {
 
 export const hasChecklist = (s: ChecklistSummary) => s.ok.length + s.defects.length + s.untested.length > 0;
 
+export type CheckMark = "ok" | "defeito" | "na";
+/** Um item do checklist com a situação na entrada e na saída (null = não preenchido). */
+export type ChecklistRow = { item: string; entry: CheckMark | null; exit: CheckMark | null };
+
+const toMark = (v: unknown): CheckMark | null =>
+  v === "ok" ? "ok" : v === "defeito" ? "defeito" : v === "na" || v === "nao_testado" ? "na" : null;
+
+/** Tabela de testes: todos os itens preenchidos em algum dos checklists, na ordem da tela. */
+export function checklistRows(entry: unknown, exit: unknown): ChecklistRow[] {
+  const obj = (d: unknown) => (d && typeof d === "object" && !Array.isArray(d) ? (d as Record<string, unknown>) : {});
+  const e = obj(entry), x = obj(exit);
+  const keys = [...CHECKLIST_ITEMS, ...Object.keys(e), ...Object.keys(x)].filter((k, i, a) => a.indexOf(k) === i);
+  return keys.map((item) => ({ item, entry: toMark(e[item]), exit: toMark(x[item]) })).filter((r) => r.entry || r.exit);
+}
+
+/** Contagem de uma etapa: funcionando, com defeito e não testados. */
+export function checklistCount(rows: ChecklistRow[], stage: "entry" | "exit") {
+  const marks = rows.map((r) => r[stage]).filter((m): m is CheckMark => m !== null);
+  return {
+    total: marks.length,
+    ok: marks.filter((m) => m === "ok").length,
+    defects: marks.filter((m) => m === "defeito").length,
+    untested: marks.filter((m) => m === "na").length,
+  };
+}
+
 /** Serviço executado lançado pelo técnico: descrição e valor (opcional). */
 export type PerformedService = { description: string; price: number | null };
 
