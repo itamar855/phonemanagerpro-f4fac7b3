@@ -263,26 +263,24 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
 
   const { lines: svcLines, total: svcTotal } = serviceBreakdown(order, items);
   const exit = checklistSummary(order.exit_checklist);
-  if (order.service_performed || svcLines.length || hasChecklist(exit)) {
+  if (svcLines.length || hasChecklist(exit)) {
     sectionBox("SERVIÇO EXECUTADO", () => {
-      if (order.service_performed) {
-        fullField("O que foi feito", String(order.service_performed));
-        if (svcLines.length) divider();
-      }
       if (svcLines.length) {
         const qX = W - M - 46, vX = W - M - 6;
         doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(...SOFT);
-        doc.text("PEÇA / SERVIÇO", M + 6, y);
+        doc.text("SERVIÇOS E PEÇAS", M + 6, y);
         doc.text("QTD", qX, y, { align: "right" });
         doc.text("VALOR COBRADO", vX, y, { align: "right" });
         y += 5;
         svcLines.forEach((l) => {
-          doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...DARK);
-          const name = doc.splitTextToSize(l.label, qX - M - 20);
+          doc.setFont("helvetica", l.kind === "discount" ? "bold" : "normal"); doc.setFontSize(9.5);
+          if (l.kind === "discount") doc.setTextColor(22, 120, 60); else doc.setTextColor(...DARK);
+          const label = l.kind === "service" ? `- ${l.label}` : l.label;
+          const name = doc.splitTextToSize(label, qX - M - 20);
           ensureSpace(name.length * 4.2 + 2);
           doc.text(name, M + 6, y);
-          doc.text(String(l.quantity), qX, y, { align: "right" });
-          doc.text(formatCurrency(l.total), vX, y, { align: "right" });
+          if (l.quantity !== null) doc.text(String(l.quantity), qX, y, { align: "right" });
+          if (l.total !== null) doc.text(l.total < 0 ? `- ${formatCurrency(-l.total)}` : formatCurrency(l.total), vX, y, { align: "right" });
           y += name.length * 4.2 + 1.5;
         });
         doc.setDrawColor(...BLACK); doc.setLineWidth(0.6); doc.line(M + 4, y, W - M - 4, y);
@@ -439,11 +437,13 @@ export const generateThermalPdf = async (order: any, store: any, techName: strin
   }
   textL("Defeito", order.reported_defect);
   textL("Serviço", order.requested_service);
-  if (order.service_performed) textL("Feito", String(order.service_performed));
   const { lines: svc, total } = serviceBreakdown(order, items);
   if (svc.length) {
     y += 1;
-    svc.forEach((l) => priceLine(l.quantity > 1 ? `${l.quantity}x ${l.label}` : l.label, formatCurrency(l.total)));
+    svc.forEach((l) => priceLine(
+      (l.quantity ?? 1) > 1 ? `${l.quantity}x ${l.label}` : l.kind === "service" ? `- ${l.label}` : l.label,
+      l.total === null ? "" : l.total < 0 ? `- ${formatCurrency(-l.total)}` : formatCurrency(l.total),
+    ));
     priceLine("TOTAL", formatCurrency(total), true);
     y += 1;
   }

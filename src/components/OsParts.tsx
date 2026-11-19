@@ -47,6 +47,8 @@ interface OsPartsProps {
   orderId: string;
   storeId: string;
   readonly?: boolean;
+  /** Avisa o valor cobrado das peças (soma de unit_price × qtd) quando a lista muda. */
+  onChargeTotalChange?: (total: number) => void;
 }
 
 const formatMonetary = (value: number) =>
@@ -54,9 +56,14 @@ const formatMonetary = (value: number) =>
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function OsParts({ orderId, storeId, readonly = false }: OsPartsProps) {
+export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChange }: OsPartsProps) {
   const { user } = useAuth();
   const [items, setItems] = useState<ServiceOrderItem[]>([]);
+  const chargeCb = useRef(onChargeTotalChange);
+  chargeCb.current = onChargeTotalChange;
+  useEffect(() => {
+    chargeCb.current?.(items.reduce((acc, i) => acc + Number(i.unit_price || 0) * Number(i.quantity || 1), 0));
+  }, [items]);
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
