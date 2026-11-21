@@ -17,7 +17,7 @@ export async function tagConversation(admin: any, opts: { conversationId: string
   try {
     if (opts.debounceMs) await sleep(opts.debounceMs);
     const { data: conv } = await admin.from("crm_conversations")
-      .select("id, store_id, contact:crm_contacts(id, ignored, tags, lead_kind)")
+      .select("id, store_id, contact:crm_contacts(id, ignored, tags, lead_kind, ai_summary)")
       .eq("id", opts.conversationId).maybeSingle();
     if (!conv) return { status: "skipped", reason: "conversa não encontrada" };
     const contact: any = Array.isArray(conv.contact) ? conv.contact[0] : conv.contact;
@@ -32,13 +32,13 @@ export async function tagConversation(admin: any, opts: { conversationId: string
     const [{ data: tagRows }, { data: msgs }, { data: store }, { data: settings }] = await Promise.all([
       admin.from("crm_tags").select("name").eq("store_id", conv.store_id).order("created_at"),
       admin.from("crm_messages").select("direction, sender_kind, kind, body, created_at, transcript")
-        .eq("conversation_id", conv.id).order("created_at", { ascending: false }).limit(20),
+        .eq("conversation_id", conv.id).order("created_at", { ascending: false }).limit(30),
       admin.from("stores").select("name").eq("id", conv.store_id).maybeSingle(),
       admin.from("crm_ai_settings").select("model").eq("store_id", conv.store_id).maybeSingle(),
     ]);
     const available = (tagRows ?? []).map((t: any) => String(t.name));
     if (!available.length) return { status: "skipped", reason: "loja sem etiquetas" };
-    const turns = toTurns(((msgs ?? []) as TranscriptMessage[]).reverse(), 20);
+    const turns = toTurns(((msgs ?? []) as TranscriptMessage[]).reverse(), 30);
     if (!turns.length) {
       // marca como vista: o lote "etiquetar recentes" não volta nela
       await admin.from("crm_contacts").update({ ai_tagged_at: new Date().toISOString() }).eq("id", contact.id);
@@ -47,16 +47,20 @@ export async function tagConversation(admin: any, opts: { conversationId: string
 
     const currentTags: string[] = Array.isArray(contact.tags) ? contact.tags : [];
     const llm = await generateJson({
-      system: taggingSystemPrompt(store?.name ?? "loja", available, { lead_kind: contact.lead_kind ?? null, tags: currentTags }),
+      system: taggingSystemPrompt(store?.name ?? "loja", available, { lead_kind: contact.lead_kind ?? null, tags: currentTags, summary: contact.ai_summary ?? null }),
       turns, schema: TAGGING_SCHEMA, model: settings?.model ?? null, timeoutMs: 15_000,
     });
     const d = parseTagging(llm.text, available);
     // fornecedor: só o tipo; nada de temperatura/interesse
     const tags = d.lead_kind === "fornecedor" || contact.lead_kind === "fornecedor" ? currentTags : mergeTags(currentTags, d.tags);
     const leadKind = contact.lead_kind ?? d.lead_kind; // tipo marcado pela equipe ou pelo funil não é desfeito
-    const changed = !sameTags(tags, currentTags) || leadKind !== (contact.lead_kind ?? null);
-    const patch: Record<string, unknown> = { ai_tagged_at: new Date().toISOString() };
+    const summaryChanged = Boolean(d.summary) && d.summary !== (contact.ai_summary ?? null);
+    const changed = !sameTags(tags, currentTags) || leadKind !== (contact.lead_kind ?? null) || summaryChanged;
+    const now = new Date().toISOString();
+    const patch: Record<string, unknown> = { ai_tagged_at: now };
     if (changed) { patch.tags = tags; patch.lead_kind = leadKind; }
+    // memória do cliente: só troca quando vem um resumo novo (nunca apaga o anterior)
+    if (summaryChanged) { patch.ai_summary = d.summary; patch.ai_summary_at = now; }
     const { error } = await admin.from("crm_contacts").update(patch).eq("id", contact.id);
     if (error) throw new Error(error.message);
     return { status: "done", lead_kind: leadKind, tags, changed };

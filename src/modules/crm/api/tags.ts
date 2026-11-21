@@ -25,6 +25,11 @@ export async function deleteTag(id: string) {
   throwIf(error);
 }
 
+/** A IA relê a conversa agora: etiquetas, tipo e o resumo do cliente. */
+export function retagConversation(conversationId: string) {
+  return invokeFn<{ status: string }>("crm-ai-agent", { action: "tag", conversation_id: conversationId });
+}
+
 export interface TagRecentResult { processed: number; tagged: number; failed: number; more: boolean }
 
 /** A IA etiqueta as conversas dos últimos dias que ainda não passaram por ela (um lote por chamada). */

@@ -2,7 +2,7 @@
 // Executor do agente de IA do CRM: carrega a conversa, pede a decisão ao modelo,
 // registra em crm_ai_runs e age (rascunho, envio no piloto automático ou passagem).
 import {
-  applyGuards, buildSystemPrompt, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, checkContext, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
   type AgentDecision, type BusinessHours, type ServiceOrderInfo, type TranscriptMessage,
 } from "./ai-agent-core.ts";
 import { sendDispatchNotices } from "./dispatch.ts";
@@ -40,9 +40,11 @@ async function loadServiceOrders(admin: any, storeId: string, contact: any): Pro
 
 /** Monta instruções + conversa e pede a decisão ao modelo (sem gravar nada). */
 export async function decide(args: {
-  settings: AiSettings; storeName: string; contact: { name: string | null; customer_id?: string | null } | null;
+  settings: AiSettings; storeName: string;
+  contact: { name: string | null; customer_id?: string | null; ai_summary?: string | null; notes?: string | null } | null;
   messages: TranscriptMessage[]; serviceOrders: ServiceOrderInfo[]; aiRepliesSoFar: number;
   examples?: { question: string | null; answer: string; has_price?: boolean }[];
+  contextWarnings?: string[];
 }) {
   const now = new Date();
   const openNow = isOpenNow(args.settings.business_hours, now);
@@ -50,7 +52,8 @@ export async function decide(args: {
     storeName: args.storeName, knowledge: args.settings.knowledge, persona: args.settings.persona,
     contactName: args.contact?.name ?? null, isCustomer: Boolean(args.contact?.customer_id), now, openNow,
     hoursText: hoursText(args.settings.business_hours), serviceOrders: args.serviceOrders, handoffMessage: args.settings.handoff_message,
-    examples: args.examples,
+    examples: args.examples, memory: args.contact?.ai_summary ?? null, teamNotes: args.contact?.notes ?? null,
+    contextWarnings: args.contextWarnings,
   });
   const turns: ChatTurn[] = toTurns(args.messages);
   if (!turns.length) throw new Error("Conversa sem mensagens do cliente.");
@@ -65,7 +68,7 @@ export async function decide(args: {
 
 async function gate(admin: any, opts: { conversationId: string; forceDraft?: boolean }): Promise<{ skip: string } | { conv: any; contact: any; s: AiSettings }> {
   const { data: conv } = await admin.from("crm_conversations")
-    .select("id, store_id, channel, handler, status, contact_id, external_thread_id, last_message_direction, contact:crm_contacts(id, name, phone, customer_id, ignored)")
+    .select("id, store_id, channel, handler, status, contact_id, external_thread_id, last_message_direction, contact:crm_contacts(id, name, phone, customer_id, ignored, ai_summary, notes)")
     .eq("id", opts.conversationId).maybeSingle();
   if (!conv) return { skip: "conversa não encontrada" };
   const contact: any = Array.isArray(conv.contact) ? conv.contact[0] : conv.contact;
@@ -121,7 +124,7 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
       if (last && last.id !== opts.triggerMessageId) return { status: "skipped", reason: "chegou mensagem mais nova" };
     }
 
-    const mode: "draft" | "autopilot" = opts.forceDraft ? "draft" : s.mode === "autopilot" ? "autopilot" : "draft";
+    let mode: "draft" | "autopilot" = opts.forceDraft ? "draft" : s.mode === "autopilot" ? "autopilot" : "draft";
 
     // limite diário por conversa
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
@@ -129,12 +132,13 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
       .eq("conversation_id", conv.id).gt("created_at", since).in("decision", ["reply", "handoff"]);
     const overDaily = (runsToday ?? 0) >= (s.max_replies_per_day || 30);
 
-    const [{ data: msgs }, { count: aiCount }, { data: store }, serviceOrders] = await Promise.all([
-      admin.from("crm_messages").select("id, direction, sender_kind, kind, body, created_at, transcript, transcript_status, media_path, media_url, media_mime")
+    const [{ data: msgs }, { count: aiCount }, { data: store }, serviceOrders, { count: totalCount }] = await Promise.all([
+      admin.from("crm_messages").select("id, direction, sender_kind, kind, body, created_at, inserted_at, transcript, transcript_status, media_path, media_url, media_mime")
         .eq("conversation_id", conv.id).order("created_at", { ascending: false }).limit(30),
       admin.from("crm_messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id).eq("sender_kind", "ai"),
       admin.from("stores").select("name").eq("id", conv.store_id).maybeSingle(),
       loadServiceOrders(admin, conv.store_id, contact ?? {}),
+      admin.from("crm_messages").select("id", { count: "exact", head: true }).eq("conversation_id", conv.id),
     ]);
     const messages = ((msgs ?? []) as (TranscriptMessage & { id: string; transcript_status: string | null; media_path: string | null; media_url: string | null; media_mime: string | null })[]).reverse();
 
@@ -149,12 +153,17 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
       }
     }
 
+    // trava de contexto: sem contexto suficiente a IA não envia sozinha (e "ok/obrigado" nem precisa de resposta)
+    const context = checkContext(messages, { hasOlder: (totalCount ?? 0) > messages.length });
+    if (!opts.forceDraft && context.skip) return { status: "skipped", reason: context.skip };
+    if (mode === "autopilot" && context.draftOnly.length) mode = "draft";
+
     const t0 = Date.now();
     const examples = await similarExamples(admin, conv.store_id, messages);
     let result;
     try {
       result = await decide({
-        settings: s, storeName: store?.name ?? "loja", contact, messages, serviceOrders, examples,
+        settings: s, storeName: store?.name ?? "loja", contact, messages, serviceOrders, examples, contextWarnings: context.warnings,
         aiRepliesSoFar: overDaily ? Number.MAX_SAFE_INTEGER : aiCount ?? 0,
       });
     } catch (e) {
@@ -169,7 +178,7 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     const { data: run } = await admin.from("crm_ai_runs").insert({
       store_id: conv.store_id, conversation_id: conv.id, trigger_message_id: opts.triggerMessageId ?? null,
       decision: d.decision, model: result.llm.model, latency_ms: result.llm.latencyMs,
-      input: { mode, turns: result.turns.length, service_orders: serviceOrders.length, open_now: result.openNow, manual: Boolean(opts.forceDraft), examples: examples.map((e) => e.id) },
+      input: { mode, context_draft_only: context.draftOnly, memory: Boolean(contact?.ai_summary), turns: result.turns.length, service_orders: serviceOrders.length, open_now: result.openNow, manual: Boolean(opts.forceDraft), examples: examples.map((e) => e.id) },
       output: d,
     }).select("id").single();
     const runId: string | null = run?.id ?? null;

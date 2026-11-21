@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Ban, Loader2, Megaphone, Plus, UserCheck, Wrench, X } from "lucide-react";
+import { Ban, Loader2, Megaphone, Plus, RefreshCw, Sparkles, UserCheck, Wrench, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAttribution } from "../../api/tracking";
 import { attributionLabel } from "../../lib/tracking";
@@ -23,7 +23,7 @@ import { ChannelIcon } from "../shared/ChannelIcon";
 import { ContactAvatar } from "../shared/ContactAvatar";
 import { ContactDeals } from "./ContactDeals";
 import { useCrmTags } from "../../hooks/useCrmTags";
-import { createTag } from "../../api/tags";
+import { createTag, retagConversation } from "../../api/tags";
 import { crmTagsKey } from "../../hooks/useCrmTags";
 import { KIND_CHIPS, TAG_DOTS, tagTone } from "../../lib/labels";
 import { TagColorPicker } from "../shared/TagColorPicker";
@@ -61,6 +61,7 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
   const [tag, setTag] = useState("");
   const [tagColor, setTagColor] = useState("blue");
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { tags: storeTags, colorOf } = useCrmTags();
 
   useEffect(() => {
@@ -91,6 +92,25 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
       toast.error((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  const mainConversationId = (conversations.find((c) => c.channel === "whatsapp") ?? conversations[0])?.id ?? null;
+
+  // a IA relê a conversa: atualiza o resumo, as etiquetas e o tipo
+  async function refreshSummary() {
+    if (!mainConversationId) return;
+    setRefreshing(true);
+    try {
+      await retagConversation(mainConversationId);
+      qc.invalidateQueries({ queryKey: crmKeys.contact(contact.id) });
+      qc.invalidateQueries({ queryKey: ["crm", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["crm", "conversation"] });
+      toast.success("Resumo atualizado.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -140,6 +160,30 @@ export function ContactPanel({ contactId, onOpenConversation, showDeals = true }
         <p><span className="text-muted-foreground">No CRM desde </span>{relative(contact.created_at)}</p>
         {contact.attribution_id && <ContactOrigin attributionId={contact.attribution_id} />}
       </section>
+
+      {!contact.ignored && (
+        <section aria-labelledby="ct-resumo" className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 id="ct-resumo" className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Resumo da IA
+            </h3>
+            {mainConversationId && (
+              <Button type="button" variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs" onClick={refreshSummary} disabled={refreshing} aria-label="Atualizar o resumo da IA">
+                {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                Atualizar
+              </Button>
+            )}
+          </div>
+          {contact.ai_summary ? (
+            <div className="rounded-md border border-border/50 bg-muted/30 p-2.5">
+              <p className="whitespace-pre-line leading-relaxed">{contact.ai_summary}</p>
+              {contact.ai_summary_at && <p className="mt-1 text-xs text-muted-foreground">Atualizado {relative(contact.ai_summary_at)}</p>}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">A IA escreve aqui o que já se sabe do cliente conforme a conversa: o que quer, aparelho, valores passados e o que ficou combinado.</p>
+          )}
+        </section>
+      )}
 
       {conversations.length > 1 && (
         <section aria-labelledby="ct-conv" className="space-y-1.5">

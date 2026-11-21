@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyGuards, buildSystemPrompt, defaultHandoffMessage, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, checkContext, defaultHandoffMessage, isAcknowledgement, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
   type AgentDecision, type TranscriptMessage,
 } from "../../../supabase/functions/_shared/ai-agent-core";
 
@@ -166,5 +166,97 @@ describe("agente de IA — horário", () => {
   it("frase de transição muda quando a loja está fechada", () => {
     expect(defaultHandoffMessage("Ana Souza", true)).toMatch(/^Show Ana!.*já já/);
     expect(defaultHandoffMessage(null, false)).toMatch(/assim que a loja abrir/);
+  });
+});
+
+describe("trava de contexto: a IA só responde sozinha quando entende a conversa", () => {
+  const NOW = new Date("2026-11-21T15:00:00Z");
+  const msg = (direction: "in" | "out", body: string, at: string, extra: Partial<TranscriptMessage> = {}): TranscriptMessage => ({
+    direction, sender_kind: direction === "in" ? "contact" : "ai", kind: "text", body, created_at: at, inserted_at: at, ...extra,
+  });
+
+  it("reconhece mensagens que só confirmam", () => {
+    for (const t of ["Ok", "ok!", "Okk", "Ok amigo boa tarde", "Ok, obrigada", "Obrigado!!", "blz", "Beleza, valeu", "👍", "🙏🙏", "Tá bom, obrigada", "Combinado kkk"]) {
+      expect(isAcknowledgement(t), t).toBe(true);
+    }
+    for (const t of ["ok, qual o valor?", "Boa tarde", "Oi", "sim", "Ok, quero a tela do A54", "Obrigada, mas e a garantia", "", null]) {
+      expect(isAcknowledgement(t), String(t)).toBe(false);
+    }
+  });
+
+  it("só 'ok/obrigado' depois da loja: não responde", () => {
+    const c = checkContext([
+      msg("in", "quanto fica a tela do iPhone 11?", "2026-11-21T14:00:00Z"),
+      msg("out", "Fica R$ 350, pode trazer hoje", "2026-11-21T14:05:00Z"),
+      msg("in", "Ok", "2026-11-21T14:06:00Z"),
+      msg("in", "Obrigada!", "2026-11-21T14:06:10Z"),
+    ], { now: NOW, hasOlder: false });
+    expect(c.skip).toMatch(/só confirmou/);
+  });
+
+  it("pergunta nova depois do ok: responde normalmente", () => {
+    const c = checkContext([
+      msg("in", "quanto fica a tela do iPhone 11?", "2026-11-21T14:00:00Z"),
+      msg("out", "Fica R$ 350", "2026-11-21T14:05:00Z"),
+      msg("in", "Ok", "2026-11-21T14:06:00Z"),
+      msg("in", "e a bateria?", "2026-11-21T14:06:30Z"),
+    ], { now: NOW, hasOlder: false });
+    expect(c).toEqual({ skip: null, draftOnly: [], warnings: [] });
+  });
+
+  it("mensagens sincronizadas depois: só sugere e avisa o modelo", () => {
+    const c = checkContext([
+      msg("in", "tem capinha do A15?", "2026-11-21T10:00:00Z", { inserted_at: "2026-11-21T13:00:00Z" }),
+      msg("in", "preta", "2026-11-21T14:50:00Z"),
+    ], { now: NOW, hasOlder: false });
+    expect(c.skip).toBeNull();
+    expect(c.draftOnly).toContain("histórico sincronizado depois");
+    expect(c.warnings.join(" ")).toMatch(/pode haver mensagens faltando/);
+  });
+
+  it("sincronização antiga (mais de 3 dias) não trava mais", () => {
+    const c = checkContext([
+      msg("in", "tem capinha do A15?", "2026-11-10T10:00:00Z", { inserted_at: "2026-11-12T10:00:00Z" }),
+      msg("in", "preta", "2026-11-21T14:50:00Z"),
+    ], { now: NOW, hasOlder: true });
+    expect(c.draftOnly).toEqual([]);
+  });
+
+  it("conversa que começa com 'ok' (começou antes do CRM): só sugere", () => {
+    const c = checkContext([
+      msg("in", "Ok amigo boa tarde", "2026-11-21T14:00:00Z"),
+      msg("in", "e aí, chegou a peça?", "2026-11-21T14:40:00Z"),
+    ], { now: NOW, hasOlder: false });
+    expect(c.skip).toBeNull();
+    expect(c.draftOnly).toContain("conversa começou antes do CRM");
+    // com mensagens mais antigas guardadas, o começo existe: não trava
+    expect(checkContext([msg("in", "Ok", "2026-11-21T14:00:00Z"), msg("in", "chegou?", "2026-11-21T14:40:00Z")], { now: NOW, hasOlder: true }).draftOnly).toEqual([]);
+  });
+
+  it("alguém da equipe respondeu nas últimas 12 h: só sugere", () => {
+    const c = checkContext([
+      msg("in", "oi, tem película?", "2026-11-21T09:00:00Z"),
+      msg("out", "Tem sim", "2026-11-21T09:10:00Z", { sender_kind: "user" }),
+      msg("in", "qual o valor?", "2026-11-21T14:50:00Z"),
+    ], { now: NOW, hasOlder: false });
+    expect(c.draftOnly).toContain("a equipe respondeu nas últimas 12 h");
+  });
+
+  it("memória, anotações e avisos entram nas instruções", () => {
+    const p = buildSystemPrompt({
+      storeName: "Loja X", knowledge: "Endereço: Rua A", persona: null, contactName: "Joyce", isCustomer: false,
+      now: NOW, openNow: true, hoursText: null, serviceOrders: [], handoffMessage: null,
+      memory: "iPhone 11 não liga; loja passou R$ 350; vem sábado.", teamNotes: "Prefere áudio.",
+      contextWarnings: ["A conversa começou antes de entrar no sistema: o começo dela não aparece aqui."],
+    });
+    expect(p).toContain("O QUE JÁ SABEMOS DESTA PESSOA");
+    expect(p).toContain("- Resumo: iPhone 11 não liga; loja passou R$ 350; vem sábado.");
+    expect(p).toContain("- Anotações da equipe: Prefere áudio.");
+    expect(p).toContain("ATENÇÃO, CONTEXTO INCOMPLETO");
+    expect(p).toMatch(/faça handoff em vez de chutar/);
+    // sem memória nem avisos: nada disso aparece
+    const plain = buildSystemPrompt({ storeName: "Loja X", knowledge: "", persona: null, contactName: null, isCustomer: false, now: NOW, openNow: null, hoursText: null, serviceOrders: [], handoffMessage: null });
+    expect(plain).not.toContain("O QUE JÁ SABEMOS");
+    expect(plain).not.toContain("CONTEXTO INCOMPLETO");
   });
 });
