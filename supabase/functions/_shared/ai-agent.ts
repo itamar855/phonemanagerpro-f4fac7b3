@@ -8,6 +8,8 @@ import {
 import { sendDispatchNotices } from "./dispatch.ts";
 import { evolution, loadWhatsAppConfig, whatsappNumber } from "./evolution.ts";
 import { generateJson, type ChatTurn } from "./llm.ts";
+import { stockForConversation } from "./stock.ts";
+import { stockQueryText } from "./stock-core.ts";
 import { loadMessageAudio, transcribeMessage } from "./transcribe.ts";
 
 export interface AiSettings {
@@ -21,6 +23,8 @@ export interface AiSettings {
   max_turns: number;
   handoff_message: string | null;
   enabled_channels: string[];
+  /** IA consulta o estoque e os preços de venda (padrão: sim) */
+  stock_lookup?: boolean | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -45,6 +49,7 @@ export async function decide(args: {
   messages: TranscriptMessage[]; serviceOrders: ServiceOrderInfo[]; aiRepliesSoFar: number;
   examples?: { question: string | null; answer: string; has_price?: boolean }[];
   contextWarnings?: string[];
+  stock?: string[] | null;
 }) {
   const now = new Date();
   const openNow = isOpenNow(args.settings.business_hours, now);
@@ -53,7 +58,7 @@ export async function decide(args: {
     contactName: args.contact?.name ?? null, isCustomer: Boolean(args.contact?.customer_id), now, openNow,
     hoursText: hoursText(args.settings.business_hours), serviceOrders: args.serviceOrders, handoffMessage: args.settings.handoff_message,
     examples: args.examples, memory: args.contact?.ai_summary ?? null, teamNotes: args.contact?.notes ?? null,
-    contextWarnings: args.contextWarnings,
+    contextWarnings: args.contextWarnings, stock: args.stock,
   });
   const turns: ChatTurn[] = toTurns(args.messages);
   if (!turns.length) throw new Error("Conversa sem mensagens do cliente.");
@@ -159,11 +164,15 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     if (mode === "autopilot" && context.draftOnly.length) mode = "draft";
 
     const t0 = Date.now();
-    const examples = await similarExamples(admin, conv.store_id, messages);
+    const storeName = store?.name ?? "loja";
+    const [examples, stock] = await Promise.all([
+      similarExamples(admin, conv.store_id, messages),
+      s.stock_lookup === false ? Promise.resolve(null) : stockForConversation(admin, conv.store_id, storeName, stockQueryText(messages, contact?.ai_summary)),
+    ]);
     let result;
     try {
       result = await decide({
-        settings: s, storeName: store?.name ?? "loja", contact, messages, serviceOrders, examples, contextWarnings: context.warnings,
+        settings: s, storeName, contact, messages, serviceOrders, examples, contextWarnings: context.warnings, stock: stock?.lines ?? null,
         aiRepliesSoFar: overDaily ? Number.MAX_SAFE_INTEGER : aiCount ?? 0,
       });
     } catch (e) {
@@ -178,7 +187,7 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     const { data: run } = await admin.from("crm_ai_runs").insert({
       store_id: conv.store_id, conversation_id: conv.id, trigger_message_id: opts.triggerMessageId ?? null,
       decision: d.decision, model: result.llm.model, latency_ms: result.llm.latencyMs,
-      input: { mode, context_draft_only: context.draftOnly, memory: Boolean(contact?.ai_summary), turns: result.turns.length, service_orders: serviceOrders.length, open_now: result.openNow, manual: Boolean(opts.forceDraft), examples: examples.map((e) => e.id) },
+      input: { mode, context_draft_only: context.draftOnly, stock_items: stock?.count ?? null, memory: Boolean(contact?.ai_summary), turns: result.turns.length, service_orders: serviceOrders.length, open_now: result.openNow, manual: Boolean(opts.forceDraft), examples: examples.map((e) => e.id) },
       output: d,
     }).select("id").single();
     const runId: string | null = run?.id ?? null;

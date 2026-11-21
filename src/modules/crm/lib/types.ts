@@ -228,6 +228,8 @@ export interface CrmAiSettings {
   max_turns: number;
   handoff_message: string | null;
   enabled_channels: string[];
+  /** IA consulta o estoque e os preços de venda */
+  stock_lookup?: boolean;
 }
 
 export interface CrmAiSuggestion {
