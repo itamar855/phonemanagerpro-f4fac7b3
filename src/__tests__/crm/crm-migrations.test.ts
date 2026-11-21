@@ -36,6 +36,7 @@ const OWNER_GUARD = read("20261118010000_crm_lead_owner_guard.sql");
 const LEAD_LABELS = read("20261119000000_crm_lead_labels.sql");
 const PUSH = read("20261119010000_crm_push.sql");
 const SUPPLIER = read("20261119020000_crm_lead_kind_supplier.sql");
+const OWNER_FUNNEL = read("20261121030000_crm_owner_to_funnel.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -1253,5 +1254,95 @@ describe("CRM — avisos no celular", () => {
     expect(await val(`select count(*)::int from crm_push_subscriptions where user_id = $1`, [ADM])).toBe(1);
     expect(await asUser(U1, () => errorOf(`insert into crm_push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://x', 'k', 'a')`, [ADM]))).toMatch(/row-level security/);
     expect(await asUser(U1, () => errorOf(`select * from crm_push_recipients($1)`, [conv]))).toMatch(/permission denied/);
+  });
+});
+
+describe("CRM — responsável leva o lead para o funil", () => {
+  const newConv = async (phone: string, ext: string) => {
+    const r = await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: "oi", p_phone: phone, p_external_id: ext });
+    await db.query(`update crm_conversations set assigned_to = null where id = $1`, [r.conversation_id]);
+    return r as { conversation_id: string; contact_id: string };
+  };
+  const dealsOf = (contact: string) =>
+    db.query<any>(`select d.*, p.kind as pipe_kind, s.code as stage_code from crm_deals d join crm_pipelines p on p.id = d.pipeline_id
+                   join crm_stages s on s.id = d.stage_id where d.contact_id = $1 and d.status = 'open'`, [contact]).then((r) => r.rows);
+  let old: { conversation_id: string; contact_id: string };
+  let supplier: { conversation_id: string; contact_id: string };
+
+  beforeAll(async () => {
+    // atendimentos que já tinham responsável antes da regra, sem negócio
+    old = await newConv("5511966600101", "OWN1");
+    await db.query(`update crm_contacts set lead_kind = 'assistencia' where id = $1`, [old.contact_id]);
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [old.conversation_id, U1]);
+    supplier = await newConv("5511966600102", "OWN2");
+    await db.query(`update crm_contacts set lead_kind = 'fornecedor' where id = $1`, [supplier.contact_id]);
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [supplier.conversation_id, U1]);
+    expect(await dealsOf(old.contact_id)).toHaveLength(0);
+    await db.exec(OWNER_FUNNEL);
+  });
+
+  it("quem já era responsável ganha o negócio no funil certo; fornecedor não", async () => {
+    const [d] = await dealsOf(old.contact_id);
+    expect(d).toMatchObject({ owner_id: U1, pipe_kind: "service", stage_code: "svc_new", auto_created: true, interest: "repair" });
+    expect(await dealsOf(supplier.contact_id)).toHaveLength(0);
+  });
+
+  it("pegar o atendimento cria o negócio em Vendas sem chutar o tipo do lead", async () => {
+    const c = await newConv("5511966600103", "OWN3");
+    await asUser(U1, () => db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]));
+    const deals = await dealsOf(c.contact_id);
+    expect(deals).toHaveLength(1);
+    expect(deals[0]).toMatchObject({ owner_id: U1, pipe_kind: "sales", stage_code: "wa_active", auto_created: true });
+    expect(await val(`select lead_kind from crm_contacts where id = $1`, [c.contact_id])).toBeNull();
+    // trocar de novo para a mesma pessoa não duplica
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]);
+    expect(await dealsOf(c.contact_id)).toHaveLength(1);
+  });
+
+  it("tipo descoberto depois muda o negócio parado de funil; fornecedor sai do funil", async () => {
+    const c = await newConv("5511966600104", "OWN4");
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]);
+    await db.query(`update crm_contacts set lead_kind = 'assistencia' where id = $1`, [c.contact_id]);
+    expect((await dealsOf(c.contact_id))[0]).toMatchObject({ pipe_kind: "service", stage_code: "svc_new", interest: "repair" });
+    await db.query(`update crm_contacts set lead_kind = 'fornecedor' where id = $1`, [c.contact_id]);
+    expect(await dealsOf(c.contact_id)).toHaveLength(0);
+  });
+
+  it("negócio que a equipe já mexeu não muda de funil sozinho", async () => {
+    const c = await newConv("5511966600105", "OWN5");
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]);
+    const [d] = await dealsOf(c.contact_id);
+    await db.query(`update crm_deals set stage_id = $2 where id = $1`, [d.id, await stage(A, "sales", "proposal")]);
+    await db.query(`update crm_contacts set lead_kind = 'assistencia' where id = $1`, [c.contact_id]);
+    expect((await dealsOf(c.contact_id))[0]).toMatchObject({ id: d.id, pipe_kind: "sales", stage_code: "proposal" });
+  });
+
+  it("negócio que já existia passa para o novo responsável (inclusive o do sistema)", async () => {
+    const c = await newConv("5511966600106", "OWN6");
+    await db.query(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, owner_id)
+                    select $1, s.pipeline_id, s.id, $2, 'Manual', null from crm_stages s where s.id = $3`, [A, c.contact_id, await stage(A, "sales", "proposal")]);
+    await asUser(ADM, () => db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]));
+    expect((await dealsOf(c.contact_id)).map((d) => [d.title, d.owner_id])).toEqual([["Manual", U1]]);
+    // o vendedor passa o lead dele adiante: o negócio vai junto, mesmo o dono do negócio sendo checado
+    await asUser(U1, () => db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, ADM]));
+    expect((await dealsOf(c.contact_id))[0].owner_id).toBe(ADM);
+    // quem não é dono continua sem poder tomar o lead
+    expect(await asUser(U1, () => errorOf(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]))).toMatch(/Este lead é de/);
+    expect((await dealsOf(c.contact_id))[0].owner_id).toBe(ADM);
+  });
+
+  it("contato ignorado e conversa resolvida não entram no funil", async () => {
+    const c = await newConv("5511966600107", "OWN7");
+    await db.query(`update crm_contacts set ignored = true where id = $1`, [c.contact_id]);
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [c.conversation_id, U1]);
+    expect(await dealsOf(c.contact_id)).toHaveLength(0);
+    const r = await newConv("5511966600108", "OWN8");
+    await db.query(`update crm_conversations set status = 'resolved' where id = $1`, [r.conversation_id]);
+    await db.query(`update crm_conversations set assigned_to = $2 where id = $1`, [r.conversation_id, U1]);
+    expect(await dealsOf(r.contact_id)).toHaveLength(0);
+  });
+
+  it("as funções do funil automático são só do servidor", async () => {
+    expect(await asUser(U1, () => errorOf(`select crm_owner_to_funnel($1)`, [old.conversation_id]))).toMatch(/permission denied/);
   });
 });
