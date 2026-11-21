@@ -22,7 +22,7 @@ type Form = Omit<CrmAiSettings, "store_id" | "enabled_channels">;
 const DEFAULTS: Form = {
   mode: "off", knowledge: "", persona: "", model: "", handoff_message: "",
   business_hours: { enabled: true, start: "08:00", end: "18:00", days: [1, 2, 3, 4, 5, 6] },
-  max_replies_per_day: 30, max_turns: 8,
+  max_replies_per_day: 30, max_turns: 8, stock_lookup: true,
 };
 const MANAGER = new Set(["admin", "gerente", "dono"]);
 const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -41,6 +41,7 @@ function pick(s: CrmAiSettings | null | undefined): Form {
   return {
     mode: s.mode, knowledge: s.knowledge ?? "", persona: s.persona ?? "", model: s.model ?? "", handoff_message: s.handoff_message ?? "",
     business_hours: { ...DEFAULTS.business_hours, ...(s.business_hours ?? {}) }, max_replies_per_day: s.max_replies_per_day, max_turns: s.max_turns,
+    stock_lookup: s.stock_lookup !== false,
   };
 }
 
@@ -79,7 +80,7 @@ export function AiAgentSettings() {
       await saveAiSettings(storeId, userId, {
         mode: form.mode, knowledge: form.knowledge?.trim() || null, persona: form.persona?.trim() || null, model: form.model?.trim() || null,
         handoff_message: form.handoff_message?.trim() || null, business_hours: form.business_hours,
-        max_replies_per_day: form.max_replies_per_day, max_turns: form.max_turns,
+        max_replies_per_day: form.max_replies_per_day, max_turns: form.max_turns, stock_lookup: form.stock_lookup !== false,
       });
       qc.invalidateQueries({ queryKey: aiKeys.settings(storeId) });
       toast.success("Agente de IA salvo.");
@@ -123,7 +124,22 @@ export function AiAgentSettings() {
           </div>
           <Textarea id="ai-knowledge" value={form.knowledge ?? ""} onChange={(e) => set({ knowledge: e.target.value })} rows={9} disabled={off}
             placeholder="Endereço, horário, formas de pagamento, serviços, garantia… A IA só informa o que estiver aqui." className="text-base md:text-sm" maxLength={20000} />
-          <p className="text-xs text-muted-foreground">Preço só aparece se estiver escrito aqui. Sem isso, a IA diz que um atendente confirma.</p>
+          <p className="text-xs text-muted-foreground">
+            {form.stock_lookup !== false
+              ? "Preço de aparelho e acessório vem do Estoque (opção abaixo). Preço de conserto só aparece se estiver escrito aqui."
+              : "Preço só aparece se estiver escrito aqui. Sem isso, a IA diz que um atendente confirma."}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border/50 pt-3">
+          <div>
+            <Label htmlFor="ai-stock" className="font-medium">Consultar estoque e preços</Label>
+            <p className="text-xs text-muted-foreground">
+              A IA vê os aparelhos e acessórios à venda (desta loja e da outra unidade) com o preço de venda, e responde se tem e quanto custa.
+              Nunca vê o custo. O que não achar no estoque, ela passa para vendas confirmar.
+            </p>
+          </div>
+          <Switch id="ai-stock" checked={form.stock_lookup !== false} onCheckedChange={(v) => set({ stock_lookup: v })} disabled={off} />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -233,6 +249,7 @@ function AiSimulator({ storeId, form }: { storeId: string; form: Form }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<CrmAiDecision | null>(null);
+  const [stockUsed, setStockUsed] = useState<string[] | null>(null);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [msgs.length]);
 
@@ -245,9 +262,10 @@ function AiSimulator({ storeId, form }: { storeId: string; form: Form }) {
     try {
       const r = await simulateAi({
         storeId, messages: next.map(({ from, text: t }) => ({ from, text: t })),
-        overrides: { knowledge: form.knowledge, persona: form.persona, handoff_message: form.handoff_message, model: form.model, business_hours: form.business_hours, max_turns: form.max_turns },
+        overrides: { knowledge: form.knowledge, persona: form.persona, handoff_message: form.handoff_message, model: form.model, business_hours: form.business_hours, max_turns: form.max_turns, stock_lookup: form.stock_lookup !== false },
       });
       setLast(r.decision);
+      setStockUsed(r.stock_used ?? null);
       if (r.decision.reply) setMsgs([...next, { from: "loja", text: r.decision.reply, d: r.decision }]);
       else setMsgs([...next, { from: "loja", text: "(a IA ficaria em silêncio)", d: r.decision }]);
     } catch (err) {
@@ -261,7 +279,7 @@ function AiSimulator({ storeId, form }: { storeId: string; form: Form }) {
     <section className="rounded-xl border border-border/60 bg-card p-4" aria-labelledby="ai-sim">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 id="ai-sim" className="flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-violet-500" aria-hidden="true" /> Testar a IA</h3>
-        {msgs.length > 0 && <Button size="sm" variant="ghost" className="h-8" onClick={() => { setMsgs([]); setLast(null); }}><RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Recomeçar</Button>}
+        {msgs.length > 0 && <Button size="sm" variant="ghost" className="h-8" onClick={() => { setMsgs([]); setLast(null); setStockUsed(null); }}><RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Recomeçar</Button>}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">Escreva como se fosse um cliente. Usa o texto do formulário acima (mesmo sem salvar). Nada é enviado a ninguém.</p>
       <div className="mb-2 max-h-80 min-h-[120px] space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-background/50 p-3">
@@ -283,6 +301,12 @@ function AiSimulator({ storeId, form }: { storeId: string; form: Form }) {
           <p className="flex items-center gap-1 font-semibold"><UserRound className="h-3.5 w-3.5" /> Iria para o atendente com:</p>
           <p className="mt-0.5"><strong>{last.title || "Negócio"}</strong> · {last.summary}</p>
         </div>
+      )}
+      {stockUsed && stockUsed.length > 0 && (
+        <details className="mb-2 rounded-md border border-border/50 p-2 text-xs">
+          <summary className="cursor-pointer font-medium">Estoque que a IA consultou nesta resposta</summary>
+          <pre className="mt-1 whitespace-pre-wrap font-sans text-muted-foreground">{stockUsed.join("\n")}</pre>
+        </details>
       )}
       <form onSubmit={send} className="flex gap-2">
         <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Mensagem do cliente…" aria-label="Mensagem do cliente (teste)" disabled={busy} enterKeyHint="send" />

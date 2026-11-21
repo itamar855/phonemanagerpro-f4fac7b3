@@ -11,6 +11,8 @@ import { decide, runAgent, similarExamples, type AiSettings } from "../_shared/a
 import type { TranscriptMessage } from "../_shared/ai-agent-core.ts";
 import { loadMessageAudio, transcribeMessage } from "../_shared/transcribe.ts";
 import { tagConversation } from "../_shared/ai-tagger.ts";
+import { stockForConversation } from "../_shared/stock.ts";
+import { stockQueryText } from "../_shared/stock-core.ts";
 
 const TAG_BATCH = 24;
 const TAG_PARALLEL = 4;
@@ -52,17 +54,23 @@ serve(async (req) => {
         ...(typeof o.model === "string" && o.model.trim() ? { model: o.model.trim().slice(0, 80) } : {}),
         ...(o.business_hours && typeof o.business_hours === "object" ? { business_hours: o.business_hours } : {}),
         ...(Number.isFinite(Number(o.max_turns)) ? { max_turns: Number(o.max_turns) } : {}),
+        ...(typeof o.stock_lookup === "boolean" ? { stock_lookup: o.stock_lookup } : {}),
       } as AiSettings;
 
       const aiReplies = messages.filter((m) => m.direction === "out").length;
-      const examples = await similarExamples(admin, storeId, messages);
+      const storeName = store?.name ?? "loja";
+      const [examples, stock] = await Promise.all([
+        similarExamples(admin, storeId, messages),
+        settings.stock_lookup === false ? Promise.resolve(null) : stockForConversation(admin, storeId, storeName, stockQueryText(messages)),
+      ]);
       const r = await decide({
-        settings, storeName: store?.name ?? "loja", contact: { name: typeof body.contact_name === "string" ? body.contact_name : null },
-        messages, serviceOrders: [], aiRepliesSoFar: aiReplies, examples,
+        settings, storeName, contact: { name: typeof body.contact_name === "string" ? body.contact_name : null },
+        messages, serviceOrders: [], aiRepliesSoFar: aiReplies, examples, stock: stock?.lines ?? null,
       });
       return json({
         decision: r.decision, model: r.llm.model, latency_ms: r.llm.latencyMs, open_now: r.openNow, fallback_errors: r.llm.fallbackErrors ?? [],
         examples_used: examples.map((e) => ({ question: e.question, answer: e.answer })),
+        stock_used: stock?.lines ?? null,
       });
     }
 

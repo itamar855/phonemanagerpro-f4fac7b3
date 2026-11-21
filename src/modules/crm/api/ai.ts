@@ -15,7 +15,7 @@ export async function saveAiSettings(storeId: string, userId: string, patch: Par
 export interface SimMessage { from: "cliente" | "loja"; text: string }
 
 export function simulateAi(args: { storeId: string; messages: SimMessage[]; overrides: Partial<CrmAiSettings>; contactName?: string }) {
-  return invokeFn<{ decision: CrmAiDecision; model: string; latency_ms: number; open_now: boolean | null }>("crm-ai-agent", {
+  return invokeFn<{ decision: CrmAiDecision; model: string; latency_ms: number; open_now: boolean | null; stock_used?: string[] | null }>("crm-ai-agent", {
     action: "simulate", store_id: args.storeId, messages: args.messages, overrides: args.overrides, contact_name: args.contactName ?? null,
   });
 }

@@ -53,6 +53,8 @@ export interface PromptContext {
   teamNotes?: string | null;
   /** Avisos de contexto incompleto (checkContext) */
   contextWarnings?: string[];
+  /** Estoque à venda que tem a ver com a conversa (stockPromptLines); null/undefined = IA sem acesso ao estoque */
+  stock?: string[] | null;
 }
 
 /** Esquema da resposta (formato do Gemini: OpenAPI 3 em maiúsculas). */
@@ -99,15 +101,26 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "- Urgência e o nome da pessoa (se ainda não souber).",
     "",
     "REGRAS QUE NUNCA PODEM SER QUEBRADAS",
-    "- NUNCA invente preço, prazo, estoque, parcelamento, garantia ou promoção. Só informe o que estiver no CONHECIMENTO DA LOJA abaixo, exatamente como está.",
-    "- Você NÃO sabe o estoque: nunca responda \"temos sim\" sobre um aparelho, cor ou capacidade. Diga que trabalha com aquele tipo de aparelho e que a disponibilidade o pessoal de vendas confirma.",
-    "- Se perguntarem algo que não está no conhecimento (preço, orçamento, disponibilidade), diga que vai pedir pro pessoal da loja confirmar e faça a passagem (handoff).",
+    ...(ctx.stock ? [
+      "- NUNCA invente preço, prazo, estoque, parcelamento, garantia ou promoção. Preço e disponibilidade de APARELHOS e ACESSÓRIOS vêm SOMENTE do ESTOQUE AGORA (abaixo), com o valor exato; o resto vem do CONHECIMENTO DA LOJA.",
+      "- Item que está no ESTOQUE AGORA: pode dizer que tem e informar o preço exato (aparelho usado/seminovo: diga o estado e a bateria). Ofereça no máximo 3 opções por mensagem.",
+      "- Item que NÃO aparece no ESTOQUE AGORA: NÃO diga que não tem (a lista pode não ter pegado). Diga que vai confirmar com o pessoal de vendas e faça a passagem (handoff).",
+      "- \"preço a confirmar com vendas\": não informe valor; diga que o pessoal passa o valor.",
+      "- Item de outra unidade: diga em qual unidade está e que dá para combinar com o pessoal (retirar lá ou trazer).",
+      "- O estoque muda: nunca reserve nem garanta o item. Para fechar, reservar, negociar ou pagar, passe para vendas (handoff).",
+      "- Preço de CONSERTO não está no estoque: só informe se estiver no CONHECIMENTO DA LOJA; senão, a técnica confirma (handoff).",
+    ] : [
+      "- NUNCA invente preço, prazo, estoque, parcelamento, garantia ou promoção. Só informe o que estiver no CONHECIMENTO DA LOJA abaixo, exatamente como está.",
+      "- Você NÃO sabe o estoque: nunca responda \"temos sim\" sobre um aparelho, cor ou capacidade. Diga que trabalha com aquele tipo de aparelho e que a disponibilidade o pessoal de vendas confirma.",
+      "- Se perguntarem algo que não está no conhecimento (preço, orçamento, disponibilidade), diga que vai pedir pro pessoal da loja confirmar e faça a passagem (handoff).",
+    ]),
     "- Não negocie, não prometa nada e não trate reclamação: passe para o atendente.",
     "- Não peça dados sensíveis (CPF, cartão, senha).",
     "",
     "DECISÃO (campo decision)",
     "- reply: continue a conversa com a próxima pergunta ou informação.",
-    "- handoff: passe para o atendente quando: já souber o interesse E o aparelho/modelo; a pessoa pedir um atendente/pessoa; houver reclamação, negociação ou pergunta fora do conhecimento; ou a mensagem for imagem/vídeo/áudio sem transcrição. Áudios transcritos você entende normalmente pelo texto. No handoff, reply = frase curta de transição, como colega de equipe, avisando que o pessoal de vendas ou da técnica vai continuar por aqui, SEM fazer perguntas e sem falar em atendente humano.",
+    ctx.stock ? "- A pessoa perguntou preço/disponibilidade de aparelho ou acessório que está no ESTOQUE AGORA e a loja ainda não disse o valor na conversa: decision = reply, com as opções (até 3) e o preço exato de cada uma, e pergunte qual interessa. NÃO faça handoff nessa mensagem; o handoff vem depois, quando ela escolher ou quiser fechar." : null,
+    "- handoff: passe para o atendente quando: já souber o interesse E o aparelho/modelo (e já tiver respondido o que estava no estoque); a pessoa pedir um atendente/pessoa; houver reclamação, negociação ou pergunta fora do conhecimento; ou a mensagem for imagem/vídeo/áudio sem transcrição. Áudios transcritos você entende normalmente pelo texto. No handoff, reply = frase curta de transição, como colega de equipe, avisando que o pessoal de vendas ou da técnica vai continuar por aqui, SEM fazer perguntas e sem falar em atendente humano.",
     "- ignore: a conversa NÃO é de cliente (assunto pessoal, fornecedor, entregador, propaganda, spam, engano). Nesse caso reply = \"\" e commercial = false.",
     "",
     "OUTROS CAMPOS",
@@ -147,6 +160,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     for (const e of ctx.examples.slice(0, 5)) {
       lines.push(`- Cliente: "${(e.question ?? "").slice(0, 300)}"`, `  Loja: "${e.answer.slice(0, 500)}"`);
     }
+  }
+  if (ctx.stock) {
+    lines.push("", "ESTOQUE AGORA (à venda, preço de venda; só os itens que parecem com a conversa):", ...ctx.stock);
   }
   lines.push("", "CONHECIMENTO DA LOJA (única fonte de informações; se um exemplo acima disser diferente, vale o que está aqui):", ctx.knowledge?.trim() || "(a loja ainda não cadastrou informações: não informe preços, endereço nem horários além do que está acima)");
   if (ctx.knowledge?.trim()) {
