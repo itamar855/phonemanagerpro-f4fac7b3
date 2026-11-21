@@ -11,7 +11,9 @@ import { DealDrawer } from "../components/pipeline/DealDrawer";
 import { NewDealDialog } from "../components/pipeline/NewDealDialog";
 import { PipelineBoard } from "../components/pipeline/PipelineBoard";
 import { EmptyState } from "../components/shared/EmptyState";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCrmContext, useTeam } from "../hooks/useInbox";
+import { crmIsAdmin } from "../lib/access";
 import { pipelineKeys, useBoardDeals, useDealsRealtime, useInvalidateDeals, usePipelines, usePipelineSummary, useStages } from "../hooks/usePipeline";
 import { pickPipelineId, visibleStages } from "../lib/board";
 import { brl } from "../lib/format";
@@ -25,7 +27,10 @@ export default function PipelinePage() {
   const { data: pipelines = [], isLoading: loadingPipes } = usePipelines(storeId);
   const pipelineId = pickPipelineId(pipelines, params.get("funil"), writeStoreId);
   const pipeline = pipelines.find((p) => p.id === pipelineId);
-  const [mine, setMine] = useState(false);
+  const { userRole } = useAuth();
+  // Admin abre em "Todos"; atendente e técnico abrem em "Meus" (dá para trocar)
+  const [mineChoice, setMine] = useState<boolean | null>(null);
+  const mine = mineChoice ?? !crmIsAdmin(userRole);
   const ownerFilter = mine ? userId : null;
   const { data: stages = [] } = useStages(pipelineId);
   const { data: deals = [], isLoading: loadingDeals } = useBoardDeals(pipelineId, ownerFilter);
