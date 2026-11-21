@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyGuards, buildSystemPrompt, checkContext, defaultHandoffMessage, isAcknowledgement, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, checkContext, defaultHandoffMessage, isAcknowledgement, personName, typingDelayMs, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
   type AgentDecision, type TranscriptMessage,
 } from "../../../supabase/functions/_shared/ai-agent-core";
 
@@ -164,7 +164,8 @@ describe("agente de IA — horário", () => {
   });
 
   it("frase de transição muda quando a loja está fechada", () => {
-    expect(defaultHandoffMessage("Ana Souza", true)).toMatch(/^Show Ana!.*já já/);
+    expect(defaultHandoffMessage("Ana Souza", true)).toMatch(/Ana!/);
+    expect(defaultHandoffMessage("Ana Souza", true)).not.toMatch(/anotei tudo/);
     expect(defaultHandoffMessage(null, false)).toMatch(/assim que a loja abrir/);
   });
 });
@@ -258,5 +259,44 @@ describe("trava de contexto: a IA só responde sozinha quando entende a conversa
     const plain = buildSystemPrompt({ storeName: "Loja X", knowledge: "", persona: null, contactName: null, isCustomer: false, now: NOW, openNow: null, hoursText: null, serviceOrders: [], handoffMessage: null });
     expect(plain).not.toContain("O QUE JÁ SABEMOS");
     expect(plain).not.toContain("CONTEXTO INCOMPLETO");
+  });
+});
+
+describe("jeito de gente: a pessoa não percebe que é a IA", () => {
+  const base = { storeName: "Loja X", knowledge: "", persona: null, contactName: null, isCustomer: false, now: new Date(), openNow: true, hoursText: null, serviceOrders: [], handoffMessage: null };
+
+  it("instruções pedem conversa informal, sem lista numerada nem frases de robô", () => {
+    const p = buildSystemPrompt(base);
+    expect(p).toMatch(/NÃO pode perceber/);
+    expect(p).toMatch(/sem listas numeradas/);
+    expect(p).toMatch(/Cumprimente só na primeira resposta/);
+    expect(p).toMatch(/NUNCA diga que é assistente virtual, robô, IA/);
+  });
+
+  it("nome que não é de gente não entra na frase ('Show Cliente!', 'Show não!')", () => {
+    expect(personName("Cliente")).toBeNull();
+    expect(personName("não")).toBeNull();
+    expect(personName("desconhecido")).toBeNull();
+    expect(personName("87999112233")).toBeNull();
+    expect(personName("Joyce")).toBe("Joyce");
+    expect(personName("Ana Souza")).toBe("Ana Souza");
+    expect(defaultHandoffMessage("Cliente", true)).not.toMatch(/Cliente/);
+    expect(parseDecision({ decision: "handoff", reply: "", customer_name: "não", score: "warm", summary: "x" }).customer_name).toBeNull();
+  });
+
+  it("frase de passagem varia entre conversas e nunca fala em atendente/robô", () => {
+    const all = new Set(["a", "b", "c", "d", "e", "f", "g", "h"].map((seed) => defaultHandoffMessage("Joyce", true, seed)));
+    expect(all.size).toBeGreaterThan(1);
+    for (const m of all) {
+      expect(m).toContain("Joyce");
+      expect(m).not.toMatch(/atendente|humano|virtual|rob[oô]|anotei tudo/i);
+    }
+    expect(defaultHandoffMessage(null, false, "x")).toMatch(/loja abrir|abrir a loja/);
+  });
+
+  it("'digitando…' proporcional ao tamanho da mensagem (2 a 9 s)", () => {
+    expect(typingDelayMs("ok")).toBe(2000);
+    expect(typingDelayMs("x".repeat(100))).toBe(5700);
+    expect(typingDelayMs("x".repeat(1000))).toBe(9000);
   });
 });

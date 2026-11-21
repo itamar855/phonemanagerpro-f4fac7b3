@@ -87,8 +87,8 @@ export function evolution(cfg: EvolutionConfig) {
       if (!r.ok) r = await call("POST", `/webhook/set/${instance}`, webhook);
       return must(r, "Configurar webhook");
     },
-    async sendText(number: string, text: string): Promise<{ externalId: string | null; raw: any }> {
-      const d = must(await call("POST", `/message/sendText/${instance}`, { number, text, delay: 1200 }), "Enviar texto");
+    async sendText(number: string, text: string, opts: { delayMs?: number } = {}): Promise<{ externalId: string | null; raw: any }> {
+      const d = must(await call("POST", `/message/sendText/${instance}`, { number, text, delay: opts.delayMs ?? 1200 }), "Enviar texto");
       return { externalId: d?.key?.id ?? null, raw: d };
     },
     async sendMedia(number: string, mediatype: "image" | "audio" | "document" | "video", media: string, caption?: string, fileName?: string, mimetype?: string) {
