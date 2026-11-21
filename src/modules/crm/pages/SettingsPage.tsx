@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { createQuickReply, deleteQuickReply } from "../api/inbox";
 import { WhatsAppChannelCard } from "../components/settings/WhatsAppChannelCard";
+import { WhatsAppHealthCard } from "../components/settings/WhatsAppHealthCard";
 import { InstagramChannelCard } from "../components/settings/InstagramChannelCard";
 import { AutomationSettingsCard } from "../components/settings/AutomationSettingsCard";
 import { AiAgentSettings } from "../components/settings/AiAgentSettings";
@@ -28,6 +29,7 @@ function ChannelsSettings() {
   const label = current ? byId.get(current)?.label : undefined;
   return (
     <div className="space-y-4">
+      <WhatsAppHealthCard />
       {multi && (
         <div className="space-y-1.5">
           <p className="text-sm font-medium">Conexões da loja</p>

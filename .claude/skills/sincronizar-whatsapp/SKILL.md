@@ -13,6 +13,14 @@ grava no CRM com mídia e transcrição, mas **sem** IA, etiquetas, aviso no cel
 Ela também detecta o **"zumbi"**: a instância mostra `open` e envia, mas não recebe nada (nem grupos).
 Isso não se resolve daqui — só com o celular da loja (desconectar + ler o QR de novo).
 
+## O vigia já sincroniza sozinho (desde 21/11/2026)
+
+O `crm-watchdog` roda a cada 15 min, corrige o webhook e reenvia em replay as conversas diretas que
+faltam nas últimas horas (ver `ARCHITECTURE_BRAIN.md` §14 e o card "Saúde do WhatsApp" em CRM →
+Configurações → Canais). Use esta skill quando a janela for maior que ~6 h, quando o vigia estiver com
+erro, para investigar um caso específico ou para o teste cruzado manual. Antes, olhe `whatsapp_watchdog`
+e `whatsapp_sync_log` (sem imprimir segredo): pode já estar resolvido.
+
 ## Por que tanto cuidado
 
 - **Clientes reais.** Reenviar pelo caminho normal do webhook faria a IA (que pode estar no piloto
