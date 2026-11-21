@@ -12,8 +12,8 @@ import { base64ToBytes, transcribeAudio, transcribeMessage } from "../_shared/tr
 import { findStaff, handleStaffMessage } from "../_shared/staff-assistant.ts"
 import { checkReplay, checkWebhookAuth } from "./auth.ts"
 import {
-  contactLid, extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, mapAckStatus, matchContactByName, mediaExt, mediaMime,
-  parseMessageBody, phoneFromEvolutionContacts, phoneJidFrom, resolveContactJid, resolveTimestamp, stripBase64, withResolvedPhone,
+  contactLid, extractAdAttribution, extractAdCode, extractTrackCode, hasAdData, isUsableName, mapAckStatus, matchContactByName, mediaExt, mediaMime,
+  namesFromEvolutionContacts, parseMessageBody, phoneFromEvolutionContacts, phoneJidFrom, resolveContactJid, resolveTimestamp, stripBase64, withResolvedPhone,
 } from "./parse.ts"
 
 /** Config pela instância do evento; sem ela, o número ativo. */
@@ -63,16 +63,22 @@ async function lookupLid(admin: SupabaseClient, cfg: EvolutionConfig, lid: strin
   const saved = phoneJidFrom(known?.phone)
   if (saved) return saved
 
+  const names: string[] = []
+  const own = typeof pushName === 'string' ? pushName.trim() : ''
+  if (isUsableName(own)) names.push(own)
   try {
-    const fromEvolution = phoneFromEvolutionContacts(await evolution(cfg).findContacts({ remoteJid: lid }), lid)
+    const records = await evolution(cfg).findContacts({ remoteJid: lid })
+    const fromEvolution = phoneFromEvolutionContacts(records, lid)
     if (fromEvolution) {
       await rememberLid(admin, cfg, lid, fromEvolution, 'evolution')
       return fromEvolution
     }
+    // Nome do contato na Evolution: vale também para conversa que a loja começou e para a
+    // mensagem que chega com o próprio lid no lugar do nome.
+    for (const n of namesFromEvolutionContacts(records, lid)) if (!names.includes(n)) names.push(n)
   } catch (e) { console.error('[WhatsApp Webhook] findContacts:', (e as Error).message) }
 
-  const name = typeof pushName === 'string' ? pushName.trim() : ''
-  if (name) {
+  for (const name of names) {
     const pattern = name.replace(/[\\%_]/g, (c) => `\\${c}`)
     const { data: contacts } = await admin.from('crm_contacts')
       .select('name, phone').eq('store_id', cfg.store_id).not('phone', 'is', null).ilike('name', pattern).limit(5)
@@ -111,7 +117,7 @@ async function replayPending(admin: SupabaseClient, cfg: EvolutionConfig, lid: s
   for (const row of list as any[]) {
     let failure: string | null = null
     try {
-      const r = await handleUpsert(admin, cfg, withResolvedPhone(row.payload, phoneJid), { replay: true })
+      const r = await handleUpsert(admin, cfg, withResolvedPhone(row.payload, phoneJid), { replay: true, fromQueue: true })
       if ((r.status ?? 200) >= 400) failure = String(r.body?.error ?? r.status)
     } catch (e) { failure = (e as Error).message }
     if (failure) {
@@ -126,10 +132,10 @@ async function replayPending(admin: SupabaseClient, cfg: EvolutionConfig, lid: s
 // ------------------------------------------------------------------ mensagem
 
 /**
- * Trata um messages.upsert. replay = mensagem da fila de espera do @lid:
- * não aciona o assistente da equipe nem o agente de IA (é mensagem antiga).
+ * Trata um messages.upsert. replay = mensagem antiga (fila do @lid ou sincronização):
+ * não aciona o assistente da equipe nem o agente de IA. fromQueue = veio da própria fila do @lid.
  */
-async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload: any, opts: { replay?: boolean } = {}): Promise<Result> {
+async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload: any, opts: { replay?: boolean; fromQueue?: boolean } = {}): Promise<Result> {
   const storeId = cfg.store_id
   const message = payload.data
   const key = message?.key || {}
@@ -137,7 +143,9 @@ async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload
 
   let jid = resolveContactJid(key)
   const lid = contactLid(key)
-  if (lid && jid && !opts.replay) {
+  // Guarda o par lid → número também na sincronização (replay): é dela que vêm os números das
+  // conversas que a loja começou. Só a própria fila não regrava (o número veio do par salvo).
+  if (lid && jid && !opts.fromQueue) {
     await rememberLid(admin, cfg, lid, jid, 'message')
   } else if (lid && !jid) {
     jid = await lookupLid(admin, cfg, lid, fromMe ? null : message?.pushName)
