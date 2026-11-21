@@ -60,17 +60,17 @@ export default function CrmModule() {
       <div className="min-h-0 flex-1">
         <Suspense fallback={<PageFallback />}>
           <Routes>
-            <Route index element={<Navigate to="inbox" replace />} />
+            <Route index element={<Navigate to="funil" replace />} />
             <Route path="inbox" element={<InboxPage />} />
             <Route path="inbox/:conversationId" element={<InboxPage />} />
             <Route path="funil" element={<PipelinePage />} />
             <Route path="contatos" element={<ContactsPage />} />
             <Route path="contatos/:contactId" element={<ContactsPage />} />
             <Route path="tarefas" element={<TasksPage />} />
-            {/* Relatórios e Configurações só do admin; os demais voltam para a caixa de entrada */}
-            <Route path="relatorios" element={isAdmin ? <ReportsPage /> : <Navigate to="/crm/inbox" replace />} />
-            <Route path="config" element={isAdmin ? <SettingsPage /> : <Navigate to="/crm/inbox" replace />} />
-            <Route path="*" element={<Navigate to="inbox" replace />} />
+            {/* Relatórios e Configurações só do admin; os demais voltam para o funil */}
+            <Route path="relatorios" element={isAdmin ? <ReportsPage /> : <Navigate to="/crm/funil" replace />} />
+            <Route path="config" element={isAdmin ? <SettingsPage /> : <Navigate to="/crm/funil" replace />} />
+            <Route path="*" element={<Navigate to="funil" replace />} />
           </Routes>
         </Suspense>
       </div>
