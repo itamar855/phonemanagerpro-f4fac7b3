@@ -165,10 +165,31 @@ const GENERIC_NAMES = new Set(["lead whatsapp", "contato", "cliente", "whatsapp"
  */
 export function matchContactByName(contacts: Array<{ name?: string | null; phone?: string | null }>, pushName: unknown): string | null {
   const target = normalizeName(pushName);
-  if (target.replace(/[^a-z0-9]/g, "").length < 3 || GENERIC_NAMES.has(target)) return null;
+  if (!isUsableName(target) || GENERIC_NAMES.has(target)) return null;
   const same = (contacts ?? []).filter((c) => normalizeName(c?.name) === target);
   if (same.length !== 1) return null;
   return phoneJidFrom(String(same[0].phone ?? "").replace(/\D/g, ""));
+}
+
+/** Nome que serve para comparar: 3+ letras/dígitos e não só número (a Evolution às vezes manda o próprio lid como nome). */
+export function isUsableName(raw: unknown): boolean {
+  const t = normalizeName(raw);
+  return t.replace(/[^a-z0-9]/g, "").length >= 3 && /\p{L}/u.test(t);
+}
+
+/**
+ * Nomes do contato @lid na Evolution (/chat/findContacts): o pushName do registro desse lid.
+ * Serve para achar o contato no CRM quando a mensagem veio sem nome (ou com o lid no lugar do nome).
+ */
+export function namesFromEvolutionContacts(records: unknown, lid: string): string[] {
+  const list = Array.isArray(records) ? records : records && typeof records === "object" ? [records] : [];
+  const out: string[] = [];
+  for (const r of list as any[]) {
+    if (!r || typeof r !== "object" || r.remoteJid !== lid) continue;
+    const n = typeof r.pushName === "string" ? r.pushName.trim() : "";
+    if (isUsableName(n) && !out.includes(n)) out.push(n);
+  }
+  return out;
 }
 
 /** Cópia do evento sem o base64 das mídias (vai para a fila de espera; a mídia é baixada de novo depois). */

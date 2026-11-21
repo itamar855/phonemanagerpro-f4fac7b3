@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   contactLid,
+  isUsableName,
   matchContactByName,
+  namesFromEvolutionContacts,
   normalizeName,
   phoneFromEvolutionContacts,
   phoneJidFrom,
@@ -138,5 +140,26 @@ describe("fila de espera", () => {
     expect(out.data.key).toEqual({ remoteJid: LID, fromMe: false, id: "3EB0ABC", remoteJidAlt: PHONE });
     expect(resolveContactJid(out.data.key)).toBe(PHONE);
     expect((payload.data.key as { remoteJidAlt?: string }).remoteJidAlt).toBeUndefined();
+  });
+});
+
+describe("nome do contato @lid vindo da Evolution", () => {
+  it("pega o pushName do registro desse lid e ignora nome que é só número (o próprio lid)", () => {
+    const records = [
+      { id: "a", remoteJid: LID, pushName: "FastPhone Atacado/José e Maria", isSaved: true },
+      { id: "b", remoteJid: "999@lid", pushName: "Outro" },
+    ];
+    expect(namesFromEvolutionContacts(records, LID)).toEqual(["FastPhone Atacado/José e Maria"]);
+    expect(namesFromEvolutionContacts([{ remoteJid: LID, pushName: "220517311193237" }], LID)).toEqual([]);
+    expect(namesFromEvolutionContacts([{ remoteJid: LID }], LID)).toEqual([]);
+    expect(namesFromEvolutionContacts(null, LID)).toEqual([]);
+  });
+
+  it("nome só com número não serve para procurar contato", () => {
+    expect(isUsableName("220517311193237")).toBe(false);
+    expect(isUsableName("Dn'")).toBe(false);
+    expect(isUsableName("Tekcell")).toBe(true);
+    expect(matchContactByName([{ name: "220517311193237", phone: "5587999112233" }], "220517311193237")).toBeNull();
+    expect(matchContactByName([{ name: "Maxx Cell Atacado 2", phone: "5587999112233" }], "Maxx Cell Atacado 2")).toBe(PHONE);
   });
 });
