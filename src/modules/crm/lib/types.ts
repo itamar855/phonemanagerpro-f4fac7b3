@@ -28,6 +28,9 @@ export interface CrmContact {
   handoff_code: string | null;
   tags: string[];
   lead_kind?: "assistencia" | "venda" | "fornecedor" | null;
+  /** Memória do cliente escrita pela IA */
+  ai_summary?: string | null;
+  ai_summary_at?: string | null;
   ignored: boolean;
   ignored_reason: string | null;
   notes: string | null;

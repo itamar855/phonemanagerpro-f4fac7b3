@@ -28,6 +28,8 @@ export interface TranscriptMessage {
   created_at?: string;
   /** Transcrição do áudio, quando houver */
   transcript?: string | null;
+  /** Quando entrou no CRM (difere de created_at quando a mensagem foi sincronizada depois) */
+  inserted_at?: string | null;
 }
 
 export interface ServiceOrderInfo { number: number | string; device: string; status: string }
@@ -45,6 +47,12 @@ export interface PromptContext {
   handoffMessage: string | null;
   /** Exemplos reais aprovados, parecidos com a mensagem atual */
   examples?: { question: string | null; answer: string; has_price?: boolean }[];
+  /** Memória do cliente escrita pela IA em conversas anteriores */
+  memory?: string | null;
+  /** Anotações da equipe no contato */
+  teamNotes?: string | null;
+  /** Avisos de contexto incompleto (checkContext) */
+  contextWarnings?: string[];
 }
 
 /** Esquema da resposta (formato do Gemini: OpenAPI 3 em maiúsculas). */
@@ -115,6 +123,17 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     ctx.contactName ? `- Nome no WhatsApp: ${ctx.contactName}.` : null,
     ctx.isCustomer ? "- Esta pessoa já é cliente cadastrado da loja." : null,
   ];
+
+  if (ctx.memory?.trim() || ctx.teamNotes?.trim()) {
+    lines.push("", "O QUE JÁ SABEMOS DESTA PESSOA (de conversas anteriores; use para não perguntar de novo o que ela já disse. Se ela disser algo diferente agora, vale o que ela disse agora):");
+    if (ctx.memory?.trim()) lines.push(`- Resumo: ${ctx.memory.trim().slice(0, 700)}`);
+    if (ctx.teamNotes?.trim()) lines.push(`- Anotações da equipe: ${ctx.teamNotes.trim().slice(0, 500)}`);
+  }
+  if (ctx.contextWarnings?.length) {
+    lines.push("", "ATENÇÃO, CONTEXTO INCOMPLETO:");
+    for (const w of ctx.contextWarnings) lines.push(`- ${w}`);
+    lines.push("- Não presuma o que foi combinado antes. Se a última mensagem da pessoa depender de algo que não aparece na conversa, faça handoff em vez de chutar.");
+  }
 
   if (ctx.serviceOrders.length > 0) {
     lines.push("", "ORDENS DE SERVIÇO DESTA PESSOA (pode informar o status se ela perguntar):");
@@ -243,6 +262,83 @@ export function applyGuards(d: AgentDecision, g: GuardInput): AgentDecision {
   if (out.decision === "reply" && !out.reply) { out.decision = "handoff"; out.reason = out.reason ?? "IA sem resposta"; }
   out.reply = out.reply.slice(0, 1000);
   if (!out.summary) out.summary = [out.title, out.defect, out.urgency].filter(Boolean).join(" · ") || "Contato pelo WhatsApp.";
+  return out;
+}
+
+// ---------------- trava de contexto ----------------
+
+const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// palavras que, sozinhas, só confirmam ("ok", "obrigada", "blz")
+const ACK_CORE = new Set(["ok", "okay", "okey", "okk", "blz", "beleza", "obrigado", "obrigada", "obrigadao", "obrigadas", "obrigados", "obg", "brigado", "brigada", "valeu", "vlw", "certo", "perfeito", "show", "combinado", "entendi", "fechado", "otimo", "joia", "top", "massa"]);
+// palavras que podem acompanhar a confirmação sem mudar o sentido
+const ACK_FILLER = new Set(["amigo", "amiga", "mano", "moco", "moca", "irmao", "querido", "querida", "sim", "entao", "ta", "tah", "bom", "boa", "tarde", "noite", "dia", "muito", "mt", "mto", "ai", "viu", "e", "ate", "mais", "depois", "logo", "amanha", "flw", "tchau", "deus", "abencoe", "vc", "voce", "tbm", "tambem", "pra", "por", "tudo", "bem", "de", "nada", "aguardo", "kk", "kkk", "kkkk", "rs", "haha", "hehe", "sr", "sra", "senhor", "senhora"]);
+
+/** "Ok", "Ok amigo boa tarde", "Obrigada!", "👍": só confirma, não pede nada. */
+export function isAcknowledgement(text: string | null | undefined): boolean {
+  const raw = (text ?? "").trim();
+  if (!raw || raw.includes("?")) return false;
+  const noEmoji = raw.replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u200d\ufe0f]/gu, " ").trim();
+  if (!noEmoji) return true; // só emoji (👍🙏)
+  const words = fold(noEmoji).replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean)
+    .map((w) => (/^(k{2,}|(ha){2,}|(he){2,}|rs+)$/.test(w) ? "kk" : w.replace(/^o?k+$/, "ok")));
+  if (!words.length || words.length > 8) return false;
+  return words.some((w) => ACK_CORE.has(w)) && words.every((w) => ACK_CORE.has(w) || ACK_FILLER.has(w));
+}
+
+export interface ContextCheck {
+  /** Não responder nem sugerir sozinho (motivo) */
+  skip: string | null;
+  /** Motivos para só sugerir, nunca enviar sozinho */
+  draftOnly: string[];
+  /** Avisos que vão para o prompt */
+  warnings: string[];
+}
+
+const LATE_MS = 10 * 60_000;
+const HUMAN_RECENT_MS = 12 * 3600_000;
+const LATE_WINDOW_MS = 3 * 24 * 3600_000;
+
+/**
+ * Antes de a IA responder: a conversa tem contexto suficiente?
+ * - só "ok/obrigado" do cliente → não responde (não há o que responder);
+ * - mensagens sincronizadas depois, ou conversa que começou antes do CRM → só sugere e avisa o modelo;
+ * - alguém da equipe respondeu nas últimas 12 h → só sugere (a pessoa está atendendo).
+ * messages em ordem cronológica; hasOlder = há mensagens mais antigas que não vieram na lista.
+ */
+export function checkContext(messages: TranscriptMessage[], opts: { now?: Date; hasOlder?: boolean } = {}): ContextCheck {
+  const now = (opts.now ?? new Date()).getTime();
+  const out: ContextCheck = { skip: null, draftOnly: [], warnings: [] };
+  const list = messages.filter((m) => m.kind !== "note" && m.sender_kind !== "system");
+  if (!list.length) return out;
+
+  // o que o cliente mandou desde a última mensagem da loja
+  let i = list.length;
+  while (i > 0 && list[i - 1].direction === "in") i--;
+  const burst = list.slice(i);
+  const textOf = (m: TranscriptMessage) => (m.kind === "audio" ? m.transcript : m.kind === "text" ? m.body : null);
+  if (burst.length && burst.every((m) => (m.kind === "text" || (m.kind === "audio" && m.transcript)) && isAcknowledgement(textOf(m)))) {
+    out.skip = "o cliente só confirmou (ok/obrigado)";
+  }
+
+  const late = list.some((m) => {
+    if (!m.created_at || !m.inserted_at) return false;
+    const c = Date.parse(m.created_at), ins = Date.parse(m.inserted_at);
+    return ins - c > LATE_MS && now - c < LATE_WINDOW_MS;
+  });
+  if (late) {
+    out.draftOnly.push("histórico sincronizado depois");
+    out.warnings.push("Parte desta conversa entrou no sistema depois (sincronização): pode haver mensagens faltando.");
+  }
+
+  const first = list[0];
+  if (!opts.hasOlder && first.direction === "in" && isAcknowledgement(textOf(first))) {
+    out.draftOnly.push("conversa começou antes do CRM");
+    out.warnings.push("A conversa começou antes de entrar no sistema: o começo dela não aparece aqui.");
+  }
+
+  const humanRecent = list.some((m) => m.direction === "out" && m.sender_kind === "user" && m.created_at && now - Date.parse(m.created_at) < HUMAN_RECENT_MS);
+  if (humanRecent) out.draftOnly.push("a equipe respondeu nas últimas 12 h");
+
   return out;
 }
 
