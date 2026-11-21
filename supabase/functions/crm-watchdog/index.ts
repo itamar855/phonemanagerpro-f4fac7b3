@@ -1,80 +1,299 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- linhas do PostgREST e payloads da Evolution sem tipos */
-// Vigia do WhatsApp da loja: avisa o admin quando a instância fica "zumbi"
-// (mostra open, envia, mas não recebe nada há mais de 90 min entre 8h e 20h).
-//  check (cron a cada 15 min com a senha interna CRM_CRON_SECRET, ou gerência pela tela)
-// Regras em _shared/whatsapp-watchdog-core.ts. Nunca devolve nem registra a chave da API.
+// Vigia do WhatsApp das lojas (cron a cada 15 min com a senha interna CRM_CRON_SECRET, ou gerência pela tela).
+// Por instância:
+//  1. webhook: confere na Evolution e corrige sozinho se estiver errado;
+//  2. sincronização: lê as mensagens recentes e reenvia ao CRM (replay, sem IA nem avisos) as que faltam;
+//  3. saúde: última mensagem recebida, última conversa DIRETA, erros da Evolution;
+//  4. teste entre lojas: sem conversa direta há 1 h no expediente, a outra loja manda um teste;
+//  5. avisos: "zumbi", grupos sem conversas diretas, teste que não chegou, Evolution fora, webhook errado —
+//     por WhatsApp para o admin e no celular (Web Push) dos admins.
+// Regras em _shared/whatsapp-watchdog-core.ts e _shared/whatsapp-health-core.ts.
+// Nunca devolve nem registra a chave da API nem o segredo do webhook.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, corsHeaders, errorResponse, HttpError, json, requireManager, requireUser } from "../_shared/http.ts";
 import { evolution, type EvolutionConfig } from "../_shared/evolution.ts";
-import { alertText, decideAlert, extractRecords, instanceKey, summarizeMessages } from "../_shared/whatsapp-watchdog-core.ts";
+import { sendPush, type PushTarget } from "../_shared/push.ts";
+import { alertText, decideAlert, extractRecords, instanceKey } from "../_shared/whatsapp-watchdog-core.ts";
+import {
+  type AlertKind, decideHealthAlert, healthAlertText, isDirectJid, latest, needMorePages, PAGE_SIZE, PROBE_TEXT, probeState,
+  type ProbeState, reconcileCandidates, REPLAY_MAX_ATTEMPTS, replayOutcome, scanStopAt, scanSummary, shouldProbe, webhookIssues,
+} from "../_shared/whatsapp-health-core.ts";
 
-interface CheckResult {
-  store_id: string;
-  instance: string;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
+/** Tempo máximo de reenvio por instância em cada checagem (o resto fica para a próxima). */
+const REPLAY_BUDGET_MS = 45_000;
+
+interface Instance {
+  cfg: EvolutionConfig;
+  storeName: string;
+  health: any;
   state: string;
-  reason: string;
-  since: string | null;
-  alerted: boolean;
-  error?: string;
+  owner: string | null;
+  records: any[];
+  error: string | null;
+  result: Record<string, unknown>;
 }
 
-async function checkAll(admin: any): Promise<CheckResult[]> {
-  const { data: configs, error } = await admin.from("whatsapp_config").select("*").eq("is_active", true);
-  if (error) throw new HttpError(500, error.message);
-  const seen = new Set<string>();
-  const out: CheckResult[] = [];
+const iso = (ms: number | null | undefined) => (ms != null && Number.isFinite(ms) ? new Date(ms).toISOString() : null);
+const short = (name: string | null | undefined) => String(name ?? "").replace(/^.*\(([^)]+)\).*$/, "$1") || "Loja";
 
-  for (const cfg of (configs ?? []) as EvolutionConfig[]) {
-    const key = instanceKey(cfg);
-    if (seen.has(key)) continue; // mesmo número em duas lojas: um aviso só
-    seen.add(key);
-    const res: CheckResult = { store_id: cfg.store_id, instance: cfg.instance_name, state: "unknown", reason: "", since: null, alerted: false };
-    out.push(res);
+// ------------------------------------------------------------------ leitura
+
+async function scanMessages(cfg: EvolutionConfig, health: any, nowMs: number): Promise<any[]> {
+  const evo = evolution(cfg);
+  const stopAt = scanStopAt(nowMs, health?.scanned_at);
+  const all: any[] = [];
+  for (let page = 1; ; page++) {
+    let recs: any[];
     try {
-      const evo = evolution(cfg);
-      const nowMs = Date.now();
-      res.state = await evo.connectionState();
-      // sem conseguir ler o último aviso, não avisa (evita repetir a cada 15 min)
-      const { data: health, error: hErr } = await admin.from("whatsapp_watchdog").select("last_alert_at").eq("config_id", cfg.id).maybeSingle();
-      if (hErr) throw new Error(`ler whatsapp_watchdog: ${hErr.message}`);
-      const lastAlertMs = health?.last_alert_at ? Date.parse(health.last_alert_at) : null;
-
-      // só lê as mensagens se a instância diz que está aberta (o resto não é "zumbi")
-      const summary = res.state === "open"
-        ? summarizeMessages(extractRecords(await evo.recentMessages(50)))
-        : { lastInboundMs: null, oldestMs: null, count: 0 };
-      const d = decideAlert({ state: res.state, summary, nowMs, lastAlertMs });
-      res.reason = d.reason;
-      res.since = d.sinceMs != null ? new Date(d.sinceMs).toISOString() : null;
-
-      let alertedAt: string | null = null;
-      if (d.alert && d.sinceMs != null) {
-        const { data: phone, error: pErr } = await admin.rpc("whatsapp_watchdog_admin_phone", { p_store_id: cfg.store_id });
-        if (pErr) throw new Error(pErr.message);
-        if (!phone) throw new Error("nenhum admin com celular em profiles.phone");
-        await evo.sendText(`${phone}@s.whatsapp.net`, alertText(d.sinceMs, nowMs));
-        alertedAt = new Date(nowMs).toISOString();
-        res.alerted = true;
-      }
-
-      const row: Record<string, unknown> = {
-        config_id: cfg.id,
-        last_state: res.state,
-        last_inbound_at: summary.lastInboundMs != null ? new Date(summary.lastInboundMs).toISOString() : null,
-        checked_at: new Date(nowMs).toISOString(),
-      };
-      if (alertedAt) row.last_alert_at = alertedAt;
-      const { error: uErr } = await admin.from("whatsapp_watchdog").upsert(row, { onConflict: "config_id" });
-      if (uErr) {
-        console.error("[watchdog] gravar", uErr.message);
-        if (alertedAt) res.error = `aviso enviado, mas não gravado: ${uErr.message}`;
-      }
+      recs = extractRecords(await evo.recentMessages(PAGE_SIZE, page));
     } catch (e) {
-      res.error = (e as Error).message;
-      console.error("[watchdog]", cfg.instance_name, res.error);
+      if (page === 1) throw e;
+      console.warn("[watchdog] página", page, (e as Error).message);
+      break; // usa o que já leu
     }
+    all.push(...recs);
+    const oldest = scanSummary(recs).oldestMs;
+    if (!needMorePages({ page, pageCount: recs.length, oldestMs: oldest, stopAtMs: stopAt })) break;
   }
-  return out;
+  return all;
+}
+
+// ------------------------------------------------------------------ webhook
+
+async function checkWebhook(cfg: EvolutionConfig): Promise<{ ok: boolean; issues: string[]; fixed: boolean }> {
+  const secret = Deno.env.get("EVOLUTION_WEBHOOK_SECRET");
+  if (!secret) return { ok: false, issues: ["EVOLUTION_WEBHOOK_SECRET ausente no servidor"], fixed: false };
+  const evo = evolution(cfg);
+  const issues = webhookIssues(await evo.findWebhook(), { url: WEBHOOK_URL, secret });
+  if (!issues.length) return { ok: true, issues, fixed: false };
+  try {
+    await evo.setWebhook(WEBHOOK_URL, secret);
+    const after = webhookIssues(await evo.findWebhook(), { url: WEBHOOK_URL, secret });
+    console.warn("[watchdog] webhook corrigido:", cfg.instance_name, issues.join(", "), after.length ? `→ ainda: ${after.join(", ")}` : "→ ok");
+    return { ok: after.length === 0, issues: after.length ? after : issues, fixed: after.length === 0 };
+  } catch (e) {
+    console.error("[watchdog] corrigir webhook:", (e as Error).message);
+    return { ok: false, issues, fixed: false };
+  }
+}
+
+// ------------------------------------------------------------------ sincronização
+
+async function knownIds(admin: any, configId: string, ids: string[]): Promise<Set<string>> {
+  const known = new Set<string>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+    const [{ data: msgs, error: e1 }, { data: logs, error: e2 }] = await Promise.all([
+      admin.from("crm_messages").select("external_id").in("external_id", chunk),
+      admin.from("whatsapp_sync_log").select("external_id, retry, attempts").eq("config_id", configId).in("external_id", chunk),
+    ]);
+    if (e1 || e2) throw new Error(`ler mensagens do CRM: ${(e1 ?? e2).message}`);
+    for (const m of msgs ?? []) known.add(m.external_id);
+    for (const l of logs ?? []) if (!l.retry || l.attempts >= REPLAY_MAX_ATTEMPTS) known.add(l.external_id);
+  }
+  return known;
+}
+
+async function reconcile(admin: any, inst: Instance, nowMs: number): Promise<{ sent: number; saved: number; errors: number }> {
+  const cron = Deno.env.get("CRM_CRON_SECRET");
+  const secret = Deno.env.get("EVOLUTION_WEBHOOK_SECRET");
+  if (!cron || !secret) return { sent: 0, saved: 0, errors: 0 };
+  const ids = [...new Set(inst.records.filter((r) => isDirectJid(r?.key?.remoteJid)).map((r) => r?.key?.id).filter(Boolean))] as string[];
+  if (!ids.length) return { sent: 0, saved: 0, errors: 0 };
+  const candidates = reconcileCandidates(inst.records, await knownIds(admin, inst.cfg.id, ids), nowMs);
+  const started = Date.now();
+  let sent = 0, saved = 0, errors = 0;
+  for (const r of candidates) {
+    if (Date.now() - started > REPLAY_BUDGET_MS) break;
+    let status = 0, body: any = null;
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-evolution-webhook-secret": secret, "x-crm-internal": cron },
+        body: JSON.stringify({ event: "messages.upsert", instance: inst.cfg.instance_name, data: r, replay: true }),
+      });
+      status = res.status;
+      body = await res.json().catch(() => null);
+    } catch (e) {
+      console.error("[watchdog] reenvio:", (e as Error).message);
+    }
+    sent++;
+    const out = replayOutcome(status, body);
+    if (out.result === "gravada") saved++;
+    if (out.retry) errors++;
+    const { data: prev } = await admin.from("whatsapp_sync_log").select("attempts").eq("config_id", inst.cfg.id).eq("external_id", r.key.id).maybeSingle();
+    await admin.from("whatsapp_sync_log").upsert({
+      config_id: inst.cfg.id, external_id: r.key.id, result: out.result, retry: out.retry,
+      attempts: (prev?.attempts ?? 0) + 1, message_at: iso(Number(r.messageTimestamp) * 1000), last_at: new Date().toISOString(),
+    }, { onConflict: "config_id,external_id" });
+    if (status === 401) break; // segredo errado: não insiste
+  }
+  if (sent) console.log(`[watchdog] ${inst.cfg.instance_name}: ${sent} reenviadas, ${saved} gravadas, ${errors} com erro`);
+  return { sent, saved, errors };
+}
+
+// ------------------------------------------------------------------ avisos
+
+async function adminPushTargets(admin: any): Promise<PushTarget[]> {
+  const { data: admins } = await admin.from("user_roles").select("user_id").eq("role", "admin");
+  const ids = (admins ?? []).map((a: any) => a.user_id);
+  if (!ids.length) return [];
+  const { data } = await admin.from("crm_push_subscriptions").select("id, endpoint, p256dh, auth").in("user_id", ids);
+  return (data ?? []).map((s: any) => ({ subscription_id: s.id, endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth }));
+}
+
+/** Aviso pelo WhatsApp (de uma instância que esteja aberta) e no celular dos admins. Nunca lança. */
+async function sendAlert(admin: any, inst: Instance, all: Instance[], title: string, body: string): Promise<boolean> {
+  let delivered = false;
+  try {
+    const r = await sendPush(admin, await adminPushTargets(admin), { title, body, url: "/crm/config", tag: `whatsapp-${inst.cfg.id}` });
+    delivered = r.sent > 0;
+  } catch (e) { console.error("[watchdog] push:", (e as Error).message); }
+  const senders = [inst, ...all.filter((o) => o !== inst)].filter((o) => o.state === "open" && !o.error);
+  if (senders.length) {
+    try {
+      const { data: phone } = await admin.rpc("whatsapp_watchdog_admin_phone", { p_store_id: inst.cfg.store_id });
+      if (phone) {
+        await evolution(senders[0].cfg).sendText(`${phone}@s.whatsapp.net`, `${title}\n\n${body}`);
+        delivered = true;
+      }
+    } catch (e) { console.error("[watchdog] aviso WhatsApp:", (e as Error).message); }
+  }
+  return delivered;
+}
+
+// ------------------------------------------------------------------ checagem
+
+async function checkAll(admin: any): Promise<Record<string, unknown>[]> {
+  const nowMs = Date.now();
+  const { data: configs, error } = await admin.from("whatsapp_config").select("*, store:stores(name)").eq("is_active", true);
+  if (error) throw new HttpError(500, error.message);
+  const ids = (configs ?? []).map((c: any) => c.id);
+  const { data: rows } = ids.length ? await admin.from("whatsapp_watchdog").select("*").in("config_id", ids) : { data: [] };
+  const healthOf = new Map((rows ?? []).map((r: any) => [r.config_id, r]));
+
+  const seen = new Set<string>();
+  const list: Instance[] = [];
+  for (const c of (configs ?? []) as any[]) {
+    const key = instanceKey(c);
+    if (seen.has(key)) continue; // mesmo número em duas lojas: uma checagem só
+    seen.add(key);
+    const store = Array.isArray(c.store) ? c.store[0] : c.store;
+    list.push({ cfg: c, storeName: short(store?.name), health: healthOf.get(c.id) ?? null, state: "unknown", owner: null, records: [], error: null, result: { store_id: c.store_id, instance: c.instance_name } });
+  }
+
+  // 1) estado, número e mensagens de cada instância
+  await Promise.all(list.map(async (inst) => {
+    try {
+      const evo = evolution(inst.cfg);
+      inst.state = await evo.connectionState();
+      inst.owner = (await evo.ownerNumber().catch(() => null)) ?? inst.health?.owner_number ?? null;
+      if (inst.state === "open") inst.records = await scanMessages(inst.cfg, inst.health, nowMs);
+    } catch (e) {
+      inst.error = (e as Error).message;
+      if (inst.state === "unknown") inst.state = "unreachable";
+    }
+  }));
+  const storeNumbers = list.map((i) => i.owner).filter(Boolean) as string[];
+
+  for (const inst of list) {
+    const h = inst.health ?? {};
+    const row: Record<string, unknown> = { config_id: inst.cfg.id, last_state: inst.state, checked_at: iso(nowMs), owner_number: inst.owner };
+    const res = inst.result;
+    res.state = inst.state;
+    try {
+      if (inst.error) throw new Error(inst.error);
+
+      // 2) webhook
+      let wh = { ok: Boolean(h.webhook_ok), issues: [] as string[], fixed: false };
+      if (inst.state === "open") {
+        wh = await checkWebhook(inst.cfg);
+        Object.assign(row, { webhook_ok: wh.ok, webhook_issue: wh.issues.join(", ") || null, webhook_checked_at: iso(nowMs) });
+        if (wh.fixed) row.webhook_fixed_at = iso(nowMs);
+        res.webhook = wh.ok ? (wh.fixed ? "corrigido" : "ok") : wh.issues;
+      }
+
+      // 3) saúde a partir do que foi lido
+      const s = scanSummary(inst.records, storeNumbers);
+      const lastInbound = latest(h.last_inbound_at, s.lastInboundMs);
+      const lastDirect = latest(h.last_direct_inbound_at, s.lastDirectInboundMs);
+      Object.assign(row, {
+        last_inbound_at: iso(lastInbound), last_direct_inbound_at: iso(lastDirect),
+        last_group_inbound_at: iso(latest(h.last_group_inbound_at, s.lastGroupInboundMs)),
+        evo_errors: 0, scanned_at: inst.state === "open" ? iso(nowMs) : h.scanned_at ?? null,
+      });
+
+      // 4) sincronização
+      if (inst.state === "open" && inst.records.length) {
+        const sync = await reconcile(admin, inst, nowMs);
+        Object.assign(row, { last_sync_at: iso(nowMs), last_sync_saved: sync.saved });
+        res.sync = sync;
+      }
+
+      // 5) teste entre lojas: chegou?
+      const seenIds = new Set(inst.records.map((r) => r?.key?.id).filter(Boolean));
+      const probe: ProbeState = probeState({ probeId: h.probe_external_id ?? null, sentMs: h.probe_sent_at ? Date.parse(h.probe_sent_at) : null, seenIds, nowMs });
+      if (probe === "arrived") Object.assign(row, { probe_ok_at: iso(nowMs), probe_external_id: null });
+      if (probe === "missing") row.probe_external_id = null; // conta uma vez só
+
+      // 6) avisos: primeiro o "zumbi" (nada chega), depois os novos
+      const lastAlertMs = h.last_alert_at ? Date.parse(h.last_alert_at) : null;
+      const zombie = decideAlert({ state: inst.state, summary: { lastInboundMs: lastInbound, oldestMs: s.oldestMs, count: s.count }, nowMs, lastAlertMs });
+      let alerted: string | null = null;
+      if (zombie.alert && zombie.sinceMs != null) {
+        if (await sendAlert(admin, inst, list, `⚠️ ${inst.storeName}: WhatsApp parou de receber`, alertText(zombie.sinceMs, nowMs))) alerted = "zombie";
+      } else {
+        const d = decideHealthAlert({
+          nowMs, state: inst.state, lastInboundMs: lastInbound, lastDirectInboundMs: lastDirect, evoErrors: 0, probe,
+          webhookIssues: wh.ok ? [] : wh.issues, webhookFixed: wh.fixed, lastAlertMs, lastAlertKind: h.last_alert_kind ?? null,
+        });
+        if (d) {
+          const t = healthAlertText(d.kind, inst.storeName, d.sinceMs, wh.issues);
+          if (await sendAlert(admin, inst, list, t.title, t.body)) alerted = d.kind;
+        }
+      }
+      if (alerted) Object.assign(row, { last_alert_at: iso(nowMs), last_alert_kind: alerted });
+      res.alert = alerted;
+
+      // 7) teste entre lojas: precisa mandar outro?
+      if (inst.state === "open" && inst.owner && probe !== "waiting") {
+        if (shouldProbe({ nowMs, lastDirectInboundMs: lastDirect, lastProbeSentMs: h.probe_sent_at ? Date.parse(h.probe_sent_at) : null, probePending: false })) {
+          const sender = list.find((o) => o !== inst && o.state === "open" && !o.error && o.owner && o.owner !== inst.owner);
+          if (sender) {
+            await admin.rpc("whatsapp_ensure_store_contact", { p_store_id: inst.cfg.store_id, p_phone: sender.owner, p_label: sender.storeName });
+            await admin.rpc("whatsapp_ensure_store_contact", { p_store_id: sender.cfg.store_id, p_phone: inst.owner, p_label: inst.storeName });
+            const { externalId } = await evolution(sender.cfg).sendText(inst.owner, PROBE_TEXT);
+            Object.assign(row, { probe_external_id: externalId, probe_sent_at: iso(nowMs), probe_from_config: sender.cfg.id });
+            res.probe = "enviado";
+          }
+        }
+      }
+      res.probe_state = probe;
+    } catch (e) {
+      const msg = (e as Error).message;
+      const errors = Number(h.evo_errors ?? 0) + 1;
+      Object.assign(row, { evo_errors: errors, last_error: msg.slice(0, 300), last_error_at: iso(nowMs) });
+      res.error = msg;
+      console.error("[watchdog]", inst.cfg.instance_name, msg);
+      const lastAlertMs = h.last_alert_at ? Date.parse(h.last_alert_at) : null;
+      const d = decideHealthAlert({
+        nowMs, state: inst.state, lastInboundMs: null, lastDirectInboundMs: null, evoErrors: errors, probe: "none",
+        webhookIssues: [], webhookFixed: false, lastAlertMs, lastAlertKind: h.last_alert_kind ?? null,
+      });
+      if (d?.kind === "evolution_down") {
+        const t = healthAlertText(d.kind, inst.storeName, null);
+        if (await sendAlert(admin, inst, list, t.title, t.body)) Object.assign(row, { last_alert_at: iso(nowMs), last_alert_kind: d.kind as AlertKind });
+      }
+    }
+    const { error: uErr } = await admin.from("whatsapp_watchdog").upsert(row, { onConflict: "config_id" });
+    if (uErr) console.error("[watchdog] gravar", uErr.message);
+  }
+
+  // limpeza do registro de reenvios (7 dias)
+  await admin.from("whatsapp_sync_log").delete().lt("last_at", new Date(nowMs - 7 * 86_400_000).toISOString());
+  return list.map((i) => i.result);
 }
 
 serve(async (req) => {

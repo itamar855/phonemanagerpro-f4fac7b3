@@ -119,8 +119,14 @@ export function evolution(cfg: EvolutionConfig) {
       return { records: d?.messages?.records ?? [], pages: Number(d?.messages?.pages ?? 1) };
     },
     /** Mensagens mais recentes da instância, de todas as conversas (vigia do "zumbi"). */
-    async recentMessages(limit = 50): Promise<any> {
-      return must(await call("POST", `/chat/findMessages/${instance}`, { where: {}, page: 1, limit }, 20000), "Ler mensagens recentes");
+    async recentMessages(limit = 50, page = 1): Promise<any> {
+      return must(await call("POST", `/chat/findMessages/${instance}`, { where: {}, page, limit }, 20000), "Ler mensagens recentes");
+    },
+    /** Webhook configurado na instância (pode trazer o segredo: nunca devolver nem registrar). */
+    async findWebhook(): Promise<any> {
+      const r = await call("GET", `/webhook/find/${instance}`, undefined, 8000);
+      if (r.status === 404) return null;
+      return must(r, "Ler webhook");
     },
     /** Link da foto de perfil (null se a pessoa não tem foto ou esconde). */
     async profilePicture(number: string): Promise<string | null> {
