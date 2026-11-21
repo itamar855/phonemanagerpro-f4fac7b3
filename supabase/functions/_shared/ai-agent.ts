@@ -2,7 +2,7 @@
 // Executor do agente de IA do CRM: carrega a conversa, pede a decisão ao modelo,
 // registra em crm_ai_runs e age (rascunho, envio no piloto automático ou passagem).
 import {
-  applyGuards, buildSystemPrompt, checkContext, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, checkContext, typingDelayMs, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
   type AgentDecision, type BusinessHours, type ServiceOrderInfo, type TranscriptMessage,
 } from "./ai-agent-core.ts";
 import { sendDispatchNotices } from "./dispatch.ts";
@@ -49,6 +49,8 @@ export async function decide(args: {
   messages: TranscriptMessage[]; serviceOrders: ServiceOrderInfo[]; aiRepliesSoFar: number;
   examples?: { question: string | null; answer: string; has_price?: boolean }[];
   contextWarnings?: string[];
+  /** Varia a frase de passagem entre conversas */
+  seed?: string;
   stock?: string[] | null;
 }) {
   const now = new Date();
@@ -66,7 +68,7 @@ export async function decide(args: {
   const lastInbound = [...args.messages].reverse().find((m) => m.direction === "in") ?? null;
   const decision = applyGuards(parseDecision(llm.text), { aiRepliesSoFar: args.aiRepliesSoFar, maxTurns: args.settings.max_turns, lastInbound });
   if (decision.decision === "handoff" && !decision.reply) {
-    decision.reply = args.settings.handoff_message?.trim() || defaultHandoffMessage(decision.customer_name ?? args.contact?.name ?? null, openNow);
+    decision.reply = args.settings.handoff_message?.trim() || defaultHandoffMessage(decision.customer_name ?? args.contact?.name ?? null, openNow, args.seed ?? args.contact?.name ?? "");
   }
   return { decision, llm, openNow, turns };
 }
@@ -172,7 +174,7 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     let result;
     try {
       result = await decide({
-        settings: s, storeName, contact, messages, serviceOrders, examples, contextWarnings: context.warnings, stock: stock?.lines ?? null,
+        settings: s, storeName, contact, messages, serviceOrders, examples, contextWarnings: context.warnings, stock: stock?.lines ?? null, seed: conv.id,
         aiRepliesSoFar: overDaily ? Number.MAX_SAFE_INTEGER : aiCount ?? 0,
       });
     } catch (e) {
@@ -238,7 +240,8 @@ export async function sendAsAi(admin: any, conv: any, contact: any, text: string
   const cfg = await loadWhatsAppConfig(admin, conv.store_id);
   if (!cfg?.is_active) throw new Error("WhatsApp não conectado.");
   const number = whatsappNumber(contact?.phone ?? null, conv.external_thread_id);
-  const { externalId } = await evolution(cfg).sendText(number, text);
+  // "digitando…" pelo tempo que uma pessoa levaria para escrever
+  const { externalId } = await evolution(cfg).sendText(number, text, { delayMs: typingDelayMs(text) });
   await admin.rpc("crm_ingest_message", {
     p_store_id: conv.store_id, p_channel: "whatsapp", p_direction: "out", p_sender_kind: "ai", p_kind: "text", p_body: text,
     p_phone: contact?.phone, p_external_id: externalId, p_status: "sent", p_create_contact: false,

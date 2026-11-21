@@ -88,11 +88,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     `Você faz o primeiro atendimento da loja "${ctx.storeName}" (celulares, acessórios e assistência técnica) no WhatsApp, como alguém da equipe.`,
     `Seu objetivo é entender o que a pessoa precisa e passar para o colega certo (vendas ou técnica) com tudo anotado. Você NÃO fecha venda.`,
     "",
-    "COMO ESCREVER",
-    "- Português do Brasil, simpático e direto, como um bom vendedor de loja. Mensagens curtas (no máximo 3 frases).",
-    "- Escreva como uma pessoa da equipe da loja. NUNCA diga que é assistente virtual, robô, IA, bot ou sistema, e nunca use as palavras \"atendente humano\" ou \"humano\". Para passar adiante, fale como colega: \"vou chamar o pessoal da técnica pra ver o valor certinho\" ou \"vou pedir pro meu colega de vendas te passar os valores\".",
-    "- Faça no máximo UMA pergunta por mensagem. Não repita perguntas já respondidas na conversa.",
-    "- Use o primeiro nome da pessoa quando souber. Pode usar *negrito* do WhatsApp com moderação. Sem listas longas.",
+    "COMO ESCREVER (a pessoa NÃO pode perceber que não está falando com alguém da loja)",
+    "- Escreva como um vendedor de loja de celular conversando no WhatsApp pelo celular: português do Brasil informal, simpático, descontraído e direto. Mensagens curtas (1 a 3 frases).",
+    "- Linguagem do dia a dia: \"opa\", \"tenho sim\", \"fica\", \"sai por\", \"pra\", \"tá\", \"beleza\", \"show\", \"certinho\". Acompanhe o jeito da pessoa: se ela escreve curto e informal, responda curto e informal.",
+    "- NADA com cara de robô ou de e-mail: sem listas numeradas ou com marcadores, sem títulos, sem \"Olá!\" formal, sem \"Prezado(a)\", \"gostaria\", \"informamos\", \"disponibilidade\", \"no momento\", \"opções disponíveis\", \"Como posso ajudar?\", \"Posso ajudar em algo mais?\" ou \"Fico à disposição\".",
+    "- Cumprimente só na primeira resposta da conversa (respondendo o cumprimento da pessoa, ex.: \"opa, boa tarde!\"). Depois vá direto ao assunto, sem cumprimentar de novo.",
+    "- Nome da pessoa: só de vez em quando, nunca em toda mensagem. Emoji: no máximo 1, e não em toda mensagem.",
+    "- Produtos: no máximo 2 ou 3, escritos corridos como numa conversa (ex.: \"tenho o 13 de 128 preto, seminovo com bateria 85%, sai por R$ 1.950, e o 13 Pro de 256 azul por R$ 2.690\"). Pode quebrar em linhas curtas, mas sem numerar.",
+    "- Faça no máximo UMA pergunta por mensagem. Não repita perguntas já respondidas na conversa e não repita a mesma frase que você já mandou.",
+    "- Você é uma pessoa da equipe da loja. NUNCA diga que é assistente virtual, robô, IA, bot, sistema ou atendimento automático, e nunca use as palavras \"atendente humano\" ou \"humano\". Para passar adiante, fale como colega: \"vou chamar o pessoal da técnica pra ver o valor certinho\" ou \"vou pedir pro meu colega de vendas te passar\".",
     ctx.persona ? `- Tom pedido pela loja: ${ctx.persona}` : null,
     "",
     "O QUE DESCOBRIR (sem interrogatório; pergunte só o que faltar)",
@@ -226,12 +230,22 @@ export function parseDecision(raw: unknown): AgentDecision {
     device_model: s(o.device_model),
     defect: s(o.defect),
     urgency: s(o.urgency),
-    customer_name: s(o.customer_name),
+    customer_name: personName(o.customer_name),
     score,
     summary: String(o.summary ?? "").trim(),
     title: String(o.title ?? "").trim().slice(0, 120),
     reason: s(o.reason),
   };
+}
+
+// "Cliente", "não", "desconhecido": não é nome de gente
+const NOT_A_NAME = /^(cliente|cliente\s+\S+|contato|lead|pessoa|usu[aá]rio|n[aã]o|sim|nenhum|desconhecido|n\/a|sem nome|amig[oa]|senhor[a]?|sr\.?|sra\.?)$/i;
+
+/** Nome que o modelo achou: só aceita algo com cara de nome (letras, até 4 palavras). */
+export function personName(v: unknown): string | null {
+  const t = s(v);
+  if (!t || NOT_A_NAME.test(t) || !/^\p{L}[\p{L}'.\s-]{1,40}$/u.test(t) || t.split(/\s+/).length > 4) return null;
+  return t;
 }
 
 // limites de palavra com acento (\b não entende "robô")
@@ -358,11 +372,31 @@ export function checkContext(messages: TranscriptMessage[], opts: { now?: Date; 
   return out;
 }
 
-export function defaultHandoffMessage(name: string | null, openNow: boolean | null): string {
-  const first = name ? ` ${name.split(/\s+/)[0]}` : "";
-  return openNow === false
-    ? `Show${first}! Já anotei tudo aqui. Vou passar pro pessoal e assim que a loja abrir eles te chamam por aqui mesmo. 🙏`
-    : `Show${first}! Já anotei tudo aqui. Vou passar pro pessoal e já já eles te chamam por aqui mesmo. 🙏`;
+const HANDOFF_OPEN = [
+  (n: string) => `Show${n}! Vou chamar o pessoal aqui pra te passar certinho, já já te respondem por aqui mesmo`,
+  (n: string) => `Beleza${n}! Deixa eu chamar meu colega que cuida disso, ele já te responde aqui 👍`,
+  (n: string) => `Fechou${n}! Vou passar pro pessoal ver isso direitinho e já te chamam por aqui`,
+  (n: string) => `Opa, entendi${n}! Vou chamar o pessoal aqui e já já te dão retorno`,
+];
+const HANDOFF_CLOSED = [
+  (n: string) => `Show${n}! Vou deixar com o pessoal aqui e assim que a loja abrir eles te chamam por aqui mesmo`,
+  (n: string) => `Beleza${n}! Já deixei avisado, assim que a loja abrir o pessoal te responde aqui 👍`,
+  (n: string) => `Fechou${n}! Assim que abrir a loja o pessoal te chama por aqui pra ver isso certinho`,
+];
+
+/** Frase de passagem padrão. Varia (seed = id da conversa, por exemplo) para não soar repetida. */
+export function defaultHandoffMessage(name: string | null, openNow: boolean | null, seed = ""): string {
+  const clean = personName(name);
+  const first = clean ? ` ${clean.split(/\s+/)[0]}` : "";
+  const list = openNow === false ? HANDOFF_CLOSED : HANDOFF_OPEN;
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return list[h % list.length](first);
+}
+
+/** Tempo de "digitando…" antes de enviar: proporcional ao tamanho, como uma pessoa digitando. */
+export function typingDelayMs(text: string): number {
+  return Math.round(Math.min(9000, Math.max(2000, 1200 + text.length * 45)));
 }
 
 // ------------------------------------------------------------------ aprendizado
