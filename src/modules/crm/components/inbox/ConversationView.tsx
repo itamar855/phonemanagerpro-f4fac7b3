@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Bot, CheckCircle2, Loader2, MessageSquareDashed, PanelRight, RotateCcw } from "lucide-react";
 import { setConversationHandler } from "../../api/ai";
 import { AiSuggestionBar } from "./AiSuggestionBar";
@@ -23,6 +24,8 @@ import { ownerLabel } from "../../lib/labels";
 import { EmptyState } from "../shared/EmptyState";
 import { Composer, type ComposerMode } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
+import { TeachAiDialog } from "./TeachAiDialog";
+import { CRM_MANAGER_ROLES, teachQuestion } from "../../lib/teach";
 
 const IG_WINDOW_MS = 24 * 60 * 60 * 1000;
 const UNASSIGNED = "__none__";
@@ -45,6 +48,10 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
   const { data: team = [] } = useTeam(conv?.store_id ?? null);
   const { data: quickReplies = [] } = useQuickReplies(conv?.store_id ?? null);
   const names = useMemo(() => new Map(team.map((t) => [t.user_id, t.display_name])), [team]);
+  // "Ensinar" nas respostas da IA: só gerência (quem pode mexer na IA)
+  const { userRole } = useAuth();
+  const canTeach = CRM_MANAGER_ROLES.has(userRole ?? "");
+  const [teachId, setTeachId] = useState<string | null>(null);
 
   // páginas: [0] = mais recente; exibe da mais antiga para a mais nova
   const messages = useMemo(() => (messagesQ.data ? [...messagesQ.data.pages].reverse().flat() : []), [messagesQ.data]);
@@ -147,6 +154,8 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
     qc.invalidateQueries({ queryKey: crmKeys.conversation(conv!.id) });
     qc.invalidateQueries({ queryKey: ["crm", "conversations"] });
   }
+
+  const teachMsg = teachId ? messages.find((m) => m.id === teachId) ?? null : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -259,7 +268,8 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
                   </span>
                 </div>
               )}
-              <MessageBubble m={m} authorName={m.sender_user_id ? names.get(m.sender_user_id) : undefined} />
+              <MessageBubble m={m} authorName={m.sender_user_id ? names.get(m.sender_user_id) : undefined}
+                onTeach={canTeach && m.sender_kind === "ai" && m.kind === "text" && m.body ? () => setTeachId(m.id) : undefined} />
             </Fragment>
           );
         })}
@@ -276,6 +286,17 @@ export function ConversationView({ conversationId, userId, onBack, onToggleDetai
         onSend={handleSend}
         initialText={draft}
       />
+      {teachMsg && userId && (
+        <TeachAiDialog
+          open={Boolean(teachMsg)}
+          onOpenChange={(o) => { if (!o) setTeachId(null); }}
+          storeId={conv.store_id}
+          userId={userId}
+          conversationId={conv.id}
+          question={teachQuestion(messages, teachMsg.id)}
+          aiAnswer={teachMsg.body ?? ""}
+        />
+      )}
     </div>
   );
 }
