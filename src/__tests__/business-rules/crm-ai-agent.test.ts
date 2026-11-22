@@ -348,3 +348,13 @@ describe("atendimento que recomeça depois de dias", () => {
     expect(personName("Ana Paula")).toBe("Ana Paula");
   });
 });
+
+describe("conserto: orienta antes de passar para a técnica", () => {
+  it("o prompt traz as dicas seguras e pede a dica na mesma mensagem da passagem", () => {
+    const p = buildSystemPrompt({ storeName: "Loja", knowledge: null, persona: null, contactName: null, isCustomer: false, now: new Date(), openNow: false, hoursText: null, serviceOrders: [], handoffMessage: null });
+    expect(p).toMatch(/ORIENTAÇÃO NO CONSERTO/);
+    expect(p).toMatch(/Molhou \/ entrou líquido: desligar e não ligar para testar, não carregar/);
+    expect(p).toMatch(/Handoff de CONSERTO: antes da frase de transição, na MESMA mensagem/);
+    expect(p).toMatch(/nunca prometa que tem conserto, preço ou prazo/);
+  });
+});
