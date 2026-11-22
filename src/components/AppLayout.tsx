@@ -274,12 +274,12 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
           </div>
         </header>
 
-        {/* Page content */}
+        {/* Page content: no app instalado as barras de cima/baixo crescem com a barra de status e a do gesto */}
         <main
           className={
             location.pathname.startsWith("/crm")
-              ? "flex-1 min-h-0 overflow-hidden pt-[4.25rem] pb-[4.5rem] md:pt-0 md:pb-0"
-              : "flex-1 overflow-auto p-4 pt-20 md:p-8 pb-24 md:pb-8"
+              ? "flex-1 min-h-0 overflow-hidden pt-[calc(4.25rem+env(safe-area-inset-top,0px))] pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pt-0 md:pb-0"
+              : "flex-1 overflow-auto p-4 pt-[calc(5rem+env(safe-area-inset-top,0px))] md:p-8 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-8"
           }
         >
           {children}
