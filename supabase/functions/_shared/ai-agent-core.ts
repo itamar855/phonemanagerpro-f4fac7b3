@@ -238,8 +238,8 @@ export function parseDecision(raw: unknown): AgentDecision {
   };
 }
 
-// "Cliente", "não", "desconhecido": não é nome de gente
-const NOT_A_NAME = /^(cliente|cliente\s+\S+|contato|lead|pessoa|usu[aá]rio|n[aã]o|sim|nenhum|desconhecido|n\/a|sem nome|amig[oa]|senhor[a]?|sr\.?|sra\.?)$/i;
+// "Cliente", "não", "Não informado", "desconhecido": não é nome de gente
+const NOT_A_NAME = /^(cliente|cliente\s+\S+|contato|lead|pessoa|usu[aá]rio|n[aã]o|n[aã]o\s+.+|sim|nenhum|nenhuma|desconhecid[oa]|indefinid[oa]|an[oô]nim[oa]|n\/a|sem\s+.+|amig[oa]|senhor[a]?|sr\.?|sra\.?)$/i;
 
 /** Nome que o modelo achou: só aceita algo com cara de nome (letras, até 4 palavras). */
 export function personName(v: unknown): string | null {
@@ -370,6 +370,44 @@ export function checkContext(messages: TranscriptMessage[], opts: { now?: Date; 
   if (humanRecent) out.draftOnly.push("a equipe respondeu nas últimas 12 h");
 
   return out;
+}
+
+// ---------------- conversa que recomeça ----------------
+
+// "oi", "boa noite", "olá, tudo bem?": só cumprimenta
+const GREET_CORE = new Set(["oi", "ola", "opa", "eai", "alo", "hey", "hello", "salve", "dia", "tarde", "noite"]);
+const GREET_FILLER = new Set(["e", "ai", "bom", "boa", "tudo", "td", "bem", "beleza", "blz", "como", "vai", "vcs", "voces", "amigo", "amiga", "moco", "moca", "gente", "pessoal", "querido", "querida"]);
+
+/** "Oi", "Oii", "Boa noite", "Olá, tudo bem?": só cumprimento, sem pedir nada. */
+export function isGreeting(text: string | null | undefined): boolean {
+  // eslint-disable-next-line no-misleading-character-class -- remove emoji, tom de pele e juntores um a um
+  const raw = (text ?? "").replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}‍️]/gu, " ").trim();
+  if (!raw) return false;
+  const words = fold(raw).replace(/[^a-z0-9\s]/g, " ").replace(/\be\s+a+i+\b/g, "eai").split(/\s+/).filter(Boolean)
+    .map((w) => (/^o+i+e*$/.test(w) ? "oi" : /^ol+a+$/.test(w) ? "ola" : /^e+a+i+$/.test(w) ? "eai" : w));
+  if (!words.length || words.length > 6) return false;
+  return words.some((w) => GREET_CORE.has(w)) && words.every((w) => GREET_CORE.has(w) || GREET_FILLER.has(w));
+}
+
+const RESTART_GAP_MS = 12 * 3600_000;
+
+/**
+ * A pessoa voltou depois de muito tempo só com um cumprimento ("Oi"): é um atendimento novo.
+ * Devolve só as mensagens a partir da volta, para a IA não retomar um assunto de dias atrás.
+ * messages em ordem cronológica.
+ */
+export function freshStart<T extends TranscriptMessage>(messages: T[]): { messages: T[]; gapHours: number | null } {
+  const list = messages.filter((m) => m.kind !== "note" && m.sender_kind !== "system");
+  // o intervalo grande mais recente decide
+  for (let i = list.length - 1; i > 0; i--) {
+    const cur = list[i], prev = list[i - 1];
+    if (!cur.created_at || !prev.created_at) continue;
+    const gap = Date.parse(cur.created_at) - Date.parse(prev.created_at);
+    if (gap < RESTART_GAP_MS) continue;
+    if (cur.direction !== "in" || cur.kind !== "text" || !isGreeting(cur.body)) return { messages, gapHours: null };
+    return { messages: messages.slice(messages.indexOf(cur)), gapHours: Math.round(gap / 3600_000) };
+  }
+  return { messages, gapHours: null };
 }
 
 const HANDOFF_OPEN = [

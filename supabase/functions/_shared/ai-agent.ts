@@ -2,7 +2,7 @@
 // Executor do agente de IA do CRM: carrega a conversa, pede a decisão ao modelo,
 // registra em crm_ai_runs e age (rascunho, envio no piloto automático ou passagem).
 import {
-  applyGuards, buildSystemPrompt, checkContext, typingDelayMs, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, checkContext, freshStart, typingDelayMs, DECISION_SCHEMA, defaultHandoffMessage, hoursText, isOpenNow, parseDecision, toTurns,
   type AgentDecision, type BusinessHours, type ServiceOrderInfo, type TranscriptMessage,
 } from "./ai-agent-core.ts";
 import { sendDispatchNotices } from "./dispatch.ts";
@@ -165,17 +165,26 @@ export async function runAgent(admin: any, opts: { conversationId: string; trigg
     if (!opts.forceDraft && context.skip) return { status: "skipped", reason: context.skip };
     if (mode === "autopilot" && context.draftOnly.length) mode = "draft";
 
+    // voltou depois de muito tempo só com "oi": atendimento novo (não retoma assunto de dias atrás)
+    const fresh = freshStart(messages);
+    const talk = fresh.messages;
+    if (fresh.gapHours !== null) {
+      const ago = fresh.gapHours >= 48 ? `${Math.round(fresh.gapHours / 24)} dias` : `${fresh.gapHours} horas`;
+      context.warnings.push(`A pessoa voltou a escrever depois de ${ago} só com um cumprimento: é um atendimento novo. Responda o cumprimento e pergunte o que ela precisa, sem retomar assuntos antigos (a não ser que ela fale deles).`);
+    }
+
     const t0 = Date.now();
     const storeName = store?.name ?? "loja";
     const [examples, stock] = await Promise.all([
-      similarExamples(admin, conv.store_id, messages),
-      s.stock_lookup === false ? Promise.resolve(null) : stockForConversation(admin, conv.store_id, storeName, stockQueryText(messages, contact?.ai_summary)),
+      similarExamples(admin, conv.store_id, talk),
+      s.stock_lookup === false ? Promise.resolve(null) : stockForConversation(admin, conv.store_id, storeName, stockQueryText(talk, fresh.gapHours !== null ? null : contact?.ai_summary)),
     ]);
     let result;
     try {
       result = await decide({
-        settings: s, storeName, contact, messages, serviceOrders, examples, contextWarnings: context.warnings, stock: stock?.lines ?? null, seed: conv.id,
-        aiRepliesSoFar: overDaily ? Number.MAX_SAFE_INTEGER : aiCount ?? 0,
+        settings: s, storeName, contact, messages: talk, serviceOrders, examples, contextWarnings: context.warnings, stock: stock?.lines ?? null, seed: conv.id,
+        // atendimento novo: conta só as respostas da IA desde a volta
+        aiRepliesSoFar: overDaily ? Number.MAX_SAFE_INTEGER : fresh.gapHours !== null ? talk.filter((m) => m.sender_kind === "ai").length : aiCount ?? 0,
       });
     } catch (e) {
       await admin.from("crm_ai_runs").insert({

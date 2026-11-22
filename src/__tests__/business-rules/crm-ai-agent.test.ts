@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyGuards, buildSystemPrompt, checkContext, defaultHandoffMessage, isAcknowledgement, personName, typingDelayMs, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
+  applyGuards, buildSystemPrompt, checkContext, defaultHandoffMessage, freshStart, isAcknowledgement, isGreeting, personName, typingDelayMs, historyTranscript, hoursText, isOpenNow, maskPersonalData, parseDecision, toTurns,
   type AgentDecision, type TranscriptMessage,
 } from "../../../supabase/functions/_shared/ai-agent-core";
 
@@ -298,5 +298,53 @@ describe("jeito de gente: a pessoa não percebe que é a IA", () => {
     expect(typingDelayMs("ok")).toBe(2000);
     expect(typingDelayMs("x".repeat(100))).toBe(5700);
     expect(typingDelayMs("x".repeat(1000))).toBe(9000);
+  });
+});
+
+describe("atendimento que recomeça depois de dias", () => {
+  const at = (iso: string) => new Date(iso).toISOString();
+  const m = (direction: "in" | "out", body: string, created_at: string, sender_kind: TranscriptMessage["sender_kind"] = direction === "in" ? "contact" : "user"): TranscriptMessage =>
+    ({ direction, sender_kind, kind: "text", body, created_at: at(created_at) });
+
+  it("reconhece cumprimentos soltos", () => {
+    for (const t of ["Oi", "Oii", "oiee", "Olá, tudo bem?", "Boa noite", "bom dia gente", "E aí", "opa 👋"]) expect(isGreeting(t)).toBe(true);
+    for (const t of ["Oi, quanto custa a tela do A54?", "Vcs fazem conserto?", "ok", "", "Pro Max"]) expect(isGreeting(t)).toBe(false);
+  });
+
+  it("\"Oi\" depois de 5 dias começa do zero", () => {
+    const msgs = [
+      m("in", "12 normal?", "2026-11-16T17:51:00Z"),
+      m("out", "Aqui serve 12 e 12 pro", "2026-11-16T17:52:00Z"),
+      m("in", "Só tem essas duas", "2026-11-16T17:53:00Z"),
+      m("in", "Oi", "2026-11-21T22:06:00Z"),
+      m("in", "Oi", "2026-11-21T22:17:00Z"),
+    ];
+    const r = freshStart(msgs);
+    expect(r.gapHours).toBe(124);
+    expect(r.messages.map((x) => x.body)).toEqual(["Oi", "Oi"]);
+  });
+
+  it("voltar com uma pergunta, ou responder pouco tempo depois, mantém a conversa", () => {
+    const old = [m("out", "A peça chega quinta", "2026-11-16T17:52:00Z")];
+    expect(freshStart([...old, m("in", "Oi, chegou a peça?", "2026-11-20T12:00:00Z")]).gapHours).toBeNull();
+    expect(freshStart([...old, m("in", "Oi", "2026-11-16T19:00:00Z")]).gapHours).toBeNull();
+  });
+
+  it("depois do recomeço, a conversa nova continua inteira", () => {
+    const msgs = [
+      m("in", "Tem capa?", "2026-11-10T12:00:00Z"),
+      m("in", "Boa noite", "2026-11-21T22:00:00Z"),
+      m("out", "Opa, boa noite! Em que posso ajudar?", "2026-11-21T22:00:30Z", "ai"),
+      m("in", "Vcs fazem conserto?", "2026-11-21T22:01:00Z"),
+    ];
+    expect(freshStart(msgs).messages.map((x) => x.body)).toEqual(["Boa noite", "Opa, boa noite! Em que posso ajudar?", "Vcs fazem conserto?"]);
+  });
+
+  it("\"Não informado\" não vira nome na frase de passagem", () => {
+    expect(personName("Não informado")).toBeNull();
+    expect(personName("nao identificado")).toBeNull();
+    expect(personName("Sem nome")).toBeNull();
+    expect(defaultHandoffMessage("Não informado", false, "x")).not.toMatch(/N[aã]o!/);
+    expect(personName("Ana Paula")).toBe("Ana Paula");
   });
 });
