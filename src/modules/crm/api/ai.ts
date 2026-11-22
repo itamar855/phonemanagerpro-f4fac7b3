@@ -1,5 +1,6 @@
 import { crmDb, invokeFn, throwIf } from "./db";
 import type { CrmAiDecision, CrmAiRun, CrmAiSettings, CrmAiSuggestion } from "../lib/types";
+import { appendRule } from "../lib/teach";
 
 export async function getAiSettings(storeId: string): Promise<CrmAiSettings | null> {
   const { data, error } = await crmDb.from("crm_ai_settings").select("*").eq("store_id", storeId).maybeSingle();
@@ -119,6 +120,23 @@ export async function createExample(storeId: string, userId: string, question: s
     store_id: storeId, kind: "qa", question, answer, source: "manual", status: "approved", decided_by: userId, decided_at: new Date().toISOString(),
   });
   throwIf(error);
+}
+
+/**
+ * "Ensinar" direto na conversa: a resposta corrigida vira exemplo aprovado (a IA usa em casos parecidos)
+ * e, se vier uma regra, ela entra no "O que a IA sabe sobre a loja". Só gerência (RLS).
+ */
+export async function teachAi(args: { storeId: string; userId: string; conversationId: string; question: string; answer: string; rule?: string }) {
+  const { error } = await crmDb.from("crm_ai_examples").insert({
+    store_id: args.storeId, kind: "qa", question: args.question.trim() || null, answer: args.answer.trim(), source: "correction", status: "approved",
+    conversation_ref: args.conversationId, decided_by: args.userId, decided_at: new Date().toISOString(),
+  });
+  throwIf(error);
+  if (args.rule?.trim()) {
+    const current = await getAiSettings(args.storeId);
+    const knowledge = appendRule(current?.knowledge ?? null, args.rule);
+    if (knowledge !== (current?.knowledge ?? "").replace(/\s+$/, "")) await saveAiSettings(args.storeId, args.userId, { knowledge });
+  }
 }
 
 export async function latestLearningJob(storeId: string): Promise<AiLearningJob | null> {

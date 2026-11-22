@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, Loader2, StickyNote } from "lucide-react";
+import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, GraduationCap, Loader2, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { transcribeMessage } from "../../api/ai";
@@ -63,7 +63,7 @@ function AudioTranscript({ m, hasFile }: { m: CrmMessage; hasFile: boolean }) {
   );
 }
 
-export function MessageBubble({ m, authorName }: { m: CrmMessage; authorName?: string }) {
+export function MessageBubble({ m, authorName, onTeach }: { m: CrmMessage; authorName?: string; onTeach?: () => void }) {
   const src = useMediaSrc(m);
   const out = m.direction === "out";
   const time = format(new Date(m.created_at), "HH:mm");
@@ -126,6 +126,12 @@ export function MessageBubble({ m, authorName }: { m: CrmMessage; authorName?: s
         )}
 
         <div className={cn("mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground")}>
+          {onTeach && (
+            <button type="button" onClick={onTeach}
+              className="mr-auto inline-flex min-h-[28px] items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-violet-600 hover:bg-violet-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-violet-400">
+              <GraduationCap className="h-3.5 w-3.5" aria-hidden="true" /> Ensinar
+            </button>
+          )}
           <time dateTime={m.created_at}>{time}</time>
           {out && <StatusIcon status={m.status} />}
         </div>
