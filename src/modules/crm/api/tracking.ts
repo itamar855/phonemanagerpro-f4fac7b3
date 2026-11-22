@@ -1,5 +1,6 @@
 import { crmDb, invokeFn, throwIf } from "./db";
 import type { Attribution } from "../lib/tracking";
+import type { AdRow } from "../lib/adsReport";
 export { attributionLabel, META_URL_PARAMS, slugify, TRACK_BASE, type Attribution } from "../lib/tracking";
 
 export interface TrackingSettings {
@@ -14,13 +15,24 @@ export interface TrackingSettings {
   qualified_event_name: string;
   qualified_stage_codes: string[];
   only_attributed: boolean;
+  waba_id: string | null;
+  page_id: string | null;
+  messaging_dataset_id: string | null;
+  ad_account_id: string | null;
+  insights_synced_at: string | null;
+  insights_error: string | null;
+}
+
+export interface TrackingHealth {
+  sent_7d: number; messaging_7d: number; failed_7d: number; pending: number; last_sent_at: string | null; last_error: string | null;
+  ad_contacts_7d: number; ad_no_clid_7d: number; insights_synced_at: string | null; insights_error: string | null; spend_7d: number;
 }
 
 export interface TrackLink { id: string; store_id: string; slug: string; name: string; message: string; active: boolean; created_at: string }
 
 export interface MetaEvent {
   id: string; event_name: string; event_id: string; status: "pending" | "sent" | "failed" | "skipped";
-  value: number | null; attempts: number; error: string | null; created_at: string; sent_at: string | null;
+  value: number | null; attempts: number; error: string | null; created_at: string; sent_at: string | null; format: "pixel" | "messaging" | null;
   contact: { name: string } | null;
 }
 
@@ -32,10 +44,30 @@ export async function getTrackingSettings(storeId: string): Promise<TrackingSett
   return (data ?? null) as TrackingSettings | null;
 }
 
-export const saveTracking = (storeId: string, patch: Partial<TrackingSettings> & { access_token?: string }) =>
-  invokeFn("crm-meta", { action: "save", store_id: storeId, ...patch });
-export const trackingStatus = (storeId: string) => invokeFn<{ has_token: boolean }>("crm-meta", { action: "status", store_id: storeId });
-export const sendTestEvent = (storeId: string) => invokeFn<{ events_received: number | null }>("crm-meta", { action: "test", store_id: storeId });
+export const saveTracking = (storeId: string, patch: Partial<TrackingSettings> & { access_token?: string; ads_token?: string }) =>
+  invokeFn<{ warning: string | null; messaging_dataset_id: string | null }>("crm-meta", { action: "save", store_id: storeId, ...patch });
+export const trackingStatus = (storeId: string) =>
+  invokeFn<{ has_token: boolean; has_ads_token: boolean }>("crm-meta", { action: "status", store_id: storeId });
+export const sendTestEvent = (storeId: string, format: "pixel" | "messaging" = "pixel") =>
+  invokeFn<{ events_received: number | null }>("crm-meta", { action: "test", store_id: storeId, format });
+export const backfillEvents = (storeId: string) =>
+  invokeFn<{ queued: { leads: number; purchases: number }; sent: number; failed: number }>("crm-meta", { action: "backfill", store_id: storeId });
+export const syncInsights = (storeId: string) => invokeFn<{ rows: number }>("crm-meta", { action: "sync_insights", store_id: storeId });
+
+export async function trackingHealth(storeId: string): Promise<TrackingHealth> {
+  const { data, error } = await crmDb.rpc("crm_tracking_health", { p_store_id: storeId });
+  throwIf(error);
+  return data as TrackingHealth;
+}
+
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Anúncio a anúncio: gasto da Meta × leads e vendas do CRM (`to` é exclusivo, como nos outros relatórios). */
+export async function adsReport(storeId: string | null, from: Date, to: Date, kind: "repair" | "sales" | null = null): Promise<AdRow[]> {
+  const { data, error } = await crmDb.rpc("crm_ads_report", { p_store_id: storeId, p_from: ymd(from), p_to: ymd(new Date(to.getTime() - 1)), p_kind: kind });
+  throwIf(error);
+  return ((data ?? []) as AdRow[]).map((r) => ({ ...r, spend: r.spend === null ? null : Number(r.spend), revenue: Number(r.revenue) }));
+}
 export const connectedNumber = (storeId: string) =>
   invokeFn<{ owner_number?: string | null }>("crm-channel", { action: "status", storeId }).then((r) => r.owner_number ?? null);
 
@@ -74,7 +106,7 @@ export async function linkClickCounts(storeId: string): Promise<Map<string, { cl
 }
 
 export async function listMetaEvents(storeId: string): Promise<MetaEvent[]> {
-  const { data, error } = await crmDb.from("crm_meta_events").select("id, event_name, event_id, status, value, attempts, error, created_at, sent_at, contact:crm_contacts(name)")
+  const { data, error } = await crmDb.from("crm_meta_events").select("id, event_name, event_id, status, value, attempts, error, created_at, sent_at, format, contact:crm_contacts(name)")
     .eq("store_id", storeId).order("created_at", { ascending: false }).limit(40);
   throwIf(error);
   return (data ?? []) as MetaEvent[];

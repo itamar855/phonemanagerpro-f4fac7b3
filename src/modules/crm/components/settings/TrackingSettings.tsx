@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CheckCircle2, Copy, Link2, Loader2, Plus, Radar, Save, Send, XCircle } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
+import { Activity, AlertTriangle, CheckCircle2, CircleDashed, Copy, History, Link2, Loader2, Plus, Radar, RefreshCw, Save, Send, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
-  connectedNumber, createLink, getTrackingSettings, linkClickCounts, listLinks, listMetaEvents, saveTracking, sendTestEvent, setLinkActive,
-  trackingStatus, type TrackingSettings as TS,
+  backfillEvents, connectedNumber, createLink, getTrackingSettings, linkClickCounts, listLinks, listMetaEvents, saveTracking, sendTestEvent, setLinkActive,
+  syncInsights, trackingHealth, trackingStatus, type TrackingSettings as TS,
 } from "../../api/tracking";
 import { useCrmContext } from "../../hooks/useInbox";
-import { relative } from "../../lib/format";
+import { brl, relative } from "../../lib/format";
 import { META_URL_PARAMS, slugify, TRACK_BASE } from "../../lib/tracking";
 import { EmptyState } from "../shared/EmptyState";
 import { AdCodesCard } from "./AdCodesCard";
@@ -38,11 +38,63 @@ export function TrackingSettings() {
           para os anúncios aprenderem a trazer quem compra.
         </p>
       </div>
+      <HealthCard storeId={storeId} />
       <MetaCard storeId={storeId} canEdit={canEdit} />
       <AdCodesCard storeId={storeId} userId={userId} canEdit={canEdit} />
       <LinksCard storeId={storeId} userId={userId} canEdit={canEdit} />
       <EventsCard storeId={storeId} />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ saúde
+
+function HealthCard({ storeId }: { storeId: string }) {
+  const { data: settings } = useQuery({ queryKey: [...KEY(storeId), "settings"], queryFn: () => getTrackingSettings(storeId) });
+  const { data: h } = useQuery({ queryKey: [...KEY(storeId), "health"], queryFn: () => trackingHealth(storeId), refetchInterval: 60_000 });
+  if (!h || !settings) return null;
+  const official = Boolean(settings.waba_id && settings.messaging_dataset_id);
+  const items: { ok: boolean | null; label: string; detail?: string | null }[] = [
+    {
+      ok: settings.enabled ? h.failed_7d === 0 && (h.sent_7d > 0 || h.pending > 0) : null,
+      label: settings.enabled ? `${h.sent_7d} eventos enviados em 7 dias${h.messaging_7d ? ` (${h.messaging_7d} no formato oficial)` : ""}` : "Envio para a Meta desligado",
+      detail: h.failed_7d ? `${h.failed_7d} falharam · ${h.last_error ?? ""}` : h.pending ? `${h.pending} na fila` : null,
+    },
+    {
+      ok: official ? true : null,
+      label: official ? "Formato oficial do WhatsApp ligado (a Meta otimiza os anúncios)" : "Formato pixel (Evolution): a Meta mede e monta públicos, mas não otimiza o anúncio de WhatsApp",
+    },
+    {
+      ok: h.ad_contacts_7d ? h.ad_no_clid_7d === 0 : null,
+      label: h.ad_contacts_7d ? `${h.ad_contacts_7d} contatos vieram de anúncio em 7 dias` : "Nenhum contato de anúncio em 7 dias",
+      detail: h.ad_no_clid_7d ? `${h.ad_no_clid_7d} sem o código do clique (ctwa_clid): esses só casam pelo telefone` : null,
+    },
+    {
+      ok: settings.ad_account_id ? !h.insights_error && Boolean(h.insights_synced_at) : null,
+      label: settings.ad_account_id
+        ? h.insights_synced_at ? `Gasto lido da Meta ${relative(h.insights_synced_at)} · ${brl(Number(h.spend_7d))} em 7 dias` : "Gasto ainda não lido"
+        : "Gasto automático desligado (coloque a conta de anúncios)",
+      detail: h.insights_error,
+    },
+  ];
+  return (
+    <section className="rounded-xl border border-border/60 bg-card p-4" aria-labelledby="trk-health">
+      <h3 id="trk-health" className="mb-2 flex items-center gap-2 font-semibold"><Activity className="h-4 w-4 text-primary" aria-hidden="true" /> Saúde do rastreamento</h3>
+      <ul className="space-y-2">
+        {items.map((it) => {
+          const Icon = it.ok === null ? CircleDashed : it.ok ? CheckCircle2 : AlertTriangle;
+          return (
+            <li key={it.label} className="flex items-start gap-2 text-sm">
+              <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", it.ok === null ? "text-muted-foreground" : it.ok ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")} aria-hidden="true" />
+              <span className="min-w-0">
+                {it.label}
+                {it.detail && <span className="block break-words text-xs text-muted-foreground">{it.detail.slice(0, 200)}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -54,7 +106,8 @@ function MetaCard({ storeId, canEdit }: { storeId: string; canEdit: boolean }) {
   const { data: status } = useQuery({ queryKey: [...KEY(storeId), "status"], queryFn: () => trackingStatus(storeId), enabled: canEdit });
   const [f, setF] = useState<Partial<TS>>({});
   const [token, setToken] = useState("");
-  const [busy, setBusy] = useState<"save" | "test" | null>(null);
+  const [adsToken, setAdsToken] = useState("");
+  const [busy, setBusy] = useState<"save" | "test" | "test-msg" | "backfill" | "sync" | null>(null);
 
   useEffect(() => {
     if (!s) return;
@@ -64,21 +117,25 @@ function MetaCard({ storeId, canEdit }: { storeId: string; canEdit: boolean }) {
 
   const set = (p: Partial<TS>) => setF((x) => ({ ...x, ...p }));
   const off = !canEdit || isLoading;
+  const refresh = () => qc.invalidateQueries({ queryKey: KEY(storeId) });
+  const run = async (what: NonNullable<typeof busy>, fn: () => Promise<void>) => {
+    setBusy(what);
+    try { await fn(); } catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
+  };
+  const spin = (what: typeof busy, Icon: typeof Save) => (busy === what ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Icon className="mr-1.5 h-4 w-4" />);
 
-  async function save() {
-    setBusy("save");
-    try {
-      await saveTracking(storeId, {
-        enabled: Boolean(f.enabled), dataset_id: f.dataset_id ?? null, test_event_code: f.test_event_code ?? null, whatsapp_number: f.whatsapp_number ?? null,
-        send_lead: f.send_lead, send_qualified: f.send_qualified, send_purchase: f.send_purchase, only_attributed: f.only_attributed,
-        ...(token.trim() ? { access_token: token.trim() } : {}),
-      });
-      setToken("");
-      qc.invalidateQueries({ queryKey: KEY(storeId) });
-      toast.success("Rastreamento salvo.");
-    } catch (e) { toast.error((e as Error).message); }
-    finally { setBusy(null); }
-  }
+  const save = () => run("save", async () => {
+    const r = await saveTracking(storeId, {
+      enabled: Boolean(f.enabled), dataset_id: f.dataset_id ?? null, test_event_code: f.test_event_code ?? null, whatsapp_number: f.whatsapp_number ?? null,
+      send_lead: f.send_lead, send_qualified: f.send_qualified, send_purchase: f.send_purchase, only_attributed: f.only_attributed,
+      waba_id: f.waba_id ?? null, page_id: f.page_id ?? null, ad_account_id: f.ad_account_id ?? null,
+      ...(token.trim() ? { access_token: token.trim() } : {}),
+      ...(adsToken.trim() ? { ads_token: adsToken.trim() } : {}),
+    });
+    setToken(""); setAdsToken("");
+    refresh();
+    if (r.warning) toast.warning(r.warning); else toast.success("Rastreamento salvo.");
+  });
 
   const toggle = (k: keyof TS, label: string, help: string) => (
     <label className="flex items-start justify-between gap-3 py-2">
@@ -86,9 +143,20 @@ function MetaCard({ storeId, canEdit }: { storeId: string; canEdit: boolean }) {
       <Switch checked={Boolean(f[k])} onCheckedChange={(v) => set({ [k]: v } as Partial<TS>)} disabled={off} />
     </label>
   );
+  const field = (id: string, label: string, input: ReactNode, help?: ReactNode) => (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      {input}
+      {help && <p className="text-[11px] text-muted-foreground">{help}</p>}
+    </div>
+  );
+  const num = (k: "dataset_id" | "waba_id" | "page_id", id: string, placeholder: string) => (
+    <Input id={id} inputMode="numeric" value={f[k] ?? ""} onChange={(e) => set({ [k]: e.target.value.replace(/\D/g, "") } as Partial<TS>)} disabled={off} placeholder={placeholder} />
+  );
+  const official = Boolean(s?.waba_id && s?.messaging_dataset_id);
 
   return (
-    <section className="space-y-3 rounded-xl border border-border/60 bg-card p-4" aria-labelledby="trk-meta">
+    <section className="space-y-4 rounded-xl border border-border/60 bg-card p-4" aria-labelledby="trk-meta">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id="trk-meta" className="font-semibold">Meta · API de Conversões</h3>
@@ -99,47 +167,86 @@ function MetaCard({ storeId, canEdit }: { storeId: string; canEdit: boolean }) {
       {!canEdit && <p className="text-xs text-amber-700 dark:text-amber-400">Só gerente ou dono altera estas opções.</p>}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="trk-ds">ID do conjunto de dados (pixel)</Label>
-          <Input id="trk-ds" inputMode="numeric" value={f.dataset_id ?? ""} onChange={(e) => set({ dataset_id: e.target.value.replace(/\D/g, "") })} disabled={off} placeholder="Ex.: 123456789012345" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="trk-tok">Token de acesso</Label>
+        {field("trk-ds", "ID do conjunto de dados (pixel)", num("dataset_id", "trk-ds", "Ex.: 123456789012345"))}
+        {field("trk-tok", "Token de acesso", (
           <Input id="trk-tok" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} disabled={off}
             placeholder={status?.has_token ? "•••••• salvo (cole outro para trocar)" : "Gerar token na seção API de Conversões"} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="trk-wa">WhatsApp que os links abrem</Label>
+        ))}
+        {field("trk-wa", "WhatsApp que os links abrem", (
           <Input id="trk-wa" inputMode="tel" value={f.whatsapp_number ?? ""} onChange={(e) => set({ whatsapp_number: e.target.value.replace(/\D/g, "") })} disabled={off} placeholder="5587999999999" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="trk-test">Código de teste (opcional)</Label>
+        ))}
+        {field("trk-test", "Código de teste (opcional)", (
           <Input id="trk-test" value={f.test_event_code ?? ""} onChange={(e) => set({ test_event_code: e.target.value.trim() })} disabled={off} placeholder="TEST12345" />
-          <p className="text-[11px] text-muted-foreground">Com o código, os eventos aparecem em “Testar eventos” e não contam nas campanhas. Apague para valer de verdade.</p>
-        </div>
+        ), "Com o código, os eventos aparecem em “Testar eventos” e não contam nas campanhas. Apague para valer de verdade.")}
       </div>
 
       <div className="divide-y divide-border/50 border-t border-border/50">
-        {toggle("send_lead", "Lead", "Primeira mensagem de um contato novo no WhatsApp.")}
+        {toggle("send_lead", "Lead", "Primeira mensagem de um contato novo, ou de quem voltou por um anúncio.")}
         {toggle("send_qualified", "Lead qualificado", "A IA passou para o atendente ou o negócio chegou em Orçamento.")}
-        {toggle("send_purchase", "Compra (Purchase)", "Negócio ganho, com o valor em R$. É o que ensina a Meta a trazer quem compra.")}
+        {toggle("send_purchase", "Compra (Purchase)", "Negócio ganho ou OS entregue, com o valor em R$. É o que ensina a Meta a trazer quem compra.")}
         {toggle("only_attributed", "Só contatos de anúncio/link", "Desligado: manda de todos os contatos (a Meta reconhece pelo telefone).")}
       </div>
 
+      <fieldset className="space-y-3 rounded-lg border border-border/50 p-3">
+        <legend className="px-1 text-sm font-semibold">Conta oficial do WhatsApp (quando migrar)</legend>
+        <p className="text-xs text-muted-foreground">
+          Com a API oficial (coexistência), os eventos passam a ir no formato de mensagens, ligados ao clique no anúncio. É o que faz a Meta otimizar
+          os anúncios de WhatsApp por venda. Enquanto estiver em branco, tudo vai pelo pixel. Não precisa mudar mais nada: o CRM escolhe o formato sozinho.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field("trk-waba", "ID da conta do WhatsApp Business (WABA)", num("waba_id", "trk-waba", "Gerenciador do WhatsApp → Conta"),
+            s?.waba_id ? (official ? <span className="text-emerald-700 dark:text-emerald-400">Conjunto de dados ligado: {s.messaging_dataset_id}</span> : "Conjunto de dados ainda não ligado — salve de novo com o token.") : null)}
+          {field("trk-page", "ID da página do Facebook", num("page_id", "trk-page", "Página → Sobre → ID da página"),
+            "Ajuda a Meta a casar as vendas de quem não veio direto do anúncio.")}
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-3 rounded-lg border border-border/50 p-3">
+        <legend className="px-1 text-sm font-semibold">Gasto automático dos anúncios</legend>
+        <p className="text-xs text-muted-foreground">
+          O CRM lê da Meta, a cada 2 horas, quanto cada anúncio gastou e quantas conversas abriu, e cruza com os leads e vendas daqui.
+          Não precisa mais digitar o investimento.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {field("trk-act", "Conta de anúncios", (
+            <Input id="trk-act" value={f.ad_account_id ?? ""} onChange={(e) => set({ ad_account_id: e.target.value.replace(/[^\dact_]/gi, "") })} disabled={off} placeholder="act_123456789" />
+          ), "Gerenciador de Anúncios → número da conta, no topo.")}
+          {field("trk-ads-tok", "Token com permissão ads_read (opcional)", (
+            <Input id="trk-ads-tok" type="password" autoComplete="off" value={adsToken} onChange={(e) => setAdsToken(e.target.value)} disabled={off}
+              placeholder={status?.has_ads_token ? "•••••• salvo (cole outro para trocar)" : "Em branco: usa o token acima"} />
+          ), "Token de usuário do sistema no Business Manager com ads_read. O token do pixel normalmente não lê gasto.")}
+        </div>
+      </fieldset>
+
       {canEdit && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={save} disabled={busy !== null}>
-            {busy === "save" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />} Salvar
+          <Button size="sm" onClick={save} disabled={busy !== null}>{spin("save", Save)} Salvar</Button>
+          <Button size="sm" variant="outline" disabled={busy !== null || !s?.test_event_code}
+            onClick={() => run("test", async () => { const r = await sendTestEvent(storeId); toast.success(`A Meta recebeu ${r.events_received ?? 1} evento de teste (pixel).`); })}>
+            {spin("test", Send)} Testar pixel
           </Button>
-          <Button size="sm" variant="outline" disabled={busy !== null || !f.test_event_code}
-            onClick={async () => {
-              setBusy("test");
-              try { const r = await sendTestEvent(storeId); toast.success(`A Meta recebeu ${r.events_received ?? 1} evento de teste.`); }
-              catch (e) { toast.error((e as Error).message); }
-              finally { setBusy(null); }
-            }}>
-            {busy === "test" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="mr-1.5 h-4 w-4" />} Enviar evento de teste
-          </Button>
+          {official && (
+            <Button size="sm" variant="outline" disabled={busy !== null || !s?.test_event_code}
+              onClick={() => run("test-msg", async () => { const r = await sendTestEvent(storeId, "messaging"); toast.success(`A Meta recebeu ${r.events_received ?? 1} evento de teste (oficial).`); })}>
+              {spin("test-msg", Send)} Testar formato oficial
+            </Button>
+          )}
+          {s?.ad_account_id && (
+            <Button size="sm" variant="outline" disabled={busy !== null}
+              onClick={() => run("sync", async () => { const r = await syncInsights(storeId); refresh(); toast.success(`Gasto atualizado (${r.rows} linhas).`); })}>
+              {spin("sync", RefreshCw)} Atualizar gasto agora
+            </Button>
+          )}
+          {s?.enabled && (
+            <Button size="sm" variant="ghost" disabled={busy !== null}
+              onClick={() => run("backfill", async () => {
+                const r = await backfillEvents(storeId);
+                refresh();
+                toast.success(`Últimos 7 dias: ${r.queued.leads} leads e ${r.queued.purchases} vendas na fila.`);
+              })}>
+              {spin("backfill", History)} Mandar últimos 7 dias
+            </Button>
+          )}
         </div>
       )}
     </section>
@@ -258,7 +365,7 @@ function EventsCard({ storeId }: { storeId: string }) {
               <li key={e.id} className="flex items-start gap-2 py-2 text-sm">
                 <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", st.cls)} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate"><strong>{e.event_name}</strong> · {e.contact?.name ?? "contato"}{e.value ? ` · R$ ${Number(e.value).toLocaleString("pt-BR")}` : ""}</p>
+                  <p className="truncate"><strong>{e.event_name}</strong>{e.format === "messaging" ? " · oficial" : ""} · {e.contact?.name ?? "contato"}{e.value ? ` · R$ ${Number(e.value).toLocaleString("pt-BR")}` : ""}</p>
                   <p className={cn("text-xs", st.cls)}>{st.label}{e.error ? ` · ${e.error.slice(0, 140)}` : ""}</p>
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">{relative(e.created_at)}</span>

@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { crmReport, type CrmReport } from "../api/reports";
 import { CampaignReport } from "../components/reports/CampaignReport";
+import { AdsReport } from "../components/reports/AdsReport";
 import { igManualReport } from "../api/igLead";
 import { EmptyState } from "../components/shared/EmptyState";
 import { useCrmContext, useTeam } from "../hooks/useInbox";
@@ -250,6 +251,7 @@ export default function ReportsPage() {
             </div>
 
             <IgManualPanel storeId={storeId} from={range.from} to={range.to} />
+            <AdsReport storeId={storeId} from={range.from} to={range.to} />
             <CampaignReport storeId={storeId} from={range.from} to={range.to} />
 
             <div className="grid gap-4 lg:grid-cols-2">

@@ -231,12 +231,16 @@ async function handleUpsert(admin: SupabaseClient, cfg: EvolutionConfig, payload
     const native = extractAdAttribution(message)
     if (code || crm.contact_created || hasAdData(native)) {
       background((async () => {
-        const { error: attErr } = await admin.rpc('crm_track_attach', {
+        const { data: att, error: attErr } = await admin.rpc('crm_track_attach', {
           p_contact_id: crm.contact_id, p_code: code, p_native: native, p_is_new: Boolean(crm.contact_created),
         })
         if (attErr) console.error('[WhatsApp Webhook] origem:', attErr.message)
-        if (crm.contact_created) {
-          const { data: ev } = await admin.rpc('crm_meta_enqueue', { p_contact_id: crm.contact_id, p_deal_id: null, p_kind: 'lead' })
+        // contato novo → Lead; quem já era contato e veio de um anúncio de novo → outro Lead, ligado a esse clique
+        const adAgain = !crm.contact_created && att?.attached && att.kind === 'ctwa' ? att.attribution_id : null
+        if (crm.contact_created || adAgain) {
+          const { data: ev } = await admin.rpc('crm_meta_enqueue', {
+            p_contact_id: crm.contact_id, p_deal_id: null, p_kind: 'lead', ...(adAgain ? { p_attribution_id: adAgain } : {}),
+          })
           const secret = Deno.env.get('CRM_CRON_SECRET')
           if (ev && secret) {
             await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/crm-meta`, {

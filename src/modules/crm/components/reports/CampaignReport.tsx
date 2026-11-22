@@ -142,7 +142,7 @@ export function CampaignReport({ storeId, from, to }: { storeId: string | null; 
 
       <div>
         <h2 className="mb-1 text-sm font-semibold">Campanha › conjunto › anúncio</h2>
-        <p className="mb-2 text-xs text-muted-foreground">Toque na campanha para abrir os conjuntos e anúncios. O investimento é digitado (o CRM não lê o gasto da Meta) e dividido pelos dias do período.</p>
+        <p className="mb-2 text-xs text-muted-foreground">Toque na campanha para abrir os conjuntos e anúncios. Aqui o investimento é digitado à mão (campanhas fora da Meta ou sem a conta de anúncios ligada) e dividido pelos dias do período. Com a conta ligada, o gasto real de cada anúncio aparece no quadro “Anúncios da Meta”.</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             {head}

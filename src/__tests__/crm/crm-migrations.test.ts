@@ -37,6 +37,7 @@ const LEAD_LABELS = read("20261119000000_crm_lead_labels.sql");
 const PUSH = read("20261119010000_crm_push.sql");
 const SUPPLIER = read("20261119020000_crm_lead_kind_supplier.sql");
 const OWNER_FUNNEL = read("20261121030000_crm_owner_to_funnel.sql");
+const META_PRO = read("20261122000000_crm_meta_pro.sql");
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -1344,5 +1345,81 @@ describe("CRM — responsável leva o lead para o funil", () => {
 
   it("as funções do funil automático são só do servidor", async () => {
     expect(await asUser(U1, () => errorOf(`select crm_owner_to_funnel($1)`, [old.conversation_id]))).toMatch(/permission denied/);
+  });
+});
+
+describe("CRM — rastreamento Meta (pixel + conta oficial)", () => {
+  beforeAll(async () => { await db.exec(META_PRO); });
+  const contact = async (phone: string, id: string, body = "Olá") =>
+    (await ingest({ p_store_id: A, p_channel: "whatsapp", p_direction: "in", p_sender_kind: "contact", p_body: body, p_phone: phone, p_external_id: id })).contact_id as string;
+  const salesPipe = () => val<string>(`select id from crm_pipelines where store_id = $1 and kind = 'sales'`, [A]);
+
+  it("evento fica ligado ao último clique no anúncio (ctwa_clid) e guarda a hora real", async () => {
+    const c = await contact("5511955550001", "MP1");
+    const at = await val<any>(`select crm_track_attach($1, null, '{"entry_point":"ctwa_ad","ad_source_id":"777","ctwa_clid":"ARAk1"}', true)`, [c]);
+    expect(at.kind).toBe("ctwa");
+    const ev = await val<string>(`select crm_meta_enqueue($1, null, 'lead', null, $2::timestamptz)`, [c, "2026-11-20T15:00:00Z"]);
+    const row = await one(`select attribution_id, event_time, event_id from crm_meta_events where id = $1`, [ev]);
+    expect(row.attribution_id).toBe(at.attribution_id);
+    expect(new Date(row.event_time).toISOString()).toBe("2026-11-20T15:00:00.000Z");
+    expect(row.event_id).toBe(`lead:${c}`);
+  });
+
+  it("quem já era contato e voltou por um anúncio gera outro Lead (no máximo 1 a cada 24 h)", async () => {
+    const c = await contact("5511955550002", "MP2");
+    await db.query(`insert into crm_meta_events (store_id, contact_id, event_name, event_id, created_at) values ($1, $2, 'Lead', $3, now() - interval '3 days')`, [A, c, `lead:${c}`]);
+    expect(await val(`select crm_meta_enqueue($1, null, 'lead')`, [c])).toBeNull(); // o Lead do 1º contato já foi
+    const a1 = (await val<any>(`select crm_track_attach($1, null, '{"entry_point":"ctwa_ad","ad_source_id":"888","ctwa_clid":"ARAk2"}', false)`, [c])).attribution_id;
+    const e1 = await val<string>(`select crm_meta_enqueue($1, null, 'lead', null, null, $2)`, [c, a1]);
+    expect(e1).not.toBeNull();
+    expect(await val(`select event_id from crm_meta_events where id = $1`, [e1])).toBe(`lead:${c}:${a1}`);
+    const a2 = (await val<any>(`select crm_track_attach($1, null, '{"entry_point":"ctwa_ad","ad_source_id":"888","ctwa_clid":"ARAk3"}', false)`, [c])).attribution_id;
+    expect(await val(`select crm_meta_enqueue($1, null, 'lead', null, null, $2)`, [c, a2])).toBeNull();
+  });
+
+  it("ao ligar, manda os leads e vendas dos últimos 7 dias (nada mais velho)", async () => {
+    const fresh = await contact("5511955550003", "MP3");
+    const old = await contact("5511955550004", "MP4");
+    await db.query(`update crm_contacts set created_at = now() - interval '9 days' where id = $1`, [old]);
+    await db.query(`delete from crm_meta_events where contact_id in ($1, $2)`, [fresh, old]);
+    const deal = await val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, value, status, won_at)
+      values ($1, $2, $3, $4, 'Película', 80, 'won', now() - interval '2 days') returning id`, [A, await salesPipe(), await stage(A, "sales", "won"), fresh]);
+    const r = await val<any>(`select crm_meta_backfill($1, 30)`, [A]);
+    expect(r.purchases).toBeGreaterThanOrEqual(1);
+    const ids = (await db.query<any>(`select event_id from crm_meta_events where contact_id in ($1, $2)`, [fresh, old])).rows.map((x: any) => x.event_id);
+    expect(ids).toEqual(expect.arrayContaining([`lead:${fresh}`, `purchase:${deal}`]));
+    expect(ids).not.toContain(`lead:${old}`);
+    expect(await val<any>(`select crm_meta_backfill($1, 7)`, [A])).toMatchObject({ leads: 0, purchases: 0 }); // de novo não duplica
+  });
+
+  it("relatório por anúncio junta o gasto da Meta com leads e vendas do CRM", async () => {
+    const c = await contact("5511955550005", "MP5");
+    await val(`select crm_track_attach($1, null, '{"entry_point":"ctwa_ad","ad_source_id":"555","ctwa_clid":"ARAk5"}', true)`, [c]);
+    const deal = await val<string>(`insert into crm_deals (store_id, pipeline_id, stage_id, contact_id, title, value) values ($1, $2, $3, $4, 'iPhone 13', 2500) returning id`,
+      [A, await salesPipe(), await stage(A, "sales", "wa_active"), c]);
+    await db.query(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "won"), deal]);
+    const today = await val<string>(`select (now() at time zone 'America/Sao_Paulo')::date::text`);
+    await db.query(`insert into crm_ad_insights (store_id, date, ad_id, ad_name, adset_name, campaign_name, spend, impressions, clicks, conversations) values
+      ($1, $2, '555', 'Vídeo iPhone', 'Público 25-45', 'iPhone Novembro', 120.50, 3000, 90, 12),
+      ($1, $2, '556', 'Carrossel', 'Público 25-45', 'iPhone Novembro', 40, 1000, 20, 3),
+      ($3, $2, 'B-77', 'Outra loja', null, 'B', 10, 1, 1, 1)`, [A, today, B]);
+    const rows = (await asUser(U1, () => db.query<any>(`select * from crm_ads_report($1, $2::date - 1, $2::date)`, [A, today]))).rows;
+    const v = rows.find((r: any) => r.ad_id === "555");
+    expect(v).toMatchObject({ campaign_name: "iPhone Novembro", ad_name: "Vídeo iPhone", leads: 1, won: 1, conversations: 12 });
+    expect(Number(v.spend)).toBe(120.5);
+    expect(Number(v.revenue)).toBe(2500);
+    expect(rows.find((r: any) => r.ad_id === "556")).toMatchObject({ leads: 0, won: 0 }); // gastou e não trouxe ninguém
+    expect(rows.find((r: any) => r.ad_id === "B-77")).toBeUndefined(); // outra loja
+    expect((await asUser(U2, () => db.query(`select * from crm_ad_insights where store_id = $1`, [A]))).rows).toHaveLength(0);
+    expect(await asUser(ADM, () => errorOf(`insert into crm_ad_insights (store_id, date, ad_id) values ($1, now()::date, 'x')`, [A]))).not.toBeNull();
+  });
+
+  it("saúde do rastreamento e funções só do servidor", async () => {
+    const h = await asUser(U1, () => val<any>(`select crm_tracking_health($1)`, [A]));
+    expect(Number(h.pending)).toBeGreaterThan(0);
+    expect(Number(h.ad_contacts_7d)).toBeGreaterThanOrEqual(3);
+    expect(Number(h.spend_7d)).toBeCloseTo(160.5);
+    expect(await asUser(ADM, () => errorOf(`select crm_meta_backfill($1)`, [A]))).toMatch(/permission denied/);
+    expect(await asUser(ADM, () => errorOf(`select crm_meta_enqueue(null, null, 'lead')`))).toMatch(/permission denied/);
   });
 });
