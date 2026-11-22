@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { extractAdAttribution, extractTrackCode, hasAdData } from "../../../supabase/functions/whatsapp-webhook/parse";
-import { buildCapiEvent, fbcFrom, newTrackCode, normalizePhoneForMeta, splitName } from "../../../supabase/functions/_shared/meta-capi";
+import { buildCapiEvent, chooseFormat, fbcFrom, messagingEventName, newTrackCode, normalizePhoneForMeta, splitName, tooOld } from "../../../supabase/functions/_shared/meta-capi";
+import { insightsRange, normalizeAdAccount, parseInsight } from "../../../supabase/functions/_shared/meta-insights";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
@@ -59,5 +60,57 @@ describe("rastreamento — evento para a Meta", () => {
     const c = newTrackCode();
     expect(c).toMatch(/^[A-HJ-NP-Z2-9]{5}$/);
     expect(extractTrackCode(`(cód. ${c})`)).toBe(c);
+  });
+});
+
+describe("rastreamento — dois formatos (pixel hoje, conta oficial depois)", () => {
+  const official = { dataset_id: "111111", messaging_dataset_id: "222222", waba_id: "333333", page_id: "444444" };
+
+  it("escolhe o formato: mensagens com conta oficial; pixel sem ela", () => {
+    expect(chooseFormat({ dataset_id: "111111" }, "Lead", "ARAk")).toBe("pixel");
+    expect(chooseFormat(official, "Lead", "ARAk")).toBe("messaging");
+    expect(chooseFormat(official, "Purchase", null)).toBe("messaging"); // casa pelo telefone + página
+    expect(chooseFormat({ ...official, page_id: null }, "Purchase", null)).toBe("pixel"); // sem clique nem página
+    expect(chooseFormat(official, "MeuEventoCustom", "ARAk")).toBe("pixel"); // não existe no formato de mensagens
+    expect(chooseFormat({ messaging_dataset_id: "2", waba_id: "3" }, "Lead", null)).toBeNull();
+    expect(messagingEventName("Lead")).toBe("LeadSubmitted");
+    expect(messagingEventName("QualifiedLead")).toBe("QualifiedLead");
+  });
+
+  it("evento de mensagens: business_messaging + whatsapp, WABA e ctwa_clid abertos, telefone com hash", async () => {
+    const e: any = await buildCapiEvent({
+      eventName: "Lead", eventId: "lead:c1", eventTime: new Date("2026-11-20T12:00:00Z"), format: "messaging", wabaId: "333333", pageId: "444444",
+      contact: { id: "c1", phone: "5587999112233", name: "Ana Souza" },
+      attribution: { ctwa_clid: "ARAkClid", fbc: "fb.1.1.x", ip: "1.2.3.4" },
+    });
+    expect(e).toMatchObject({ event_name: "LeadSubmitted", action_source: "business_messaging", messaging_channel: "whatsapp", event_id: "lead:c1" });
+    expect(e.user_data).toMatchObject({ whatsapp_business_account_id: "333333", ctwa_clid: "ARAkClid", page_id: "444444", ph: [sha("5587999112233")] });
+    expect(e.user_data.fbc).toBeUndefined(); // dados de site não vão no formato de mensagens
+    expect(e.user_data.external_id).toBeUndefined();
+    expect(e.custom_data.lead_source).toBeUndefined();
+    await expect(buildCapiEvent({ eventName: "Lead", eventId: "x", eventTime: new Date(), format: "messaging", contact: { id: "c", phone: null, name: null } }))
+      .rejects.toThrow(/WABA/);
+  });
+
+  it("evento velho demais (a Meta só aceita até 7 dias)", () => {
+    const now = new Date("2026-11-22T12:00:00Z");
+    expect(tooOld(new Date("2026-11-16T12:00:00Z"), now)).toBe(false);
+    expect(tooOld(new Date("2026-11-15T10:00:00Z"), now)).toBe(true);
+  });
+
+  it("gasto da Meta: linha do Insights por anúncio e dia", () => {
+    const r = parseInsight({
+      date_start: "2026-11-21", ad_id: "120", ad_name: "Vídeo", adset_id: "110", adset_name: "25-45", campaign_id: "100", campaign_name: "Tela",
+      spend: "35.427", impressions: "1500", clicks: "40",
+      actions: [{ action_type: "onsite_conversion.messaging_conversation_started_7d", value: "7" }, { action_type: "link_click", value: "30" }],
+    });
+    expect(r).toEqual({ date: "2026-11-21", ad_id: "120", ad_name: "Vídeo", adset_id: "110", adset_name: "25-45", campaign_id: "100", campaign_name: "Tela",
+      spend: 35.43, impressions: 1500, clicks: 40, conversations: 7 });
+    expect(parseInsight({ date_start: "2026-11-21" })).toBeNull();
+    expect(parseInsight({ ad_id: "1", date_start: "ontem" })).toBeNull();
+    expect(normalizeAdAccount("act_123456789")).toBe("123456789");
+    expect(normalizeAdAccount("abc")).toBeNull();
+    expect(insightsRange(null, new Date("2026-11-22T12:00:00Z"))).toEqual({ since: "2026-08-24", until: "2026-11-22" });
+    expect(insightsRange(new Date(), new Date("2026-11-22T12:00:00Z"))).toEqual({ since: "2026-11-19", until: "2026-11-22" });
   });
 });
