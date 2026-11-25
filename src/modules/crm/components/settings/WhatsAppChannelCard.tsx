@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, LogOut, QrCode, RefreshCw, Save, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, LogOut, QrCode, RefreshCcw, RefreshCw, Save, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import {
   channelConfigureWebhook, channelConnect, channelLogout, channelSaveConfig, channelStatus,
 } from "../../api/inbox";
 import { crmKeys } from "../../hooks/useInbox";
+import { syncWhatsApp, type WhatsAppSyncResult } from "../../api/health";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChannelIcon } from "../shared/ChannelIcon";
 
 const STATE_LABEL: Record<string, { text: string; tone: "ok" | "warn" | "bad" }> = {
@@ -30,6 +32,8 @@ export function WhatsAppChannelCard({ storeId, storeLabel }: { storeId: string |
   const [qr, setQr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [form, setForm] = useState({ api_url: "", instance_name: "", api_key: "" });
+  const [syncHours, setSyncHours] = useState(24);
+  const [syncResult, setSyncResult] = useState<WhatsAppSyncResult | null>(null);
 
   const s = status.data;
   // sem número próprio, o status mostra o da outra loja: não é desta loja
@@ -125,6 +129,44 @@ export function WhatsAppChannelCard({ storeId, storeLabel }: { storeId: string |
             <Button size="sm" variant="outline" onClick={() => { if (confirm("Desconectar o WhatsApp da loja? As mensagens param de chegar até conectar de novo.")) void run("logout", () => channelLogout(storeId), "WhatsApp desconectado."); }} disabled={busy !== null}>
               <LogOut className="mr-1.5 h-4 w-4" /> Desconectar
             </Button>
+          )}
+        </div>
+      )}
+
+      {canManage && own && s?.state === "open" && storeId && (
+        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+          <p className="text-sm font-medium">Sincronizar mensagens</p>
+          <p className="text-xs text-muted-foreground">
+            Busca no WhatsApp as mensagens que não chegaram ao CRM e grava com o horário original. Não aciona a IA nem manda aviso.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={String(syncHours)} onValueChange={(v) => setSyncHours(Number(v))} disabled={busy !== null}>
+              <SelectTrigger className="h-9 w-[150px]" aria-label="Período para sincronizar"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="6">Últimas 6 horas</SelectItem>
+                <SelectItem value="24">Últimas 24 horas</SelectItem>
+                <SelectItem value="72">Últimos 3 dias</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" disabled={busy !== null} onClick={() => run("sync", async () => {
+              setSyncResult(null);
+              const r = await syncWhatsApp(storeId, syncHours);
+              setSyncResult(r);
+              if (r.saved) {
+                qc.invalidateQueries({ queryKey: ["crm", "conversations"] });
+                qc.invalidateQueries({ queryKey: ["crm", "counts"] });
+                qc.invalidateQueries({ queryKey: ["crm", "whatsapp-health"] });
+              }
+              toast.success(r.saved ? `${r.saved} mensage${r.saved === 1 ? "m recuperada" : "ns recuperadas"}.` : "Nada faltando.");
+            })}>
+              {busy === "sync" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-1.5 h-4 w-4" />}
+              {busy === "sync" ? "Sincronizando… (até 2 min)" : "Sincronizar"}
+            </Button>
+          </div>
+          {syncResult && (
+            <p role="status" className={syncResult.errors || syncResult.remaining ? "text-sm text-amber-700 dark:text-amber-400" : "text-sm text-emerald-700 dark:text-emerald-400"}>
+              {syncResult.message}
+            </p>
           )}
         </div>
       )}
