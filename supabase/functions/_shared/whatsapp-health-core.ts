@@ -103,7 +103,7 @@ export const RECONCILE_LIMIT = 60;
  * nem nova demais nem antiga demais, e ainda não tratada (`known` = ids já no CRM ou já reenviados).
  * Mais antigas primeiro, para a conversa ficar na ordem.
  */
-export function reconcileCandidates(records: any[], known: Set<string>, nowMs: number, limit = RECONCILE_LIMIT): any[] {
+export function reconcileCandidates(records: any[], known: Set<string>, nowMs: number, limit = RECONCILE_LIMIT, maxAgeMs = RECONCILE_MAX_AGE_MS): any[] {
   const seen = new Set<string>();
   const out: { r: any; t: number }[] = [];
   for (const r of Array.isArray(records) ? records : []) {
@@ -113,10 +113,68 @@ export function reconcileCandidates(records: any[], known: Set<string>, nowMs: n
     if (!isDirectJid(r?.key?.remoteJid)) continue;
     if (SKIP_TYPES.has(String(r?.messageType ?? ""))) continue;
     const t = messageTimeMs(r);
-    if (t == null || nowMs - t < RECONCILE_MIN_AGE_MS || nowMs - t > RECONCILE_MAX_AGE_MS) continue;
+    if (t == null || nowMs - t < RECONCILE_MIN_AGE_MS || nowMs - t > maxAgeMs) continue;
     out.push({ r, t });
   }
   return out.sort((a, b) => a.t - b.t).slice(0, limit).map((x) => x.r);
+}
+
+// ------------------------------------------------------------------ sincronizar pela tela (botão)
+
+/** Períodos que a pessoa escolhe no botão "Sincronizar mensagens". */
+export const MANUAL_SYNC_HOURS = [6, 24, 72] as const;
+/** Mensagens por página na leitura manual (menos idas à Evolution). */
+export const MANUAL_PAGE_SIZE = 100;
+/** Teto de páginas na leitura manual (~10 mil mensagens, com grupos). */
+export const MANUAL_MAX_PAGES = 100;
+/** Teto de reenvios por toque (o resto fica para o próximo toque ou para o vigia). */
+export const MANUAL_REPLAY_LIMIT = 400;
+
+/** Horas pedidas → um dos períodos aceitos (padrão 24 h). */
+export function manualSyncHours(v: unknown): number {
+  const n = Number(v);
+  return (MANUAL_SYNC_HOURS as readonly number[]).includes(n) ? n : 24;
+}
+
+/** Leitura manual: continua enquanto a página veio cheia e ainda não chegou ao início do período. */
+export function manualNeedMore(args: { page: number; pageCount: number; oldestMs: number | null; stopAtMs: number }): boolean {
+  if (args.page >= MANUAL_MAX_PAGES) return false;
+  if (args.pageCount < MANUAL_PAGE_SIZE) return false;
+  if (args.oldestMs == null) return false;
+  return args.oldestMs > args.stopAtMs;
+}
+
+export interface ManualSyncReport {
+  hours: number;
+  /** Até quando a leitura chegou (ISO); null se nada foi lido */
+  covered_from: string | null;
+  /** A leitura cobriu o período inteiro? */
+  complete: boolean;
+  /** Mensagens de conversa direta (não grupos) lidas no período */
+  direct: number;
+  /** Faltavam no CRM */
+  missing: number;
+  saved: number;
+  skipped: number;
+  lid_queue: number;
+  errors: number;
+  /** Ficaram para o próximo toque (tempo ou limite) */
+  remaining: number;
+}
+
+/** Frase curta do resultado, para a tela. */
+export function manualSyncText(r: ManualSyncReport): string {
+  const period = r.hours >= 48 ? `dos últimos ${Math.round(r.hours / 24)} dias` : `das últimas ${r.hours} h`;
+  const parts: string[] = [];
+  if (!r.missing) parts.push(`Tudo certo: nenhuma mensagem faltando ${period.replace(/^d/, "n")}.`);
+  else {
+    parts.push(`${r.saved} mensage${r.saved === 1 ? "m recuperada" : "ns recuperadas"} ${period}.`);
+    if (r.lid_queue) parts.push(`${r.lid_queue} de contato sem número aguardam a pessoa escrever de novo.`);
+    if (r.errors) parts.push(`${r.errors} deram erro e serão tentadas de novo.`);
+    if (r.remaining) parts.push(`Faltam ${r.remaining}: toque de novo para continuar.`);
+  }
+  if (!r.complete) parts.push("A Evolution não devolveu o período inteiro; o mais antigo foi conferido até onde deu.");
+  return parts.join(" ");
 }
 
 /** Resultado do reenvio: o que não vale tentar de novo (gravada, ignorada por desenho, na fila do @lid). */

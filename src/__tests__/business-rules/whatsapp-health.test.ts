@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decideHealthAlert, healthAlertText, isDirectJid, latest, needMorePages, probeState, reconcileCandidates, replayOutcome,
   scanStopAt, scanSummary, shouldProbe, webhookIssues, type HealthInput,
+  manualNeedMore, manualSyncHours, manualSyncText, MANUAL_MAX_PAGES, type ManualSyncReport,
 } from "../../../supabase/functions/_shared/whatsapp-health-core";
 
 const sp = (iso: string) => Date.parse(`${iso}-03:00`);
@@ -180,5 +181,42 @@ describe("saúde do WhatsApp — avisos", () => {
     expect(t.body).toContain("20/11 12:10");
     expect(t.body).toContain("Conectar (QR Code)");
     expect(healthAlertText("webhook_broken", "X", null, ["endereço errado"]).body).toContain("endereço errado");
+  });
+});
+
+describe("botão Sincronizar mensagens (por loja)", () => {
+  const now = sp("2026-11-25T15:00:00");
+
+  it("aceita só os períodos do botão (padrão 24 h)", () => {
+    expect(manualSyncHours(6)).toBe(6);
+    expect(manualSyncHours("72")).toBe(72);
+    expect(manualSyncHours(999)).toBe(24);
+    expect(manualSyncHours(undefined)).toBe(24);
+  });
+
+  it("período de 3 dias pega mensagem que o vigia (48 h) não pegaria", () => {
+    const old = rec("antiga", now - 60 * 60 * MIN, false);
+    expect(reconcileCandidates([old], new Set(), now)).toHaveLength(0);
+    expect(reconcileCandidates([old], new Set(), now, 400, 72 * 60 * MIN).map((r) => r.key.id)).toEqual(["antiga"]);
+  });
+
+  it("lê páginas até chegar ao início do período", () => {
+    const stopAtMs = now - 24 * 60 * MIN;
+    expect(manualNeedMore({ page: 1, pageCount: 100, oldestMs: now - 60 * MIN, stopAtMs })).toBe(true);
+    expect(manualNeedMore({ page: 3, pageCount: 100, oldestMs: stopAtMs - 1, stopAtMs })).toBe(false);
+    expect(manualNeedMore({ page: 2, pageCount: 40, oldestMs: now - 60 * MIN, stopAtMs })).toBe(false); // acabou o histórico
+    expect(manualNeedMore({ page: MANUAL_MAX_PAGES, pageCount: 100, oldestMs: now, stopAtMs })).toBe(false);
+  });
+
+  it("frase do resultado", () => {
+    const base: ManualSyncReport = { hours: 24, covered_from: null, complete: true, direct: 50, missing: 0, saved: 0, skipped: 0, lid_queue: 0, errors: 0, remaining: 0 };
+    expect(manualSyncText(base)).toBe("Tudo certo: nenhuma mensagem faltando nas últimas 24 h.");
+    const t = manualSyncText({ ...base, hours: 72, missing: 30, saved: 12, lid_queue: 3, remaining: 15 });
+    expect(t).toContain("12 mensagens recuperadas dos últimos 3 dias");
+    expect(manualSyncText({ ...base, hours: 72 })).toBe("Tudo certo: nenhuma mensagem faltando nos últimos 3 dias.");
+    expect(t).toContain("3 de contato sem número");
+    expect(t).toContain("Faltam 15: toque de novo");
+    expect(manualSyncText({ ...base, missing: 1, saved: 1 })).toContain("1 mensagem recuperada");
+    expect(manualSyncText({ ...base, complete: false })).toContain("não devolveu o período inteiro");
   });
 });

@@ -10,13 +10,14 @@
 // Regras em _shared/whatsapp-watchdog-core.ts e _shared/whatsapp-health-core.ts.
 // Nunca devolve nem registra a chave da API nem o segredo do webhook.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { adminClient, corsHeaders, errorResponse, HttpError, json, requireManager, requireUser } from "../_shared/http.ts";
+import { adminClient, corsHeaders, errorResponse, HttpError, json, requireManager, requireMember, requireUser } from "../_shared/http.ts";
 import { evolution, type EvolutionConfig } from "../_shared/evolution.ts";
 import { sendPush, type PushTarget } from "../_shared/push.ts";
 import { alertText, decideAlert, extractRecords, instanceKey } from "../_shared/whatsapp-watchdog-core.ts";
 import {
   type AlertKind, decideHealthAlert, healthAlertText, isDirectJid, latest, needMorePages, PAGE_SIZE, PROBE_TEXT, probeState,
   type ProbeState, reconcileCandidates, REPLAY_MAX_ATTEMPTS, replayOutcome, scanStopAt, scanSummary, shouldProbe, webhookIssues,
+  type ManualSyncReport, MANUAL_MAX_PAGES, MANUAL_PAGE_SIZE, MANUAL_REPLAY_LIMIT, manualNeedMore, manualSyncHours, manualSyncText, RECONCILE_LIMIT,
 } from "../_shared/whatsapp-health-core.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -96,17 +97,30 @@ async function knownIds(admin: any, configId: string, ids: string[]): Promise<Se
   return known;
 }
 
-async function reconcile(admin: any, inst: Instance, nowMs: number): Promise<{ sent: number; saved: number; errors: number }> {
+interface ReconcileResult { sent: number; saved: number; errors: number; skipped: number; lid: number; missing: number; remaining: number }
+
+async function reconcile(
+  admin: any, inst: Instance, nowMs: number,
+  opts: { limit?: number; maxAgeMs?: number; budgetMs?: number; strict?: boolean } = {},
+): Promise<ReconcileResult> {
+  const out: ReconcileResult = { sent: 0, saved: 0, errors: 0, skipped: 0, lid: 0, missing: 0, remaining: 0 };
   const cron = Deno.env.get("CRM_CRON_SECRET");
   const secret = Deno.env.get("EVOLUTION_WEBHOOK_SECRET");
-  if (!cron || !secret) return { sent: 0, saved: 0, errors: 0 };
+  if (!cron || !secret) {
+    if (opts.strict) throw new Error("Segredos do servidor ausentes (CRM_CRON_SECRET / EVOLUTION_WEBHOOK_SECRET).");
+    return out;
+  }
   const ids = [...new Set(inst.records.filter((r) => isDirectJid(r?.key?.remoteJid)).map((r) => r?.key?.id).filter(Boolean))] as string[];
-  if (!ids.length) return { sent: 0, saved: 0, errors: 0 };
-  const candidates = reconcileCandidates(inst.records, await knownIds(admin, inst.cfg.id, ids), nowMs);
+  if (!ids.length) return out;
+  const known = await knownIds(admin, inst.cfg.id, ids);
+  const all = reconcileCandidates(inst.records, known, nowMs, Number.MAX_SAFE_INTEGER, opts.maxAgeMs);
+  out.missing = all.length;
+  const candidates = all.slice(0, opts.limit ?? RECONCILE_LIMIT);
+  const budget = opts.budgetMs ?? REPLAY_BUDGET_MS;
   const started = Date.now();
   let sent = 0, saved = 0, errors = 0;
   for (const r of candidates) {
-    if (Date.now() - started > REPLAY_BUDGET_MS) break;
+    if (Date.now() - started > budget) break;
     let status = 0, body: any = null;
     try {
       const res = await fetch(WEBHOOK_URL, {
@@ -120,18 +134,74 @@ async function reconcile(admin: any, inst: Instance, nowMs: number): Promise<{ s
       console.error("[watchdog] reenvio:", (e as Error).message);
     }
     sent++;
-    const out = replayOutcome(status, body);
-    if (out.result === "gravada") saved++;
-    if (out.retry) errors++;
+    const res = replayOutcome(status, body);
+    if (res.result === "gravada") saved++;
+    else if (res.result === "pulada") out.skipped++;
+    else if (res.result === "fila_lid") out.lid++;
+    if (res.retry) errors++;
     const { data: prev } = await admin.from("whatsapp_sync_log").select("attempts").eq("config_id", inst.cfg.id).eq("external_id", r.key.id).maybeSingle();
     await admin.from("whatsapp_sync_log").upsert({
-      config_id: inst.cfg.id, external_id: r.key.id, result: out.result, retry: out.retry,
+      config_id: inst.cfg.id, external_id: r.key.id, result: res.result, retry: res.retry,
       attempts: (prev?.attempts ?? 0) + 1, message_at: iso(Number(r.messageTimestamp) * 1000), last_at: new Date().toISOString(),
     }, { onConflict: "config_id,external_id" });
     if (status === 401) break; // segredo errado: não insiste
   }
   if (sent) console.log(`[watchdog] ${inst.cfg.instance_name}: ${sent} reenviadas, ${saved} gravadas, ${errors} com erro`);
-  return { sent, saved, errors };
+  Object.assign(out, { sent, saved, errors, remaining: Math.max(0, out.missing - sent) });
+  return out;
+}
+
+// ------------------------------------------------------------------ sincronizar pela tela (botão por loja)
+
+/** Lê o período pedido (páginas em lotes paralelos); para no início do período, no fim do histórico ou no tempo-limite. */
+async function scanPeriod(cfg: EvolutionConfig, stopAtMs: number, budgetMs: number): Promise<{ records: any[]; complete: boolean }> {
+  const evo = evolution(cfg);
+  const all: any[] = [];
+  const started = Date.now();
+  const BATCH = 4;
+  for (let first = 1; first <= MANUAL_MAX_PAGES; first += BATCH) {
+    const pages = Array.from({ length: Math.min(BATCH, MANUAL_MAX_PAGES - first + 1) }, (_, i) => first + i);
+    const got = await Promise.all(pages.map(async (p) => {
+      try { return extractRecords(await evo.recentMessages(MANUAL_PAGE_SIZE, p)); }
+      catch (e) { if (p === 1) throw e; console.warn("[sync] página", p, (e as Error).message); return null; }
+    }));
+    for (let i = 0; i < got.length; i++) {
+      const recs = got[i];
+      if (!recs) return { records: all, complete: false };
+      all.push(...recs);
+      const oldest = scanSummary(recs).oldestMs;
+      if (!manualNeedMore({ page: pages[i], pageCount: recs.length, oldestMs: oldest, stopAtMs })) {
+        return { records: all, complete: recs.length < MANUAL_PAGE_SIZE || (oldest != null && oldest <= stopAtMs) };
+      }
+    }
+    if (Date.now() - started > budgetMs) return { records: all, complete: false };
+  }
+  return { records: all, complete: false };
+}
+
+async function syncStore(admin: any, storeId: string, hours: number) {
+  const nowMs = Date.now();
+  const { data: cfg } = await admin.from("whatsapp_config").select("*, store:stores(name)").eq("store_id", storeId).eq("is_active", true).maybeSingle();
+  if (!cfg) throw new HttpError(400, "Esta loja não tem WhatsApp conectado.");
+  const state = await evolution(cfg).connectionState();
+  if (state !== "open") throw new HttpError(409, "O WhatsApp desta loja não está conectado. Conecte pelo QR Code antes de sincronizar.");
+
+  const periodMs = hours * 3_600_000;
+  const stopAtMs = nowMs - periodMs;
+  const { records, complete } = await scanPeriod(cfg, stopAtMs, 60_000);
+  const store = Array.isArray(cfg.store) ? cfg.store[0] : cfg.store;
+  const inst: Instance = { cfg, storeName: short(store?.name), health: null, state, owner: null, records, error: null, result: {} };
+  const r = await reconcile(admin, inst, nowMs, { limit: MANUAL_REPLAY_LIMIT, maxAgeMs: periodMs, budgetMs: 70_000, strict: true });
+
+  const oldest = scanSummary(records).oldestMs;
+  const report: ManualSyncReport = {
+    hours, covered_from: iso(oldest != null ? Math.max(oldest, stopAtMs) : null), complete,
+    direct: records.filter((x) => isDirectJid(x?.key?.remoteJid)).length,
+    missing: r.missing, saved: r.saved, skipped: r.skipped, lid_queue: r.lid, errors: r.errors, remaining: r.remaining,
+  };
+  await admin.from("whatsapp_watchdog").upsert({ config_id: cfg.id, last_sync_at: iso(nowMs), last_sync_saved: r.saved }, { onConflict: "config_id" });
+  console.log(`[sync] ${cfg.instance_name}: ${hours} h, ${records.length} lidas, ${r.missing} faltando, ${r.saved} gravadas`);
+  return { ...report, message: manualSyncText(report) };
 }
 
 // ------------------------------------------------------------------ avisos
@@ -301,7 +371,18 @@ serve(async (req) => {
   try {
     const admin = adminClient();
     const body = await req.json().catch(() => ({}));
-    if (String(body.action || "") !== "check") throw new HttpError(400, "Ação inválida.");
+    const action = String(body.action || "");
+    if (action !== "check" && action !== "sync") throw new HttpError(400, "Ação inválida.");
+
+    // botão "Sincronizar mensagens" de uma loja (gerência daquela loja)
+    if (action === "sync") {
+      const user = await requireUser(req, admin);
+      await requireManager(admin, user.id);
+      const storeId = String(body.store_id || "");
+      if (!storeId) throw new HttpError(400, "Escolha a loja.");
+      await requireMember(admin, user.id, storeId);
+      return json(await syncStore(admin, storeId, manualSyncHours(body.hours)));
+    }
 
     const internal = req.headers.get("x-crm-internal");
     if (internal) {
