@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Package, ArrowUpDown, ShoppingBag, Store, Landmark, PiggyBank,
   LogOut, Smartphone, Wrench, Users, Sun, Moon, UserCircle, FileText, Download, Brain, Settings, Activity, ChevronDown, Wallet, MessageSquare, ShieldCheck,
-  MoreHorizontal, X, KeyRound, ReceiptText, Trophy
+  MoreHorizontal, X, KeyRound, ReceiptText, Trophy, ArrowLeftRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,14 +15,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ChangePasswordModal from "./ChangePasswordModal";
 
-/** Item ativo: rota exata, ou qualquer subrota de módulos com navegação própria (/crm/...). */
+/** Item ativo: rota exata, ou qualquer subrota de módulos com navegação própria (/crm/..., /troca/...). */
 const isNavActive = (pathname: string, path: string) =>
-  pathname === path || (path !== "/" && path === "/crm" && pathname.startsWith("/crm/"));
+  pathname === path || ((path === "/crm" || path === "/troca") && pathname.startsWith(`${path}/`));
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/", permission: "dashboard" },
   { label: "Ranking & Metas", icon: Trophy, path: "/ranking" },
   { label: "Vendas", icon: ShoppingBag, path: "/vendas", permission: "vendas" },
+  { label: "Troca", icon: ArrowLeftRight, path: "/troca", permission: "vendas" },
   { label: "Estoque", icon: Package, path: "/estoque", permission: "estoque", anyOf: ["estoque", "estoque_outra_loja"] },
   { label: "OS", icon: Wrench, path: "/ordens-servico", permission: "os" },
   { label: "Clientes", icon: UserCircle, path: "/clientes", permission: "clientes" },

@@ -39,6 +39,8 @@ import "@/utils/debugLogger";
 
 // Módulo CRM independente: só é baixado quando alguém abre /crm
 const CrmModule = lazy(() => import("./modules/crm"));
+// Simulador de troca (trade-in): módulo separado, só baixa quem abre /troca
+const TrocaModule = lazy(() => import("./modules/troca"));
 const Privacidade = lazy(() => import("./pages/Privacidade"));
 const Termos = lazy(() => import("./pages/Termos"));
 const IntegracaoInstagram = lazy(() => import("./pages/IntegracaoInstagram"));
@@ -100,6 +102,7 @@ const App = () => (
                 <Route path="/financas-pf" element={<ProtectedRoute><FinancasPF /></ProtectedRoute>} />
                 <Route path="/leads" element={<Navigate to="/crm" replace />} />
                 <Route path="/crm/*" element={<ProtectedRoute><Suspense fallback={<ModuleFallback />}><CrmModule /></Suspense></ProtectedRoute>} />
+                <Route path="/troca/*" element={<ProtectedRoute><Suspense fallback={<ModuleFallback />}><TrocaModule /></Suspense></ProtectedRoute>} />
                 <Route path="/assistente-ia" element={<ProtectedRoute><AIAssistant /></ProtectedRoute>} />
                 <Route path="/teste-meta" element={<ProtectedRoute><TesteMeta /></ProtectedRoute>} />
                 <Route path="/instalar" element={<Instalar />} />

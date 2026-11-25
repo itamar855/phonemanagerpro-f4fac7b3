@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,6 +44,7 @@ import {
 } from "@/components/features/vendas/types";
 
 import { createPendingCashEntry, formatDescription } from "@/lib/services/salesService";
+import { readTradeInHandoff, saleTradeBrand } from "@/lib/tradeinHandoff";
 // Note: cash_register_id is now delegated to salesService.ts to keep this component clean.
 
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
@@ -132,6 +133,29 @@ const Vendas = () => {
     retro_date: "",
     trade_in_devices: [] as any[],
   });
+
+  // Veio do simulador de troca ("Usar na venda"): abre a Nova Venda com o aparelho já na troca
+  const location = useLocation();
+  useEffect(() => {
+    const tradeIn = readTradeInHandoff(location.state);
+    if (!tradeIn) return;
+    navigate(location.pathname, { replace: true, state: null }); // não reabre ao voltar/recarregar
+    setForm(prev => ({
+      ...prev,
+      has_trade_in: true,
+      trade_in_devices: [{
+        name: tradeIn.name,
+        brand: saleTradeBrand(tradeIn.brand, tradeIn.model),
+        model: tradeIn.model,
+        imei: tradeIn.imei,
+        value: String(tradeIn.value),
+        evaluation_id: tradeIn.evaluationId,
+      }],
+    }));
+    if (tradeIn.customerName) setCustomerSearch(tradeIn.customerName);
+    setDialogOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   useEffect(() => {
     if (currentUserCommissionPercent) {
@@ -548,6 +572,18 @@ const Vendas = () => {
       }
       
 
+
+      // liga a avaliação do simulador de troca a esta venda (falha aqui não desfaz a venda)
+      for (const device of tradeInDevicesList) {
+        if (!device.evaluation_id) continue;
+        // tabela do módulo de troca, fora do types.ts gerado
+        const tradeinTable = supabase.from("tradein_evaluations" as "sales");
+        const { error: evalErr } = await tradeinTable.update({
+          status: "aceita", agreed_value: parseFloat(device.value) || 0, sale_id: (saleData as { id: string }).id,
+          imei: device.imei || null,
+        } as never).eq("id", device.evaluation_id);
+        if (evalErr) console.warn("Não ligou a avaliação de troca à venda:", evalErr.message);
+      }
 
       toast.success("Venda registrada! Confirme o recebimento no caixa.");
       setDialogOpen(false); resetForm(); fetchData();
