@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
+import type { Product } from "@/types/db";
 import { SuppliersTab } from "@/components/features/caixa/SuppliersTab";
 import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { openComprovante } from "@/lib/storageHelper";
@@ -25,6 +26,10 @@ import {
   CashEntry,
   CashRegister,
   Supplier,
+  type OsItemWithProduct,
+  type SupplierForm,
+  type SupplierPayForm,
+  type ServiceOrder,
   paymentLabels,
   statusConfig,
   formatCurrency,
@@ -57,14 +62,14 @@ const Caixa = () => {
   // Dialog de detalhes de lançamento individual
   const [entryDetailDialog, setEntryDetailDialog] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
-  const [linkedServiceOrder, setLinkedServiceOrder] = useState<any | null>(null);
-  const [linkedOrderItems, setLinkedOrderItems] = useState<any[]>([]);
+  const [linkedServiceOrder, setLinkedServiceOrder] = useState<ServiceOrder | null>(null);
+  const [linkedOrderItems, setLinkedOrderItems] = useState<OsItemWithProduct[]>([]);
   const [loadingLinkedOrder, setLoadingLinkedOrder] = useState(false);
 
   // Dialog de Ordem de Serviço aberta a partir do Caixa
   const [osModalOpen, setOsModalOpen] = useState(false);
-  const [osModalOrder, setOsModalOrder] = useState<any | null>(null);
-  const [osModalItems, setOsModalItems] = useState<any[]>([]);
+  const [osModalOrder, setOsModalOrder] = useState<ServiceOrder | null>(null);
+  const [osModalItems, setOsModalItems] = useState<OsItemWithProduct[]>([]);
   const [loadingOsItems, setLoadingOsItems] = useState(false);
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
   
@@ -91,8 +96,8 @@ const Caixa = () => {
   const [supplierDialog, setSupplierDialog] = useState(false);
   const [paySupplierDialog, setPaySupplierDialog] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [supplierForm, setSupplierForm] = useState({ name: "", document: "", phone: "", category: "", notes: "" });
-  const [payForm, setPayForm] = useState({ amount: "", description: "", payment_method: "dinheiro", credit_adjust: "0", receipt: null as File | null });
+  const [supplierForm, setSupplierForm] = useState<SupplierForm>({ name: "", document: "", phone: "", category: "", notes: "" });
+  const [payForm, setPayForm] = useState<SupplierPayForm>({ amount: "", description: "", payment_method: "dinheiro", credit_adjust: "0", receipt: null });
   
   // Media Upload Utilities
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,7 +191,7 @@ const Caixa = () => {
     if (regToUse) {
        const { data: entriesData, error: entriesError } = await supabase
          .from("cash_entries").select("*")
-         .eq("cash_register_id", (regToUse as any).id)
+         .eq("cash_register_id", regToUse.id)
          .order("confirmed", { ascending: true })
          .order("created_at", { ascending: false });
        
@@ -282,7 +287,7 @@ const Caixa = () => {
           // Find open register
           const { data: regList } = await supabase.from("cash_registers").select("id").eq("store_id", tx.store_id).eq("status", "open").limit(1);
           if (!regList || regList.length === 0) continue;
-          const regId = (regList[0] as any).id;
+          const regId = regList[0].id;
 
           const payload = {
             cash_register_id: regId, store_id: tx.store_id, type: "entrada",
@@ -326,9 +331,9 @@ const Caixa = () => {
         .limit(1);
 
       if (!openRegs || openRegs.length === 0) return;
-      const regId = (openRegs[0] as any).id;
+      const regId = openRegs[0].id;
 
-      const osIds = (deliveredOrders as any[]).map((o) => o.id);
+      const osIds = deliveredOrders.map((o) => o.id);
       const { data: reopenRows } = await supabase
         .from("service_order_history")
         .select("service_order_id, created_at")
@@ -354,7 +359,7 @@ const Caixa = () => {
         .gte("created_at", effectiveSince);
 
       let reconciledAny = false;
-      for (const o of deliveredOrders as any[]) {
+      for (const o of deliveredOrders) {
         const lastReopenAt = lastReopenMap.get(o.id) || null;
 
         const wasManuallyDeleted = (deletedEntryLogs || []).some((log) => {
@@ -493,7 +498,7 @@ const Caixa = () => {
       category: supplierForm.category || null,
       notes: supplierForm.notes || null,
       credit_balance: 0,
-    } as any);
+    });
     if (error) { toast.error("Erro ao salvar fornecedor: " + error.message); return; }
     toast.success("Fornecedor cadastrado!");
     setSupplierDialog(false);
@@ -526,7 +531,7 @@ const Caixa = () => {
       confirmed: true,
       receipt_url: receiptUrl,
       created_by: user?.id,
-    } as any);
+    });
 
     if (entryErr) { toast.error("Erro ao lançar saída: " + entryErr.message); return; }
 
@@ -546,7 +551,7 @@ const Caixa = () => {
     // 2. Update supplier credit balance
     const newBalance = Number(selectedSupplier.credit_balance) + amount + creditAdjust;
     await supabase.from("suppliers")
-      .update({ credit_balance: newBalance } as any)
+      .update({ credit_balance: newBalance })
       .eq("id", selectedSupplier.id);
 
     toast.success(`Pagamento de ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(amount)} registrado!`);
@@ -655,20 +660,20 @@ const Caixa = () => {
       opening_receipt_url: receiptUrl,
       status: "open",
       opened_at: new Date().toISOString(),
-    } as any).select().single();
+    }).select().single();
 
     if (error) { toast.error(error.message); setLoading(false); return; }
 
     await supabase.from("cash_entries").insert({
-      cash_register_id: (reg as any).id,
-      store_id: (reg as any).store_id,
+      cash_register_id: reg.id,
+      store_id: reg.store_id,
       type: "abertura",
       amount: parseFloat(openForm.amount) || 0,
       description: "Abertura de caixa",
       payment_method: "dinheiro",
       confirmed: true,
       created_by: user.id,
-    } as any);
+    });
 
     toast.success("Caixa aberto com sucesso!");
     setOpenDialog(false);
@@ -751,7 +756,7 @@ const Caixa = () => {
       type: "sangria", amount: parseFloat(sangriaForm.amount) || 0,
       description: "Sangria: " + sangriaForm.description, payment_method: "dinheiro",
       confirmed: true, created_by: user.id,
-    } as any);
+    });
 
     if (!error) {
       await supabase.from("transactions").insert({
@@ -793,11 +798,11 @@ const Caixa = () => {
 
       if (isSaleOrRegisterOp) {
         // Se for venda de PDV que foi contaminada por auto-vinculação anterior, restaura reference_id
-        if (desc.startsWith("PDV:") && (entry as any).reference_id) {
+        if (desc.startsWith("PDV:") && entry.reference_id) {
           const { data: isOs } = await supabase
             .from("service_orders")
             .select("id")
-            .eq("id", (entry as any).reference_id)
+            .eq("id", entry.reference_id)
             .maybeSingle();
 
           if (isOs) {
@@ -814,7 +819,7 @@ const Caixa = () => {
               .update({ reference_id: tx?.id || null })
               .eq("id", entry.id);
 
-            (entry as any).reference_id = tx?.id || null;
+            entry.reference_id = tx?.id || null;
           }
         }
 
@@ -823,14 +828,14 @@ const Caixa = () => {
         return;
       }
 
-      let foundOrder: any = null;
+      let foundOrder: ServiceOrder | null = null;
 
       // 1. Diretamente por reference_id
-      if ((entry as any).reference_id) {
+      if (entry.reference_id) {
         const { data } = await supabase
           .from("service_orders")
           .select("*")
-          .eq("id", (entry as any).reference_id)
+          .eq("id", entry.reference_id)
           .maybeSingle();
         if (data) foundOrder = data;
       }
@@ -846,8 +851,8 @@ const Caixa = () => {
             .select("*")
             .eq("order_number", orderNum);
 
-          if ((entry as any).store_id && (entry as any).store_id !== "all") {
-            osQuery = osQuery.eq("store_id", (entry as any).store_id);
+          if (entry.store_id && entry.store_id !== "all") {
+            osQuery = osQuery.eq("store_id", entry.store_id);
           }
 
           const { data } = await osQuery.maybeSingle();
@@ -886,7 +891,7 @@ const Caixa = () => {
             .from("service_order_items")
             .select("service_order_id")
             .in("product_id", matchingProductIds)
-            .limit(10) as any);
+            .limit(10));
           if (itemsByProd && itemsByProd.length > 0) {
             matchedOrderId = itemsByProd[0].service_order_id;
           }
@@ -898,7 +903,7 @@ const Caixa = () => {
             .from("service_order_items")
             .select("service_order_id")
             .eq("unit_cost", entry.amount)
-            .limit(10) as any);
+            .limit(10));
           if (itemsByCost && itemsByCost.length > 0) {
             matchedOrderId = itemsByCost[0].service_order_id;
           }
@@ -951,7 +956,7 @@ const Caixa = () => {
     }
   };
 
-  const handleOpenFullOs = async (order) => {
+  const handleOpenFullOs = async (order: ServiceOrder) => {
     setOsModalOrder(order);
     setOsModalOpen(true);
     setLoadingOsItems(true);
@@ -959,11 +964,11 @@ const Caixa = () => {
       const { data: items } = await (supabase
         .from("service_order_items")
         .select("*")
-        .eq("service_order_id", order.id) as any);
+        .eq("service_order_id", order.id));
 
       if (items && items.length > 0) {
         const productIds = Array.from(new Set(items.map((it) => it.product_id).filter(Boolean))) as string[];
-        const prodMap = new Map<string, any>();
+        const prodMap = new Map<string, Pick<Product, "id" | "name" | "brand" | "model">>();
         if (productIds.length > 0) {
           const { data: prods } = await supabase
             .from("products")
@@ -1020,7 +1025,7 @@ const Caixa = () => {
     }
 
     setLoading(true);
-    const confirmStoreId = (confirmEntry as any).store_id || activeStoreId;
+    const confirmStoreId = confirmEntry.store_id || activeStoreId;
 
     let finalReceiptUrl: string | null = null;
     if (filesToUpload.length > 0) {
@@ -1068,12 +1073,12 @@ const Caixa = () => {
     const deletedEntry = entries.find((e) => e.id === id) || null;
     await supabase.from("cash_entries").delete().eq("id", id);
     await logAction(
-      "DELETE_RECORD" as any,
+      "DELETE_RECORD",
       "cash_entries",
       id,
       deletedEntry
         ? {
-            reference_id: (deletedEntry as any).reference_id || null,
+            reference_id: deletedEntry.reference_id || null,
             description: deletedEntry.description || null,
             amount: deletedEntry.amount,
             payment_method: deletedEntry.payment_method,
@@ -1081,7 +1086,7 @@ const Caixa = () => {
           }
         : null,
       { reason },
-      (deletedEntry as any)?.store_id || activeStoreId
+      deletedEntry?.store_id || activeStoreId
     );
     toast.success("Lançamento apagado!");
     fetchRegister(activeStoreId);

@@ -1,4 +1,5 @@
-import type { CashEntry as CashEntryRow, CashRegister as CashRegisterRow } from "@/types/db";
+import type { CashEntry as CashEntryRow, CashRegister as CashRegisterRow, Product, ServiceOrderItem } from "@/types/db";
+export type { ServiceOrder } from "@/types/db";
 
 /** Lançamento do caixa como vem do banco. */
 export type CashEntry = CashEntryRow;
@@ -8,6 +9,14 @@ export type CashRegister = CashRegisterRow & {
   profiles?: { display_name: string } | null;
   stores?: { name: string } | null;
 };
+
+/** Peça da OS com o produto do estoque, quando a consulta traz. */
+export type OsItemWithProduct = ServiceOrderItem & {
+  products?: Partial<Pick<Product, "name" | "brand" | "model" | "parts_payment_voucher">> | null;
+};
+
+export interface SupplierForm { name: string; document: string; phone: string; category: string; notes: string }
+export interface SupplierPayForm { amount: string; description: string; payment_method: string; credit_adjust: string; receipt: File | null }
 
 export interface Supplier {
   id: string;

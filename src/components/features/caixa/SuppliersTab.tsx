@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, Truck, Building2, Phone, CreditCard } from "lucide-react";
+import type { CashRegister, SupplierForm, SupplierPayForm } from "./types";
 
 interface Supplier {
   id: string; store_id: string | null; name: string; document: string | null;
@@ -18,17 +19,17 @@ interface SuppliersTabProps {
   suppliers: Supplier[];
   setSupplierDialog: (open: boolean) => void;
   supplierDialog: boolean;
-  supplierForm: any;
-  setSupplierForm: any;
+  supplierForm: SupplierForm;
+  setSupplierForm: React.Dispatch<React.SetStateAction<SupplierForm>>;
   handleSaveSupplier: () => void;
   setSelectedSupplier: (s: Supplier | null) => void;
   setPaySupplierDialog: (open: boolean) => void;
   paySupplierDialog: boolean;
-  payForm: any;
-  setPayForm: any;
+  payForm: SupplierPayForm;
+  setPayForm: React.Dispatch<React.SetStateAction<SupplierPayForm>>;
   handlePaySupplier: () => void;
   handleDeleteSupplier: (id: string) => void;
-  currentRegister: any;
+  currentRegister: CashRegister | null;
   formatCurrency: (v: number) => string;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   cameraInputRef: React.RefObject<HTMLInputElement | null>;

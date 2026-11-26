@@ -338,7 +338,7 @@ export const CashActionModals: React.FC<CashActionModalsProps> = ({
           <div className="space-y-4 mt-2">
             <Select
               value={entryForm.type}
-              onValueChange={(v) => setEntryForm((f) => ({ ...f, type: v as any }))}
+              onValueChange={(v) => setEntryForm((f) => ({ ...f, type: v as "entrada" | "saida" }))}
             >
               <SelectTrigger>
                 <SelectValue />
