@@ -151,7 +151,7 @@ describe("passo a passo", () => {
 
 describe("ponte com a Nova Venda e acesso", () => {
   const ev: TradeEvaluation = {
-    id: "e1", store_id: "a", created_by: "u", customer_name: "Ana", customer_phone: null, model_id: "m", brand: "Apple",
+    id: "e1", store_id: "a", created_by: "u", customer_name: "Ana", customer_phone: null, customer_email: null, model_id: "m", brand: "Apple",
     model: "iPhone 13", storage: "128 GB", imei: "35", base_price: 2000, answers: [], discount_total: 0, offer_min: 1800,
     offer_max: 2000, blocked: false, status: "aceita", agreed_value: 1900, notes: null, sale_id: null, created_at: "",
   };

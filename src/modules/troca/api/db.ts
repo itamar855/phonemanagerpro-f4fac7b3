@@ -100,11 +100,12 @@ export interface NewEvaluation {
   agreed_value: number | null;
   customer_name: string | null;
   customer_phone: string | null;
+  customer_email: string | null;
   imei: string | null;
   notes: string | null;
 }
 
-const EVAL_COLS = "id, store_id, created_by, customer_name, customer_phone, model_id, brand, model, storage, imei, base_price, answers, discount_total, offer_min, offer_max, blocked, status, agreed_value, notes, sale_id, created_at";
+const EVAL_COLS = "id, store_id, created_by, customer_name, customer_phone, customer_email, model_id, brand, model, storage, imei, base_price, answers, discount_total, offer_min, offer_max, blocked, status, agreed_value, notes, sale_id, created_at";
 
 function toEvaluation(e: TradeEvaluation): TradeEvaluation {
   return {
@@ -126,7 +127,7 @@ export async function createEvaluation(ev: NewEvaluation): Promise<TradeEvaluati
 
 export async function updateEvaluation(
   id: string,
-  patch: Partial<Pick<TradeEvaluation, "status" | "agreed_value" | "customer_name" | "customer_phone" | "imei" | "notes">>,
+  patch: Partial<Pick<TradeEvaluation, "status" | "agreed_value" | "customer_name" | "customer_phone" | "customer_email" | "imei" | "notes">>,
 ): Promise<TradeEvaluation> {
   const { data, error } = await db.from("tradein_evaluations").update(patch).eq("id", id).select(EVAL_COLS).single();
   throwIf(error);

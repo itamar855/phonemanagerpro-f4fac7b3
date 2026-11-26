@@ -57,7 +57,7 @@ export default function HistoricoPage() {
     const q = search.trim().toLowerCase();
     return list.filter((e) =>
       (filter === "todas" || e.status === filter) &&
-      (!q || [e.customer_name, e.customer_phone, e.model, e.storage, e.imei].some((v) => v?.toLowerCase().includes(q))));
+      (!q || [e.customer_name, e.customer_phone, e.customer_email, e.model, e.storage, e.imei].some((v) => v?.toLowerCase().includes(q))));
   }, [list, filter, search]);
   const open = list.find((e) => e.id === openId) ?? null;
 
@@ -176,6 +176,7 @@ export default function HistoricoPage() {
                   ))}
                   {open.customer_name && <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">Cliente</dt><dd>{open.customer_name}</dd></div>}
                   {open.customer_phone && <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">WhatsApp</dt><dd>{open.customer_phone}</dd></div>}
+                  {open.customer_email && <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">E-mail</dt><dd className="min-w-0 truncate">{open.customer_email}</dd></div>}
                   {open.imei && <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">IMEI</dt><dd className="tabular-nums">{open.imei}</dd></div>}
                   {open.notes && <div className="py-2"><dt className="text-muted-foreground">Observação</dt><dd className="mt-1 whitespace-pre-wrap">{open.notes}</dd></div>}
                 </dl>
