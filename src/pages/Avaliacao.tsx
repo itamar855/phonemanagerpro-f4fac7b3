@@ -75,7 +75,7 @@ export default function Avaliacao() {
       
       setSuccess(true);
       toast.success("Avaliação enviada com sucesso! Em breve entraremos em contato.");
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
       toast.error(error.message || "Erro ao enviar a avaliação. Tente novamente.");
     } finally {

@@ -115,7 +115,7 @@ export const ComissoesTab: React.FC<ComissoesTabProps> = ({
     if (s.payment_method === "dinheiro" && s.cash_register_id) {
       try {
         const { data } = await (supabase
-          .from("cash_registers" as any)
+          .from("cash_registers")
           .select("status")
           .eq("id", s.cash_register_id)
           .maybeSingle() as any);
@@ -170,7 +170,7 @@ export const ComissoesTab: React.FC<ComissoesTabProps> = ({
       setCancellingSettlement(null);
       setCancelReason("");
       fetchRanking();
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err?.message || "Erro ao anular liquidação de comissão.");
     } finally {
       setIsCancelling(false);

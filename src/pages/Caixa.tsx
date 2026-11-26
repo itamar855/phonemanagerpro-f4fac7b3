@@ -106,7 +106,7 @@ const Caixa = () => {
     setLoading(true);
     
     // 1. Busca de Caixas Abertos
-    let openQuery = supabase.from("cash_registers" as any).select("*").eq("status", "open");
+    let openQuery = supabase.from("cash_registers").select("*").eq("status", "open");
     
     // Se NÃO for admin, filtramos pela loja ativa
     if (userRole !== "admin" && storeId !== "all") {
@@ -185,7 +185,7 @@ const Caixa = () => {
     
     if (regToUse) {
        const { data: entriesData, error: entriesError } = await supabase
-         .from("cash_entries" as any).select("*")
+         .from("cash_entries").select("*")
          .eq("cash_register_id", (regToUse as any).id)
          .order("confirmed", { ascending: true })
          .order("created_at", { ascending: false });
@@ -212,7 +212,7 @@ const Caixa = () => {
                  const cName = osData.customer_name || "Cliente";
                  const correctedDesc = `OS #${osData.order_number} — ${sName} (${cName})`;
 
-                 await supabase.from("cash_entries" as any).update({ description: correctedDesc }).eq("id", entry.id);
+                 await supabase.from("cash_entries").update({ description: correctedDesc }).eq("id", entry.id);
                  await supabase.from("transactions").update({ description: `${correctedDesc} [${(entry.payment_method || "dinheiro").toUpperCase()}]` })
                    .like("description", `OS #${osData.order_number} —%undefined%`);
 
@@ -229,7 +229,7 @@ const Caixa = () => {
     // 2. Histórico
     if (userRole === "admin" || activeTab === "history") {
       setHistoryLoading(true);
-      let historyQuery = supabase.from("cash_registers" as any)
+      let historyQuery = supabase.from("cash_registers")
         .select("*")
         .eq("status", "closed")
         .order("opened_at", { ascending: false })
@@ -276,11 +276,11 @@ const Caixa = () => {
           const cleanDesc = tx.description.replace(/\[MISTO:.*\]/, '').trim();
           
           // Check if already reconciled
-          const { data: ceCheck } = await supabase.from("cash_entries" as any).select("id").like("description", `${cleanDesc}%`).limit(1);
+          const { data: ceCheck } = await supabase.from("cash_entries").select("id").like("description", `${cleanDesc}%`).limit(1);
           if (ceCheck && ceCheck.length > 0) continue;
           
           // Find open register
-          const { data: regList } = await supabase.from("cash_registers" as any).select("id").eq("store_id", tx.store_id).eq("status", "open").limit(1);
+          const { data: regList } = await supabase.from("cash_registers").select("id").eq("store_id", tx.store_id).eq("status", "open").limit(1);
           if (!regList || regList.length === 0) continue;
           const regId = (regList[0] as any).id;
 
@@ -289,9 +289,9 @@ const Caixa = () => {
             confirmed: false, created_by: tx.created_by, created_at: tx.created_at
           };
 
-          if (parsed.dinheiro > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "dinheiro", amount: parsed.dinheiro, description: cleanDesc + " (Parte em Dinheiro)" });
-          if (parsed.pix > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "pix", amount: parsed.pix, description: cleanDesc + " (Parte em PIX)" });
-          if (parsed.cartao_credito > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "cartao_credito", amount: parsed.cartao_credito, description: cleanDesc + " (Parte em Cartão)" });
+          if (parsed.dinheiro > 0) await supabase.from("cash_entries").insert({ ...payload, payment_method: "dinheiro", amount: parsed.dinheiro, description: cleanDesc + " (Parte em Dinheiro)" });
+          if (parsed.pix > 0) await supabase.from("cash_entries").insert({ ...payload, payment_method: "pix", amount: parsed.pix, description: cleanDesc + " (Parte em PIX)" });
+          if (parsed.cartao_credito > 0) await supabase.from("cash_entries").insert({ ...payload, payment_method: "cartao_credito", amount: parsed.cartao_credito, description: cleanDesc + " (Parte em Cartão)" });
           
           reconciledAny = true;
         } catch (e) {
@@ -319,7 +319,7 @@ const Caixa = () => {
       if (!deliveredOrders || deliveredOrders.length === 0) return;
 
       const { data: openRegs } = await supabase
-        .from("cash_registers" as any)
+        .from("cash_registers")
         .select("id, store_id")
         .eq("store_id", activeStoreId)
         .eq("status", "open")
@@ -347,7 +347,7 @@ const Caixa = () => {
       }
 
       const { data: deletedEntryLogs } = await supabase
-        .from("audit_logs" as any)
+        .from("audit_logs")
         .select("before_state, created_at")
         .eq("action", "DELETE_RECORD")
         .eq("entity_type", "cash_entries")
@@ -371,7 +371,7 @@ const Caixa = () => {
         if (wasManuallyDeleted) continue;
 
         let existingRefQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("reference_id", o.id);
@@ -381,7 +381,7 @@ const Caixa = () => {
         if (existingEntries && existingEntries.length > 0) continue;
 
         let existingDescQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("store_id", o.store_id)
@@ -418,7 +418,7 @@ const Caixa = () => {
 
         if (cash === 0 && card === 0 && pix === 0 && other === 0) {
           const method = o.payment_method || "dinheiro";
-          await supabase.from("cash_entries" as any).insert({
+          await supabase.from("cash_entries").insert({
             ...basePayload,
             payment_method: method,
             amount,
@@ -427,7 +427,7 @@ const Caixa = () => {
           });
         } else {
           if (cash > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "dinheiro",
               amount: cash,
@@ -436,7 +436,7 @@ const Caixa = () => {
             });
           }
           if (card > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "cartao_credito",
               amount: card,
@@ -444,7 +444,7 @@ const Caixa = () => {
             });
           }
           if (pix > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "pix",
               amount: pix,
@@ -452,7 +452,7 @@ const Caixa = () => {
             });
           }
           if (other > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "outro",
               amount: other,
@@ -470,7 +470,7 @@ const Caixa = () => {
   // ── Suppliers ────────────────────────────────────────────
   const fetchSuppliers = async () => {
     const { data, error } = await supabase
-      .from("suppliers" as any)
+      .from("suppliers")
       .select("*")
       .order("name");
     if (!error) setSuppliers((data as unknown as Supplier[]) ?? []);
@@ -484,7 +484,7 @@ const Caixa = () => {
       toast.error("Selecione uma loja específica no topo antes de cadastrar um fornecedor.");
       return;
     }
-    const { error } = await supabase.from("suppliers" as any).insert({
+    const { error } = await supabase.from("suppliers").insert({
       store_id: activeStoreId,
       created_by: user?.id,
       name: supplierForm.name,
@@ -516,7 +516,7 @@ const Caixa = () => {
     }
 
     // 1. Cash out from register
-    const { error: entryErr } = await supabase.from("cash_entries" as any).insert({
+    const { error: entryErr } = await supabase.from("cash_entries").insert({
       cash_register_id: currentRegister.id,
       store_id: currentRegister.store_id,
       type: "saida",
@@ -545,7 +545,7 @@ const Caixa = () => {
 
     // 2. Update supplier credit balance
     const newBalance = Number(selectedSupplier.credit_balance) + amount + creditAdjust;
-    await supabase.from("suppliers" as any)
+    await supabase.from("suppliers")
       .update({ credit_balance: newBalance } as any)
       .eq("id", selectedSupplier.id);
 
@@ -558,7 +558,7 @@ const Caixa = () => {
   };
 
   const handleDeleteSupplier = async (id: string) => {
-    const { error } = await supabase.from("suppliers" as any).delete().eq("id", id);
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
     if (error) { toast.error("Erro ao remover fornecedor"); return; }
     toast.success("Fornecedor removido!");
     fetchSuppliers();
@@ -632,7 +632,7 @@ const Caixa = () => {
     // Trava de segurança: impede abrir múltiplos caixas simultâneos para a mesma loja
     if (targetStoreId) {
       const { data: existingOpen } = await supabase
-        .from("cash_registers" as any)
+        .from("cash_registers")
         .select("id, opened_at")
         .eq("store_id", targetStoreId)
         .eq("status", "open")
@@ -648,7 +648,7 @@ const Caixa = () => {
 
     if (openForm.receipt) receiptUrl = await uploadReceipt(openForm.receipt, `${targetStoreId}/abertura/${Date.now()}-${openForm.receipt.name}`);
 
-    const { data: reg, error } = await supabase.from("cash_registers" as any).insert({
+    const { data: reg, error } = await supabase.from("cash_registers").insert({
       store_id: activeStoreId === "all" ? userStoreIds[0] : activeStoreId,
       opened_by: user.id,
       opening_amount: parseFloat(openForm.amount) || 0,
@@ -659,7 +659,7 @@ const Caixa = () => {
 
     if (error) { toast.error(error.message); setLoading(false); return; }
 
-    await supabase.from("cash_entries" as any).insert({
+    await supabase.from("cash_entries").insert({
       cash_register_id: (reg as any).id,
       store_id: (reg as any).store_id,
       type: "abertura",
@@ -695,7 +695,7 @@ const Caixa = () => {
     let receiptUrl: string | null = null;
     if (closeForm.receipt) receiptUrl = await uploadReceipt(closeForm.receipt, `${currentRegister.store_id}/fechamento/${currentRegister.id}-${Date.now()}`);
 
-    const { error: updateError } = await supabase.from("cash_registers" as any).update({
+    const { error: updateError } = await supabase.from("cash_registers").update({
       closing_amount: closingAmount, expected_amount: totalTotal, difference,
       difference_reason: closeForm.reason || null,
       closing_note: closeForm.note || null,
@@ -720,7 +720,7 @@ const Caixa = () => {
   const handleEntry = async () => {
     if (!currentRegister || !user) return;
     setLoading(true);
-    await supabase.from("cash_entries" as any).insert({
+    await supabase.from("cash_entries").insert({
       cash_register_id: currentRegister.id, store_id: currentRegister.store_id,
       type: entryForm.type, amount: parseFloat(entryForm.amount) || 0,
       description: entryForm.description, payment_method: entryForm.payment_method,
@@ -746,7 +746,7 @@ const Caixa = () => {
   const handleSangria = async () => {
     if (!currentRegister || !user) return;
     setLoading(true);
-    const { error } = await supabase.from("cash_entries" as any).insert({
+    const { error } = await supabase.from("cash_entries").insert({
       cash_register_id: currentRegister.id, store_id: currentRegister.store_id,
       type: "sangria", amount: parseFloat(sangriaForm.amount) || 0,
       description: "Sangria: " + sangriaForm.description, payment_method: "dinheiro",
@@ -810,7 +810,7 @@ const Caixa = () => {
               .maybeSingle();
 
             await supabase
-              .from("cash_entries" as any)
+              .from("cash_entries")
               .update({ reference_id: tx?.id || null })
               .eq("id", entry.id);
 
@@ -855,7 +855,7 @@ const Caixa = () => {
             foundOrder = data;
             // Só auto-vincula se a descrição for comprovadamente formato de OS
             if (entry.description.startsWith("OS #") || entry.description.includes("(OS #")) {
-              supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+              supabase.from("cash_entries").update({ reference_id: data.id }).eq("id", entry.id).then();
             }
           }
         }
@@ -883,7 +883,7 @@ const Caixa = () => {
         let matchedOrderId: string | null = null;
         if (matchingProductIds.length > 0) {
           const { data: itemsByProd } = await (supabase
-            .from("service_order_items" as any)
+            .from("service_order_items")
             .select("service_order_id")
             .in("product_id", matchingProductIds)
             .limit(10) as any);
@@ -895,7 +895,7 @@ const Caixa = () => {
         // Fallback por custo unitário caso não encontre por nome
         if (!matchedOrderId) {
           const { data: itemsByCost } = await (supabase
-            .from("service_order_items" as any)
+            .from("service_order_items")
             .select("service_order_id")
             .eq("unit_cost", entry.amount)
             .limit(10) as any);
@@ -912,7 +912,7 @@ const Caixa = () => {
             .maybeSingle();
           if (data) {
             foundOrder = data;
-            supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+            supabase.from("cash_entries").update({ reference_id: data.id }).eq("id", entry.id).then();
           }
         }
       }
@@ -928,7 +928,7 @@ const Caixa = () => {
             .limit(1);
           if (osList && osList.length > 0) {
             foundOrder = osList[0];
-            supabase.from("cash_entries" as any).update({ reference_id: foundOrder.id }).eq("id", entry.id).then();
+            supabase.from("cash_entries").update({ reference_id: foundOrder.id }).eq("id", entry.id).then();
           }
         }
       }
@@ -936,7 +936,7 @@ const Caixa = () => {
       setLinkedServiceOrder(foundOrder);
       if (foundOrder) {
         const { data: items } = await supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select(`*, products (name, brand, model, parts_payment_voucher)`)
           .eq("service_order_id", foundOrder.id);
         setLinkedOrderItems(items || []);
@@ -957,7 +957,7 @@ const Caixa = () => {
     setLoadingOsItems(true);
     try {
       const { data: items } = await (supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("*")
         .eq("service_order_id", order.id) as any);
 
@@ -1042,7 +1042,7 @@ const Caixa = () => {
       orderUrl = await uploadReceipt(confirmOrderFile, `${confirmStoreId}/pedido-confirmacao/${confirmEntry.id}-${Date.now()}`);
     }
 
-    const { error: updateErr } = await supabase.from("cash_entries" as any).update({
+    const { error: updateErr } = await supabase.from("cash_entries").update({
       confirmed: true,
       ...(finalReceiptUrl ? { receipt_url: finalReceiptUrl } : {}),
       ...(orderUrl ? { supplier_order_receipt_url: orderUrl } : {}),
@@ -1066,7 +1066,7 @@ const Caixa = () => {
   const handleDeleteEntry = async (id: string, reason: string) => {
     setLoading(true);
     const deletedEntry = entries.find((e) => e.id === id) || null;
-    await supabase.from("cash_entries" as any).delete().eq("id", id);
+    await supabase.from("cash_entries").delete().eq("id", id);
     await logAction(
       "DELETE_RECORD" as any,
       "cash_entries",
@@ -1090,7 +1090,7 @@ const Caixa = () => {
 
   const handleUnconfirmEntry = async (id: string, reason: string) => {
     setLoading(true);
-    await supabase.from("cash_entries" as any).update({ confirmed: false, receipt_url: null }).eq("id", id);
+    await supabase.from("cash_entries").update({ confirmed: false, receipt_url: null }).eq("id", id);
     logAction("UPDATE_RECORD" as any, "cash_entries", id, { status: "confirmed" }, { status: "unconfirmed", reason });
     toast.success("Lançamento desconfirmado!");
     fetchRegister(activeStoreId);
@@ -1103,7 +1103,7 @@ const Caixa = () => {
     setLoadingHistoryEntries(true);
     
     const { data: entriesData, error } = await supabase
-      .from("cash_entries" as any)
+      .from("cash_entries")
       .select("*")
       .eq("cash_register_id", reg.id)
       .order("created_at", { ascending: false });
@@ -1118,7 +1118,7 @@ const Caixa = () => {
 
   const handleReopenRegister = async (id: string, reason: string) => {
     setLoading(true);
-    await supabase.from("cash_registers" as any).update({ status: "open", closed_at: null }).eq("id", id);
+    await supabase.from("cash_registers").update({ status: "open", closed_at: null }).eq("id", id);
     logAction("UPDATE_RECORD" as any, "cash_registers", id, { status: "closed" }, { status: "open", reason });
     toast.success("Caixa reaberto!");
     setActiveTab("current");

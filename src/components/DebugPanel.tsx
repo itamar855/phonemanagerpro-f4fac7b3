@@ -66,7 +66,7 @@ const DebugPanel = () => {
         } else {
           results.push({ name: table, status: "ok", rows: count ?? 0, ms });
         }
-      } catch (e: any) {
+      } catch (e) {
         results.push({ name: table, status: "error", error: e.message, ms: Math.round(performance.now() - start) });
       }
     }

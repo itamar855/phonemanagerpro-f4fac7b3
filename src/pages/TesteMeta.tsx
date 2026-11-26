@@ -57,7 +57,7 @@ const TesteMeta = () => {
         setResult(profile);
         toast.success("Dados capturados com sucesso!");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       toast.error("Erro ao realizar o teste: " + err.message);
     } finally {

@@ -197,7 +197,7 @@ const Clientes = () => {
       toast.dismiss(toastId);
       toast.success(`${entries.length} novos clientes sincronizados!`);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.dismiss(toastId);
       toast.error("Erro na sincronização: " + err.message);
     } finally {

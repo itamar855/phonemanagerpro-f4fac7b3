@@ -60,7 +60,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
       toast.success(`NFC-e nº ${inv.number} autorizada pela SEFAZ com sucesso!`);
       setSelectedViewSale(null);
       navigate("/notas-fiscais");
-    } catch (e: any) {
+    } catch (e) {
       toast.error("Erro ao emitir nota fiscal: " + e.message);
     } finally {
       setEmitindoFiscal(false);

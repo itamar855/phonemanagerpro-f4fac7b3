@@ -106,7 +106,7 @@ export default function OSPublica() {
           } else {
             // Tentativa via tabela direta caso autenticado ou policy ativa
             const { data: directPhotos } = await supabase
-              .from("service_order_photos" as any)
+              .from("service_order_photos")
               .select("id, photo_url, stage, created_at")
               .eq("service_order_id", id)
               .order("created_at", { ascending: true });
@@ -163,7 +163,7 @@ export default function OSPublica() {
       const doc = await generateOSPdf({ ...orderObj, ...extraFields }, storeObj, "Técnico Especializado", window.location.href, items);
       saveAndOpenPdf(doc, `OS_${order.order_number}_${order.device_model || 'aparelho'}`, true);
       toast.success("Download da Ordem de Serviço concluído!");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao gerar PDF da OS:", err);
       toast.error("Erro ao gerar PDF: " + (err?.message || "Tente novamente"));
     } finally {

@@ -27,7 +27,7 @@ const val = async <T = any>(sql: string, params: any[] = []): Promise<T> => {
   return r.rows[0] ? Object.values(r.rows[0])[0] : (undefined as T);
 };
 const errorOf = async (sql: string, params: any[] = []) => {
-  try { await db.query(sql, params); return null; } catch (e: any) { return String(e.message); }
+  try { await db.query(sql, params); return null; } catch (e) { return String(e.message); }
 };
 const asUser = async <T>(uid: string | null, fn: () => Promise<T>) => {
   await db.exec(uid

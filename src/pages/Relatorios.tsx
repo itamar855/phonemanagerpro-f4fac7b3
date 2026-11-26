@@ -168,7 +168,7 @@ const Relatorios = () => {
     let osItems: any[] = [];
     if (os.length > 0) {
       const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("service_order_id, unit_cost, quantity")
         .in("service_order_id", os.map((o: any) => o.id));
       osItems = itemsData ?? [];
@@ -259,7 +259,7 @@ const Relatorios = () => {
     let osItems: any[] = [];
     if (all.length > 0) {
       const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("service_order_id, unit_cost, quantity")
         .in("service_order_id", all.map((o: any) => o.id));
       osItems = itemsData ?? [];
@@ -352,7 +352,7 @@ const Relatorios = () => {
   const fetchCaixa = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const { data: registers } = await supabase.from("cash_registers" as any).select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false });
+    const { data: registers } = await supabase.from("cash_registers").select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false });
     const all = ((registers ?? []) as any[]).filter(r => effectiveStoreId === "all" || r.store_id === effectiveStoreId);
     const closed = all.filter(r => r.status === "closed");
     setCaixaData(all.map(r => ({ data: new Date(r.created_at).toLocaleDateString("pt-BR"), loja: (storeMap.get(r.store_id) as any)?.name ?? "—", status: r.status === "open" ? "Aberto" : "Fechado", abertura: Number(r.opening_amount || 0), fechamento: Number(r.closing_amount || 0), esperado: Number(r.expected_amount || 0), diferenca: Number(r.difference || 0), motivo: r.difference_reason ?? "" })));
@@ -418,7 +418,7 @@ const Relatorios = () => {
     if (os.length > 0) {
       const osIdsList = os.map((o: any) => o.id);
       let cashEntriesQuery = supabase
-        .from("cash_entries" as any)
+        .from("cash_entries")
         .select("reference_id, description, confirmed, created_at, store_id")
         .eq("type", "entrada");
       if (effectiveStoreId && effectiveStoreId !== "all") {
@@ -427,7 +427,7 @@ const Relatorios = () => {
 
       const [itemsRes, entriesRes, reopenRes] = await Promise.all([
         supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, unit_cost, quantity")
           .in("service_order_id", osIdsList),
         cashEntriesQuery,
@@ -564,7 +564,7 @@ const Relatorios = () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     // Leads = contatos novos do CRM no período (sem equipe/fornecedor/pessoal); convertido = virou cliente
-    let q = supabase.from("crm_contacts" as any).select("id, origin_channel, customer_id")
+    let q = supabase.from("crm_contacts").select("id, origin_channel, customer_id")
       .eq("ignored", false).gte("created_at", start).lte("created_at", end);
     if (effectiveStoreId && effectiveStoreId !== "all") q = q.eq("store_id", effectiveStoreId);
     const { data: rows } = await q;
@@ -672,7 +672,7 @@ const Relatorios = () => {
     const [salesRes, osRes, caixaRes, txRes] = await Promise.all([
       q(supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end)),
       q(supabase.from("service_orders").select("*").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)),
-      q(supabase.from("cash_registers" as any).select("*").gte("created_at", start).lte("created_at", end)),
+      q(supabase.from("cash_registers").select("*").gte("created_at", start).lte("created_at", end)),
       q(supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end)),
     ]);
 
@@ -690,7 +690,7 @@ const Relatorios = () => {
     const cashIds = caixas.map((c: any) => c.id);
     let cashEntries: any[] = [];
     if (cashIds.length > 0) {
-      const { data: ce } = await supabase.from("cash_entries" as any)
+      const { data: ce } = await supabase.from("cash_entries")
         .select("*")
         .in("cash_register_id", cashIds)
         .eq("confirmed", true);

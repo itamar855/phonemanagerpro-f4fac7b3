@@ -151,7 +151,7 @@ const Estoque = () => {
     setLoading(true);
     
     let productsQuery = supabase.from("products").select("*");
-    let accQuery = supabase.from("accessories" as any).select("*");
+    let accQuery = supabase.from("accessories").select("*");
 
     if (activeStoreId !== "all") {
       productsQuery = productsQuery.eq("store_id", activeStoreId);
@@ -166,8 +166,8 @@ const Estoque = () => {
         ? supabase.from("products").select("*").eq("store_id", activeStoreId).in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
         : supabase.from("products").select("*").in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
       ).order("created_at", { ascending: false }),
-      (supabase.from("suppliers" as any).select("id, name, credit_balance").order("name") as any),
-      (supabase.from("product_repairs" as any).select("id, product_id, status, product_repair_items(unit_cost, quantity)").eq("status", "completed") as any),
+      (supabase.from("suppliers").select("id, name, credit_balance").order("name") as any),
+      (supabase.from("product_repairs").select("id, product_id, status, product_repair_items(unit_cost, quantity)").eq("status", "completed") as any),
     ]);
 
     const pErr = productsRes.error;
@@ -224,14 +224,14 @@ const Estoque = () => {
     if (error) {
       toast.error(error.message.includes("imei") ? "IMEI já cadastrado!" : error.message);
     } else if (data) {
-      await supabase.from("product_history" as any).insert({
+      await supabase.from("product_history").insert({
         product_id: data.id, action: "Entrada inicial", new_cost: data.cost_price, created_by: user.id,
       });
 
       if (form.needsRepair && form.selectedRepairs.length > 0) {
         // Criar o registro de reparo pendente associado
         const { error: repairError } = await supabase
-          .from("product_repairs" as any)
+          .from("product_repairs")
           .insert({
             product_id: data.id,
             store_id: activeStoreId,
@@ -258,7 +258,7 @@ const Estoque = () => {
 
   const loadHistory = async (p: Tables<"products">) => {
     setHistoryProduct(p);
-    const { data } = await supabase.from("product_history" as any).select(`*, created_by_profile:profiles!product_history_created_by_fkey(display_name)`).eq("product_id", p.id).order("created_at", { ascending: false });
+    const { data } = await supabase.from("product_history").select(`*, created_by_profile:profiles!product_history_created_by_fkey(display_name)`).eq("product_id", p.id).order("created_at", { ascending: false });
     setProductHistory(data ?? []);
     setHistoryOpen(true);
   };
@@ -280,11 +280,11 @@ const Estoque = () => {
 
     let error;
     if (editAcc) {
-      ({ error } = await supabase.from("accessories" as any).update(payload).eq("id", editAcc.id));
+      ({ error } = await supabase.from("accessories").update(payload).eq("id", editAcc.id));
     } else {
       // Verifica se o acessório já existe
       const { data: existingAcc } = await supabase
-        .from("accessories" as any)
+        .from("accessories")
         .select("id")
         .ilike("name", accForm.name)
         .eq("store_id", activeStoreId)
@@ -295,7 +295,7 @@ const Estoque = () => {
         setLoading(false);
         return;
       }
-      ({ error } = await supabase.from("accessories" as any).insert(payload));
+      ({ error } = await supabase.from("accessories").insert(payload));
     }
 
     if (error) {
@@ -314,7 +314,7 @@ const Estoque = () => {
   const handleDeleteAcc = async (accId: string, reason: string) => {
     const acc = accessories.find(a => a.id === accId);
     if (!acc) return;
-    const { error } = await supabase.from("accessories" as any).delete().eq("id", accId);
+    const { error } = await supabase.from("accessories").delete().eq("id", accId);
     if (error) toast.error(error.message);
     else { 
       logAction("DELETE_RECORD", "accessories", acc.id, acc, { reason }, acc.store_id);
@@ -333,7 +333,7 @@ const Estoque = () => {
     } else {
       logAction("TRANSFER_STOCK", "products", transferProduct.id, transferProduct, { ...transferProduct, store_id: transferStoreId, reason: justification }, transferStoreId);
       const storeMap = new Map(stores.map(s => [s.id, s.name]));
-      await supabase.from("product_history" as any).insert({
+      await supabase.from("product_history").insert({
         product_id: transferProduct.id, action: "Transferência de Loja", 
         notes: `Transferência de ${storeMap.get(transferProduct.store_id) || "Origem"} para ${storeMap.get(transferStoreId) || "Destino"}. Motivo: ${justification}`,
         created_by: user.id,
@@ -371,7 +371,7 @@ const Estoque = () => {
       }
 
       // 3. Conciliar peças consumidas em Ordens de Serviço
-      const { data: osItems } = await supabase.from("service_order_items" as any).select("product_id");
+      const { data: osItems } = await supabase.from("service_order_items").select("product_id");
       const osProductIds = [...new Set((osItems || []).map((i: any) => i.product_id).filter(Boolean))];
       let reconciledOSParts = 0;
       if (osProductIds.length > 0) {
@@ -407,7 +407,7 @@ const Estoque = () => {
         toast.info("O estoque, vendas e ordens de serviço já estão 100% conciliados.");
       }
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro na conciliação: " + err.message);
     } finally {
       setLoading(false);
@@ -443,7 +443,7 @@ const Estoque = () => {
 
       let registerId = null;
       if (partForm.launch_cash_out) {
-        const { data: register } = (await supabase.from("cash_registers" as any).select("id").eq("store_id", activeStoreId).eq("status", "open").eq("opened_by", user?.id).maybeSingle()) as any;
+        const { data: register } = (await supabase.from("cash_registers").select("id").eq("store_id", activeStoreId).eq("status", "open").eq("opened_by", user?.id).maybeSingle()) as any;
         if (!register) {
           toast.error("Não há caixa aberto para esta loja! Abra o caixa antes de registrar a compra com saída.");
           setLoading(false);
@@ -464,7 +464,7 @@ const Estoque = () => {
           remainingAmount -= creditToUse;
 
           const { error: supUpdateErr } = await supabase
-            .from("suppliers" as any)
+            .from("suppliers")
             .update({ credit_balance: Number(selectedSup.credit_balance) - creditToUse } as any)
             .eq("id", partForm.supplier_id);
 
@@ -494,7 +494,7 @@ const Estoque = () => {
         const desc = `Compra de Peça: ${partForm.name}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}${creditToUse > 0 ? ` (Abatido R$ ${creditToUse.toFixed(2)} do crédito)` : ""}`;
         
         if (partForm.launch_cash_out && registerId && remainingAmount > 0) {
-          await supabase.from("cash_entries" as any).insert({
+          await supabase.from("cash_entries").insert({
             cash_register_id: registerId,
             store_id: activeStoreId,
             type: "saida",
@@ -528,7 +528,7 @@ const Estoque = () => {
         setPartVoucherFile(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao processar cadastro: " + err.message);
     }
     setLoading(false);
@@ -548,7 +548,7 @@ const Estoque = () => {
       if (prodErr) throw prodErr;
 
       const { data: supplierObj, error: suppErr } = await supabase
-        .from("suppliers" as any)
+        .from("suppliers")
         .select("credit_balance")
         .eq("id", p.supplier_id)
         .single() as any;
@@ -558,7 +558,7 @@ const Estoque = () => {
       const newBalance = Number(supplierObj.credit_balance || 0) + Number(p.cost_price);
 
       const { error: supUpdateErr } = await supabase
-        .from("suppliers" as any)
+        .from("suppliers")
         .update({ credit_balance: newBalance } as any)
         .eq("id", p.supplier_id);
 
@@ -568,7 +568,7 @@ const Estoque = () => {
 
       toast.success(`Peça devolvida! R$ ${p.cost_price.toFixed(2)} creditados ao fornecedor.`);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao processar devolução: " + err.message);
     }
     setLoading(false);
@@ -602,7 +602,7 @@ const Estoque = () => {
       clearInterval(progressInterval);
       toast.success("Comprovante enviado com sucesso!", { id: toastId });
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       clearInterval(progressInterval);
       toast.error("Erro ao enviar comprovante: " + err.message, { id: toastId });
     } finally {
@@ -682,7 +682,7 @@ const Estoque = () => {
     } else {
       logAction("UPDATE_RECORD", "products", editProduct.id, editProduct, { ...updatePayload, justification: editForm.justification }, editForm.store_id);
       if (oldCost !== newCost) {
-        await supabase.from("product_history" as any).insert({
+        await supabase.from("product_history").insert({
           product_id: editProduct.id,
           action: "Edição",
           old_cost: oldCost,
@@ -714,7 +714,7 @@ const Estoque = () => {
     if (error) {
       toast.error("Erro ao salvar defeitos: " + error.message);
     } else {
-      await supabase.from("product_history" as any).insert({
+      await supabase.from("product_history").insert({
         product_id: defectsProduct.id,
         action: "Atualização de Defeitos",
         notes: `Defeitos atualizados: [${oldDefects.join(", ")}] → [${newDefects.join(", ")}]`,
@@ -759,7 +759,7 @@ const Estoque = () => {
 
       // 2. Bloquear se a peça está vinculada a Ordem de Serviço
       const { data: linkedOS, error: osCheckErr } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("id")
         .eq("product_id", id)
         .limit(1);
@@ -775,17 +775,17 @@ const Estoque = () => {
       await supabase.from("sales").update({ trade_in_product_id: null } as any).eq("trade_in_product_id", id);
 
       // 4. Delete references in product_history
-      await supabase.from("product_history" as any).delete().eq("product_id", id);
+      await supabase.from("product_history").delete().eq("product_id", id);
 
       // 5. Delete references in product_repair_items (where this product was used as a part)
-      await supabase.from("product_repair_items" as any).delete().eq("part_product_id", id);
+      await supabase.from("product_repair_items").delete().eq("part_product_id", id);
 
       // 6. For repairs of this product, delete repair items first, then the repair
-      const { data: repairs } = await (supabase.from("product_repairs" as any).select("id").eq("product_id", id) as any);
+      const { data: repairs } = await (supabase.from("product_repairs").select("id").eq("product_id", id) as any);
       if (repairs && repairs.length > 0) {
         const repairIds = repairs.map(r => r.id);
-        await supabase.from("product_repair_items" as any).delete().in("repair_id", repairIds);
-        await supabase.from("product_repairs" as any).delete().in("id", repairIds);
+        await supabase.from("product_repair_items").delete().in("repair_id", repairIds);
+        await supabase.from("product_repairs").delete().in("id", repairIds);
       }
 
       // 7. Finally delete the product
@@ -795,7 +795,7 @@ const Estoque = () => {
       logAction("DELETE_RECORD", "products", id, productToDelete, { reason }, productToDelete?.store_id);
       toast.success("Aparelho removido com sucesso!");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Erro ao deletar produto:", error);
       toast.error("Erro ao deletar produto: " + error.message);
     } finally {

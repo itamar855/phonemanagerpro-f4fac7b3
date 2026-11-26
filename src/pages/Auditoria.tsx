@@ -47,7 +47,7 @@ const Auditoria = () => {
   const fetchLogs = async () => {
     setLoading(true);
     let query = supabase
-      .from("audit_logs" as any)
+      .from("audit_logs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);

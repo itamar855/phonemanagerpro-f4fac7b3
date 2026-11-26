@@ -52,7 +52,7 @@ const val = async <T = any>(sql: string, params: any[] = []): Promise<T> => {
 };
 const one = async (sql: string, params: any[] = []) => (await db.query<any>(sql, params)).rows[0];
 const errorOf = async (sql: string, params: any[] = []) => {
-  try { await db.query(sql, params); return null; } catch (e: any) { return String(e.message); }
+  try { await db.query(sql, params); return null; } catch (e) { return String(e.message); }
 };
 const ingest = async (args: Record<string, unknown>) => {
   const keys = Object.keys(args);

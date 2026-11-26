@@ -147,7 +147,7 @@ export async function fetchCnpjData(rawCnpj: string): Promise<CnpjData> {
       telefone: data.ddd_telefone_1 || data.telefone || "",
       email: data.email || "",
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro na consulta de CNPJ:", error);
     throw new Error(error.message || "Não foi possível consultar os dados do CNPJ no momento.");
   }

@@ -187,7 +187,7 @@ const Vendas = () => {
       setEditForm(prev => ({ ...prev, customer_name: data.name }));
       setShowEditNewCustomerForm(false);
       setEditNewCustomerForm(emptyCustomerForm);
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao cadastrar cliente: " + err.message);
     } finally {
       setLoading(false);
@@ -334,7 +334,7 @@ const Vendas = () => {
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = updatedTip?.id || existingTradeIn.id;
           
-          await supabase.from("product_history" as any).insert({
+          await supabase.from("product_history").insert({
             product_id: currentProductId,
             action: "Entrada por Trade-in",
             new_cost: deviceVal,
@@ -355,7 +355,7 @@ const Vendas = () => {
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = tip.id;
 
-          await supabase.from("product_history" as any).insert({
+          await supabase.from("product_history").insert({
             product_id: currentProductId,
             action: "Entrada por Trade-in",
             new_cost: deviceVal,
@@ -475,7 +475,7 @@ const Vendas = () => {
       ) => {
         try {
           await createPendingCashEntry(selectedProduct.store_id, user.id, amount, description, method, form.retro_date, (saleData as any).id);
-        } catch (cashErr: any) {
+        } catch (cashErr) {
           if (txId) {
             await supabase.from("transactions").delete().eq("id", txId);
           }
@@ -587,7 +587,7 @@ const Vendas = () => {
 
       toast.success("Venda registrada! Confirme o recebimento no caixa.");
       setDialogOpen(false); resetForm(); fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro inesperado ao registrar venda: " + err.message);
     } finally {
       isSubmitting.current = false;
@@ -698,7 +698,7 @@ const Vendas = () => {
         toast.success("Venda cancelada! Aparelho devolvido ao estoque, financeiro e arquivos revertidos.");
       }
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Erro ao remover venda: " + error.message);
     } finally {
       setLoading(false);
@@ -889,7 +889,7 @@ const Vendas = () => {
       toast.success("Venda e dados do aparelho atualizados com sucesso!");
       setEditSale(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao atualizar venda: " + err.message);
     } finally {
       setLoading(false);
@@ -981,7 +981,7 @@ const Vendas = () => {
       toast.success("Venda de acessório e caixa atualizados!");
       setEditPdvSale(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao atualizar: " + err.message);
     } finally {
       setLoading(false);

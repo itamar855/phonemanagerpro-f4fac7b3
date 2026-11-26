@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchUserData = async (userId: string) => {
     const [roleRes, storesRes, profileRes] = await Promise.all([
       supabase.from("user_roles").select("role, permissions").eq("user_id", userId).maybeSingle(),
-      supabase.from("member_stores" as any).select("store_id").eq("user_id", userId),
+      supabase.from("member_stores").select("store_id").eq("user_id", userId),
       supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
     ]);
     

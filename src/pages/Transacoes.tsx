@@ -313,7 +313,7 @@ const Transacoes = () => {
         setReceiptFile(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao conciliar: " + err.message);
     } finally {
       setLoading(false);

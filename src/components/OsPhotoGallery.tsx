@@ -30,7 +30,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
   const fetchPhotos = async () => {
     try {
       const { data, error } = await supabase
-        .from("service_order_photos" as any)
+        .from("service_order_photos")
         .select("*")
         .eq("service_order_id", orderId)
         .order("created_at", { ascending: false });
@@ -62,7 +62,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
 
       // Obter store_id da OS para prefixação segura no Storage
       const { data: orderData } = await supabase
-        .from("service_orders" as any)
+        .from("service_orders")
         .select("store_id")
         .eq("id", orderId)
         .maybeSingle();
@@ -83,7 +83,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
 
       // Insert record
       const { error: dbError } = await supabase
-        .from('service_order_photos' as any)
+        .from('service_order_photos')
         .insert({
           service_order_id: orderId,
           photo_url: publicUrlData.publicUrl,
@@ -94,7 +94,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
 
       toast.success("Foto enviada com sucesso!");
       fetchPhotos();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao fazer upload da foto");
     } finally {
       setUploading(false);
@@ -112,7 +112,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
 
       // Remover do banco de dados
       const { error } = await supabase
-        .from('service_order_photos' as any)
+        .from('service_order_photos')
         .delete()
         .eq('id', photoId);
 
@@ -120,7 +120,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
       
       toast.success("Foto removida!");
       setPhotos(photos.filter(p => p.id !== photoId));
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao remover foto");
     }
   };

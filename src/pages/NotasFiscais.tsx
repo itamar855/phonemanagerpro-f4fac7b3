@@ -87,7 +87,7 @@ export default function NotasFiscais() {
         setSettings(sett);
         setInvoices(invs);
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao carregar notas fiscais: " + err.message);
     } finally {
       setLoading(false);
@@ -185,7 +185,7 @@ export default function NotasFiscais() {
         unitPrice: 0,
       });
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Falha na emissão: " + err.message);
     } finally {
       setEmitting(false);
@@ -209,7 +209,7 @@ export default function NotasFiscais() {
       setCancellationReason("");
       setSelectedInvoice(null);
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao cancelar nota fiscal.");
     } finally {
       setCancelling(false);

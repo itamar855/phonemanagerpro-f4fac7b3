@@ -34,7 +34,7 @@ export const useVendas = () => {
 
     let salesQuery = supabase.from("sales").select("*");
     let productsQuery = supabase.from("products").select("*");
-    let accQuery = supabase.from("accessories" as any).select("*").gt("quantity", 0);
+    let accQuery = supabase.from("accessories").select("*").gt("quantity", 0);
     let pdvQuery = supabase.from("transactions").select("*").eq("type", "income").eq("category", "acessorio");
     let accountsQuery = supabase.from("store_bank_accounts").select("*");
 

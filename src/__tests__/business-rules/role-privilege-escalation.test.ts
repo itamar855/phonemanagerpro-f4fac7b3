@@ -386,7 +386,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         if (roleError) {
           throw new Error(`Falha ao atribuir cargo do usuário: ${roleError.message}`);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (roleTouched) {
           await mockRestoreDeleteRoles();
           if (existingSnapshot.roleData) {
@@ -415,7 +415,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       try {
         modifiedProfile = true;
         throw new Error("Simulated Auth Update Failure");
-      } catch (err: any) {
+      } catch (err) {
         if (modifiedProfile) {
           if (existingSnapshot.profileData) {
             await mockUpsertProfile(existingSnapshot.profileData);
@@ -473,7 +473,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
 
         // Passo 4: Falha sintética posterior (ex.: falha de auditoria ou indisponibilidade de downstream)
         throw new Error("Synthetic audit failure after profile update");
-      } catch (_stepError: any) {
+      } catch (_stepError) {
         // Execução do rollback compensatório na ordem estrita de integridade
         if (storesTouched || profileTouched) {
           // 1.1 Garantir/reinserir memberships antigas necessárias sem apagar primeiro as memberships atuais
@@ -562,7 +562,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         profileTouched = true;
 
         throw new Error("Synthetic audit failure");
-      } catch (_stepError: any) {
+      } catch (_stepError) {
         if (storesTouched || profileTouched) {
           // Zero memberships: restaura profile.store_id = null primeiro
           if (snapshotBefore.profileData) {

@@ -92,7 +92,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
     try {
       setLoading(true);
       const { data: itemsData, error: itemsError } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select(`*, products (name, brand, model, parts_payment_voucher)`)
         .eq("service_order_id", orderId);
 
@@ -113,11 +113,11 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       // Fetch suppliers
       const { data: suppData } = await (supabase
-        .from("suppliers" as any)
+        .from("suppliers")
         .select("id, name")
         .order("name") as any);
       setSuppliers(suppData || []);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error fetching parts:", error);
       toast.error("Erro ao carregar peças da OS");
     } finally {
@@ -164,7 +164,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       const supplierName = (product as any).supplier_name || null;
 
       const { error: itemError } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .insert({
           service_order_id: orderId,
           product_id: selectedProductId,
@@ -184,7 +184,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       setSelectedProductId("");
       setStockSupplierId("");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao adicionar peça.");
     } finally {
       setAdding(false);
@@ -273,7 +273,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       // 4. Automatic cash out and transaction entry
       let { data: register } = await supabase
-        .from("cash_registers" as any)
+        .from("cash_registers")
         .select("id")
         .eq("store_id", storeId)
         .eq("status", "open")
@@ -282,7 +282,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       if (!register) {
         const { data: fallbackRegister } = await supabase
-          .from("cash_registers" as any)
+          .from("cash_registers")
           .select("id")
           .eq("store_id", storeId)
           .eq("status", "open")
@@ -304,7 +304,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       const hasReceipt = !!receiptUrl;
 
       if (registerId) {
-        await supabase.from("cash_entries" as any).insert({
+        await supabase.from("cash_entries").insert({
           cash_register_id: registerId,
           store_id: storeId,
           type: "saida",
@@ -338,7 +338,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null, orderReceipt: null });
       setAddMode("stock");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao cadastrar peça.");
     } finally {
       setAdding(false);
@@ -350,7 +350,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       const itemToRemove = items.find(i => i.id === itemId);
 
       const { error: itemError } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .delete()
         .eq("id", itemId);
 
@@ -369,7 +369,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
         if (prodName) {
           const descSearch = `Compra de Peça Avulsa (%): ${prodName.trim()}%`;
           await supabase
-            .from("cash_entries" as any)
+            .from("cash_entries")
             .delete()
             .eq("store_id", storeId)
             .like("description", descSearch)
@@ -386,7 +386,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       toast.success("Peça removida e retornada ao estoque.");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao remover peça.");
     }
   };

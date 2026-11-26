@@ -133,7 +133,7 @@ const OrdensServico = () => {
     }
     
     let cashQuery = supabase
-      .from("cash_entries" as any)
+      .from("cash_entries")
       .select("reference_id, description, confirmed, store_id, created_at")
       .eq("type", "entrada");
 
@@ -258,7 +258,7 @@ const OrdensServico = () => {
         isSubmitting.current = false;
         await updateStatus(pending.orderId, pending.newStatus, pending.oldStatus, pending.reason);
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao salvar valor final: " + err.message);
     } finally {
       setFinalPriceSaving(false);
@@ -271,7 +271,7 @@ const OrdensServico = () => {
     try {
       const lastReopenAt = await getLastReopenTimestamp(order.id);
       let existingQuery = supabase
-        .from("cash_entries" as any)
+        .from("cash_entries")
         .select("id")
         .eq("type", "entrada")
         .eq("reference_id", order.id);
@@ -281,7 +281,7 @@ const OrdensServico = () => {
       let existingByDesc: any[] | null = null;
       if (!existingByRef || existingByRef.length === 0) {
         let descQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("store_id", order.store_id)
@@ -317,11 +317,11 @@ const OrdensServico = () => {
         const confirmPayload: any = { confirmed: true };
         if (order.receipt_url) confirmPayload.receipt_url = order.receipt_url;
 
-        let updRef = supabase.from("cash_entries" as any).update(confirmPayload).eq("type", "entrada").eq("reference_id", order.id);
+        let updRef = supabase.from("cash_entries").update(confirmPayload).eq("type", "entrada").eq("reference_id", order.id);
         if (lastReopenAt) updRef = updRef.gt("created_at", lastReopenAt);
         await updRef;
 
-        let updDesc = supabase.from("cash_entries" as any).update(confirmPayload).eq("type", "entrada").eq("store_id", order.store_id).like("description", `OS #${order.order_number} %`);
+        let updDesc = supabase.from("cash_entries").update(confirmPayload).eq("type", "entrada").eq("store_id", order.store_id).like("description", `OS #${order.order_number} %`);
         if (lastReopenAt) updDesc = updDesc.gt("created_at", lastReopenAt);
         await updDesc;
       }
@@ -356,7 +356,7 @@ const OrdensServico = () => {
       setFinancialConfirmOpen(false);
       setFinancialConfirmOrder(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao confirmar no financeiro: " + err.message);
     } finally {
       setFinancialConfirmLoading(false);
@@ -390,7 +390,7 @@ const OrdensServico = () => {
     }
 
     const { data: parts } = await supabase
-      .from("service_order_items" as any)
+      .from("service_order_items")
       .select("id, unit_cost, receipt_url, supplier_name, products(name, brand, model, parts_payment_voucher)")
       .eq("service_order_id", orderId);
 
@@ -424,7 +424,7 @@ const OrdensServico = () => {
         setFinancialMissingItems(missing);
         setFinancialConfirmOpen(true);
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao verificar comprovantes: " + err.message);
     }
   };
@@ -539,7 +539,7 @@ const OrdensServico = () => {
       let resolvedCustomerId = form.customer_id || null;
 
       if (form.customer_name) {
-        let query = supabase.from("customers" as any).select("id").eq("name", form.customer_name);
+        let query = supabase.from("customers").select("id").eq("name", form.customer_name);
         if (form.customer_phone) query = query.eq("phone", form.customer_phone);
         if (form.customer_cpf) query = query.eq("cpf", form.customer_cpf);
         
@@ -548,7 +548,7 @@ const OrdensServico = () => {
         if (extCust) {
           resolvedCustomerId = (extCust as any).id;
         } else if (!resolvedCustomerId) {
-          const { data: newCust } = await (supabase.from("customers" as any).insert({
+          const { data: newCust } = await (supabase.from("customers").insert({
             name: form.customer_name,
             phone: form.customer_phone || null,
             cpf: form.customer_cpf || null,
@@ -596,7 +596,7 @@ const OrdensServico = () => {
         fetchData(); 
         logAction("CREATE_RECORD", "service_orders" as any, (data as any)?.id, null, form, storeIdToUse);
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro inesperado: " + err.message);
     } finally {
       isSubmitting.current = false;
@@ -635,7 +635,7 @@ const OrdensServico = () => {
       }
 
       const { data: settledRows } = await supabase
-        .from("commission_settlement_items" as any)
+        .from("commission_settlement_items")
         .select("id")
         .eq("service_order_id", orderId)
         .limit(1);
@@ -664,7 +664,7 @@ const OrdensServico = () => {
       const targetStoreId = targetOrder?.store_id || (activeStoreId !== "all" ? activeStoreId : null);
       if (currentFinalPrice > 0 && targetStoreId) {
         const { data: openRegs } = await supabase
-          .from("cash_registers" as any)
+          .from("cash_registers")
           .select("id")
           .eq("store_id", targetStoreId)
           .eq("status", "open")
@@ -745,14 +745,14 @@ const OrdensServico = () => {
       const targetOs: any = freshReopened || order;
       if (targetOs && targetOs.store_id) {
         let refEntriesQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id, cash_register_id, amount, payment_method")
           .eq("type", "entrada")
           .eq("reference_id", orderId);
         if (priorReopenAt) refEntriesQ = refEntriesQ.gt("created_at", priorReopenAt);
 
         let descEntriesQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id, cash_register_id, amount, payment_method")
           .eq("type", "entrada")
           .eq("store_id", targetOs.store_id)
@@ -778,7 +778,7 @@ const OrdensServico = () => {
         if (activeEntries.length > 0) {
           const regIds = Array.from(new Set(activeEntries.map((e) => e.cash_register_id).filter(Boolean)));
           const { data: regsData } = regIds.length > 0
-            ? await supabase.from("cash_registers" as any).select("id, status").in("id", regIds)
+            ? await supabase.from("cash_registers").select("id, status").in("id", regIds)
             : { data: [] as any[] };
           const regStatusMap = new Map<string, string>(((regsData as any[]) || []).map((r) => [r.id, r.status]));
 
@@ -789,7 +789,7 @@ const OrdensServico = () => {
 
           // 1. Entradas em caixa AINDA ABERTO: remove na origem (mesmo turno)
           if (openEntryIds.length > 0) {
-            await supabase.from("cash_entries" as any).delete().in("id", openEntryIds);
+            await supabase.from("cash_entries").delete().in("id", openEntryIds);
             if (activeTxs && activeTxs.length > 0 && closedEntries.length === 0) {
               await supabase.from("transactions").delete().in("id", activeTxs.map((t: any) => t.id));
             }
@@ -819,14 +819,14 @@ const OrdensServico = () => {
 
             if (refundPhysical) {
               const { data: currentOpenRegs } = await supabase
-                .from("cash_registers" as any)
+                .from("cash_registers")
                 .select("id")
                 .eq("store_id", targetOs.store_id)
                 .eq("status", "open")
                 .limit(1);
 
               if (currentOpenRegs && currentOpenRegs.length > 0) {
-                await supabase.from("cash_entries" as any).insert({
+                await supabase.from("cash_entries").insert({
                   cash_register_id: (currentOpenRegs[0] as any).id,
                   store_id: targetOs.store_id,
                   type: "saida",
@@ -853,7 +853,7 @@ const OrdensServico = () => {
     if (newStatus === "cancelled") {
       // Reverter peças vinculadas de volta para in_stock
       const { data: items } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("product_id")
         .eq("service_order_id", orderId);
       if (items && items.length > 0) {
@@ -884,7 +884,7 @@ const OrdensServico = () => {
 
         // Idempotência pós-reabertura: verifica separadamente entradas ativas no Caixa e receitas no DRE
         let existingCashQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("reference_id", o.id);
@@ -894,7 +894,7 @@ const OrdensServico = () => {
         let existingCashByDesc: any[] | null = null;
         if (!existingCashByRef || existingCashByRef.length === 0) {
           let descCashQ = supabase
-            .from("cash_entries" as any)
+            .from("cash_entries")
             .select("id")
             .eq("type", "entrada")
             .eq("store_id", o.store_id)
@@ -1149,7 +1149,7 @@ const OrdensServico = () => {
 
         const lastReopenAt = await getLastReopenTimestamp(detailOrder.id);
         let existingEntriesQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id, payment_method, amount, cash_register_id")
           .eq("type", "entrada")
           .eq("reference_id", detailOrder.id);
@@ -1159,7 +1159,7 @@ const OrdensServico = () => {
         let existingEntriesByDesc: any[] | null = null;
         if (!existingEntriesByRef || existingEntriesByRef.length === 0) {
           let descQ = supabase
-            .from("cash_entries" as any)
+            .from("cash_entries")
             .select("id, payment_method, amount, cash_register_id")
             .eq("type", "entrada")
             .eq("store_id", detailOrder.store_id)
@@ -1224,12 +1224,12 @@ const OrdensServico = () => {
 
               if (methodChanged || amountChanged) {
                 const { data: regData } = entry.cash_register_id
-                  ? await supabase.from("cash_registers" as any).select("status").eq("id", entry.cash_register_id).maybeSingle()
+                  ? await supabase.from("cash_registers").select("status").eq("id", entry.cash_register_id).maybeSingle()
                   : { data: null as any };
                 const registerOpen = (regData as any)?.status === "open";
 
                 if (registerOpen) {
-                  await supabase.from("cash_entries" as any).update({ payment_method: newMethod, amount: newAmount }).eq("id", entry.id);
+                  await supabase.from("cash_entries").update({ payment_method: newMethod, amount: newAmount }).eq("id", entry.id);
                   if (methodChanged) {
                     toast.success(`Lançamento do caixa corrigido de "${entry.payment_method}" para "${newMethod}".`);
                   }
@@ -1247,11 +1247,11 @@ const OrdensServico = () => {
           }
 
           if (Object.keys(entryUpdatePayload).length > 0) {
-            let updRef = supabase.from("cash_entries" as any).update(entryUpdatePayload).eq("type", "entrada").eq("reference_id", detailOrder.id);
+            let updRef = supabase.from("cash_entries").update(entryUpdatePayload).eq("type", "entrada").eq("reference_id", detailOrder.id);
             if (lastReopenAt) updRef = updRef.gt("created_at", lastReopenAt);
             await updRef;
 
-            let updDesc = supabase.from("cash_entries" as any).update(entryUpdatePayload).eq("type", "entrada").eq("store_id", detailOrder.store_id).like("description", `OS #${detailOrder.order_number} %`);
+            let updDesc = supabase.from("cash_entries").update(entryUpdatePayload).eq("type", "entrada").eq("store_id", detailOrder.store_id).like("description", `OS #${detailOrder.order_number} %`);
             if (lastReopenAt) updDesc = updDesc.gt("created_at", lastReopenAt);
             await updDesc;
           }
@@ -1310,7 +1310,7 @@ const OrdensServico = () => {
       setDetailOrder(null);
       fetchData();
       logAction("DELETE_RECORD", "service_orders", id, null, { reason }, activeStoreId);
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao excluir: " + err.message);
     } finally {
       setLoading(false);
@@ -1362,7 +1362,7 @@ const OrdensServico = () => {
         setDetailOrder((prev: any) => ({ ...prev, ...updates }));
       }
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao alterar comissão: " + err.message);
     } finally {
       setLoading(false);

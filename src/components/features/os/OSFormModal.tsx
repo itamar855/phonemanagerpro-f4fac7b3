@@ -98,7 +98,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
       setIsSearchingCustomer(true);
       const term = customerSearch.trim();
       const { data } = await supabase
-        .from("customers" as any)
+        .from("customers")
         .select("id, name, phone, cpf, address, email")
         .or(`name.ilike.%${term}%,phone.ilike.%${term}%,cpf.ilike.%${term}%`)
         .limit(6);

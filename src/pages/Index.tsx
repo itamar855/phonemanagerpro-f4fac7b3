@@ -194,7 +194,7 @@ const Dashboard = () => {
     if (relevantIds.length > 0) {
       try {
         const { data: partsData } = await supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, unit_cost, quantity")
           .in("service_order_id", relevantIds);
         parts = partsData ?? [];
@@ -264,13 +264,13 @@ const Dashboard = () => {
             : supabase.from("service_orders").select("id, status, store_id, created_at, delivered_at, final_price, estimated_price").eq("store_id", effectiveStoreId).or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`))
         : Promise.resolve({ data: [] }),
       can("estoque") 
-        ? (!isFiltered ? supabase.from("accessories" as any).select("*") : supabase.from("accessories" as any).select("*").eq("store_id", effectiveStoreId))
+        ? (!isFiltered ? supabase.from("accessories").select("*") : supabase.from("accessories").select("*").eq("store_id", effectiveStoreId))
         : Promise.resolve({ data: [] }),
       // Leads = contatos novos do CRM no período (sem equipe/fornecedor/pessoal)
       can("leads")
         ? (!isFiltered
-            ? supabase.from("crm_contacts" as any).select("id, created_at").eq("ignored", false).gte("created_at", start).lte("created_at", end)
-            : supabase.from("crm_contacts" as any).select("id, created_at").eq("ignored", false).eq("store_id", effectiveStoreId).gte("created_at", start).lte("created_at", end))
+            ? supabase.from("crm_contacts").select("id, created_at").eq("ignored", false).gte("created_at", start).lte("created_at", end)
+            : supabase.from("crm_contacts").select("id, created_at").eq("ignored", false).eq("store_id", effectiveStoreId).gte("created_at", start).lte("created_at", end))
         : Promise.resolve({ data: [] }),
     ];
 
@@ -290,7 +290,7 @@ const Dashboard = () => {
     if (can("os") && serviceOrders.length > 0) {
       const osIds = serviceOrders.map((o: any) => o.id);
       const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("service_order_id, unit_cost, quantity")
         .in("service_order_id", osIds);
       serviceOrderItems = itemsData ?? [];
@@ -300,7 +300,7 @@ const Dashboard = () => {
     let productRepairItems: any[] = [];
     if (can("estoque")) {
       const repairQuery = supabase
-        .from("product_repairs" as any)
+        .from("product_repairs")
         .select("id, status, created_at")
         .gte("created_at", start)
         .lte("created_at", end);
@@ -315,7 +315,7 @@ const Dashboard = () => {
       if (productRepairs.length > 0) {
         const repairIds = productRepairs.map((r: any) => r.id);
         const { data: itemsData } = await supabase
-          .from("product_repair_items" as any)
+          .from("product_repair_items")
           .select("repair_id, unit_cost, quantity")
           .in("repair_id", repairIds);
         productRepairItems = itemsData ?? [];
@@ -398,7 +398,7 @@ const Dashboard = () => {
     if (isAdmin) {
       const storeMap = new Map(stores.map((s: any) => [s.id, s.name]));
       const allProductsRes = await supabase.from("products").select("*").eq("status", "in_stock");
-      const allAccRes = await supabase.from("accessories" as any).select("*");
+      const allAccRes = await supabase.from("accessories").select("*");
       const allProducts = (allProductsRes.data ?? []).filter((p: any) => p.status === "in_stock");
       const allAcc = (allAccRes.data ?? []) as any[];
       const storeProducts: Record<string, { aparelhos: number; acessorios: number; investido: number }> = {};

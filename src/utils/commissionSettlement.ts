@@ -138,7 +138,7 @@ export async function fetchSettledItemIds(): Promise<{
   settledOsIds: Set<string>;
 }> {
   const { data, error } = await (supabase
-    .from("commission_settlement_items" as any)
+    .from("commission_settlement_items")
     .select("sale_id, service_order_id") as any);
 
   const settledSaleIds = new Set<string>();
@@ -204,7 +204,7 @@ export async function fetchSettlementsHistory(
   includeCancelled = false
 ): Promise<CommissionSettlement[]> {
   let query = supabase
-    .from("commission_settlements" as any)
+    .from("commission_settlements")
     .select("*")
     .order("paid_at", { ascending: false });
 
@@ -238,7 +238,7 @@ export async function fetchSettlementItems(
   settlementId: string
 ): Promise<CommissionSettlementItem[]> {
   const { data, error } = await (supabase
-    .from("commission_settlement_items" as any)
+    .from("commission_settlement_items")
     .select("*")
     .eq("settlement_id", settlementId)
     .order("created_at", { ascending: true }) as any);
@@ -252,7 +252,7 @@ export async function fetchSettlementItems(
 
   if (rawItems.length === 0) {
     const { data: settlementRow } = await (supabase
-      .from("commission_settlements" as any)
+      .from("commission_settlements")
       .select("cancelled_items_snapshot")
       .eq("id", settlementId)
       .maybeSingle() as any);
@@ -279,7 +279,7 @@ export async function fetchSettlementItems(
       : Promise.resolve({ data: [] as any[] }),
     osIds.length > 0
       ? (supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, quantity, unit_cost, products(name)")
           .in("service_order_id", osIds) as any)
       : Promise.resolve({ data: [] as any[] }),

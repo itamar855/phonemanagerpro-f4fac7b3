@@ -19,7 +19,7 @@ export const createPendingCashEntry = async (
   if (!storeId || amount <= 0) return { success: false, error: "Loja ou valor inválido para lançamento no caixa." };
 
   let query = supabase
-    .from("cash_registers" as any)
+    .from("cash_registers")
     .select("id, store_id")
     .eq("status", "open")
     .eq("opened_by", userId);
@@ -36,7 +36,7 @@ export const createPendingCashEntry = async (
 
   if (!register) {
     let fallbackQuery = supabase
-      .from("cash_registers" as any)
+      .from("cash_registers")
       .select("id, store_id")
       .eq("status", "open");
       
@@ -59,7 +59,7 @@ export const createPendingCashEntry = async (
     const isCash = paymentMethod === "dinheiro";
     const isConfirmed = Boolean(confirmed) || isCash;
 
-    const { error: insertError } = await supabase.from("cash_entries" as any).insert({
+    const { error: insertError } = await supabase.from("cash_entries").insert({
       cash_register_id: registerId,
       store_id: actualStoreId,
       type: "entrada",

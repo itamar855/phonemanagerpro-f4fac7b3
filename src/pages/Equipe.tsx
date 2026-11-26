@@ -105,7 +105,7 @@ const Equipe = () => {
       supabase.from("profiles").select("*"),
       supabase.from("user_roles").select("*"),
       supabase.from("stores").select("*"),
-      supabase.from("member_stores" as any).select("*"),
+      supabase.from("member_stores").select("*"),
     ]);
 
     const profiles = profilesRes.data ?? [];
@@ -196,7 +196,7 @@ const Equipe = () => {
         toast.success(response.data?.message || "Senha atualizada com sucesso!");
         setNewMemberPassword("");
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao alterar senha do membro");
     }
     setMemberPasswordLoading(false);
@@ -238,7 +238,7 @@ const Equipe = () => {
         setSelectedMember(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao atualizar membro da equipe");
     } finally {
       setLoading(false);
@@ -274,7 +274,7 @@ const Equipe = () => {
         setMemberToDelete(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao remover membro");
     }
     setLoading(false);
@@ -309,7 +309,7 @@ const Equipe = () => {
         setCreateForm({ email: "", password: "", display_name: "", phone: "", role: "vendedor", store_id: "" });
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao criar usuário");
     }
     setLoading(false);

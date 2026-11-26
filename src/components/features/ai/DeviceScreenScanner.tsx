@@ -125,7 +125,7 @@ export function DeviceScreenScanner({
       } else {
         toast.error(result.error_message || "Não foi possível ler as informações da tela.");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Device screen scanner error:", err);
       toast.error(err.message || "Erro ao escanear aparelho.");
       setScannedData({

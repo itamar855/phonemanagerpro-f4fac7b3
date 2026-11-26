@@ -65,7 +65,7 @@ export const useCartManager = (
       // 1. Validar e atualizar estoque de cada item no banco de dados
       for (const item of cart) {
         const { data: currentAcc, error: fetchErr } = await supabase
-          .from("accessories" as any)
+          .from("accessories")
           .select("quantity, name")
           .eq("id", item.acc.id)
           .single() as any;
@@ -81,7 +81,7 @@ export const useCartManager = (
 
         const newQty = Math.max(0, currentQty - item.qty);
         const { error: accError } = await supabase
-          .from("accessories" as any)
+          .from("accessories")
           .update({ quantity: newQty })
           .eq("id", item.acc.id);
         
@@ -106,7 +106,7 @@ export const useCartManager = (
       ) => {
         try {
           await createPendingCashEntry(storeToUse, user.id, amount, description, method, undefined, txId);
-        } catch (cashErr: any) {
+        } catch (cashErr) {
           if (txId) {
             await supabase.from("transactions").delete().eq("id", txId);
           }
@@ -197,7 +197,7 @@ export const useCartManager = (
       }
 
       toast.success("Venda rápida registrada!"); setPdvOpen(false); resetPdv(); fetchData();
-    } catch (err: any) { 
+    } catch (err) { 
       toast.error(err.message || "Erro"); 
     } finally {
       isPdvSubmitting.current = false;

@@ -108,7 +108,7 @@ export async function trackedQuery<T>(
     }
 
     return result;
-  } catch (e: any) {
+  } catch (e) {
     const durationMs = Math.round(performance.now() - start);
     debugLogger.error(`Query exception: ${operation.toUpperCase()} ${table}`, {
       exception: e.message,
@@ -131,7 +131,7 @@ async function checkConnection() {
     } else {
       debugLogger.info("Supabase connection check: OK", { ms });
     }
-  } catch (e: any) {
+  } catch (e) {
     debugLogger.error("Supabase connection check: FAILED", { error: e.message }, e);
   }
 }

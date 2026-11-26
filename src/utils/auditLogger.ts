@@ -56,7 +56,7 @@ export const logAction = async (
       console.error("Audit Log Error:", error);
       toast.error("Erro ao gravar Auditoria: " + error.message);
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to log action:", error);
   }
 };

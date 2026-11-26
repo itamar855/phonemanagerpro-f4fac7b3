@@ -104,7 +104,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     try {
       // 1. Fetch active repair if any
       const { data: repairData, error: repairError } = await (supabase
-        .from("product_repairs" as any)
+        .from("product_repairs")
         .select("*") as any)
         .eq("product_id", product.id)
         .eq("status", "pending")
@@ -116,7 +116,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       if (repairData) {
         // 2. Fetch parts used in this repair
         const { data: itemsData, error: itemsError } = await (supabase
-          .from("product_repair_items" as any)
+          .from("product_repair_items")
           .select(`*`) as any)
           .eq("repair_id", repairData.id);
 
@@ -137,11 +137,11 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       // Fetch suppliers
       const { data: suppData } = await (supabase
-        .from("suppliers" as any)
+        .from("suppliers")
         .select("id, name")
         .order("name") as any);
       setSuppliers(suppData || []);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error fetching repair details:", err);
       toast.error("Erro ao carregar dados do reparo: " + err.message);
     } finally {
@@ -166,7 +166,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     try {
       // 1. Insert repair record
       const { data: repair, error: repairError } = await supabase
-        .from("product_repairs" as any)
+        .from("product_repairs")
         .insert({
           product_id: product.id,
           store_id: product.store_id,
@@ -194,7 +194,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       toast.success("Reparo iniciado com sucesso!");
       fetchRepairData();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao iniciar reparo: " + err.message);
     } finally {
       setLoading(false);
@@ -224,7 +224,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       // 1. Add item to repair list
       const { error: itemError } = await supabase
-        .from("product_repair_items" as any)
+        .from("product_repair_items")
         .insert({
           repair_id: activeRepair.id,
           part_product_id: selectedPartId,
@@ -251,7 +251,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       setStockPartSupplierId("");
       fetchRepairData();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao vincular peça: " + err.message);
     } finally {
       setLoading(false);
@@ -305,7 +305,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       // 3. Add item to repair list referencing the created product
       const { error: itemError } = await supabase
-        .from("product_repair_items" as any)
+        .from("product_repair_items")
         .insert({
           repair_id: activeRepair.id,
           part_product_id: (prodData as any).id,
@@ -325,7 +325,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       setManualPartReceipt(null);
       fetchRepairData();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao adicionar peça: " + err.message);
     } finally {
       setLoading(false);
@@ -337,7 +337,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
     try {
       // 0. Get the unit_cost of the item being removed
       const { data: itemData, error: getItemError } = await (supabase
-        .from("product_repair_items" as any)
+        .from("product_repair_items")
         .select("unit_cost")
         .eq("id", itemId)
         .single() as any);
@@ -347,7 +347,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       // 1. Delete item
       const { error: itemError } = await supabase
-        .from("product_repair_items" as any)
+        .from("product_repair_items")
         .delete()
         .eq("id", itemId);
 
@@ -363,7 +363,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       toast.success("Peça removida do reparo, retornada ao estoque e custo do aparelho atualizado.");
       fetchRepairData();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao remover peça: " + err.message);
     } finally {
       setLoading(false);
@@ -419,7 +419,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       fetchRepairData();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       clearInterval(progressInterval);
       setUploadProgress(prev => ({ ...prev, [type]: null }));
       toast.error("Erro no upload do comprovante: " + err.message);
@@ -437,7 +437,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       // Convenção de schema do sistema: lançamentos de caixa utilizam a coluna cash_register_id
       // 1. Update repair status to completed
       const { error: repairError } = await supabase
-        .from("product_repairs" as any)
+        .from("product_repairs")
         .update({
           status: "completed",
           completed_at: new Date().toISOString()
@@ -456,7 +456,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       // 3. Registrar no histórico do aparelho a conclusão do reparo
       const partsSummary = repairItems.map(item => `${item.part_name} (${formatCurrency(Number(item.unit_cost))})`).join(", ");
-      await supabase.from("product_history" as any).insert({
+      await supabase.from("product_history").insert({
         product_id: product.id,
         action: "Reparo Concluído",
         new_cost: Number(product.cost_price || 0),
@@ -469,7 +469,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       toast.success("Reparo finalizado com sucesso! Aparelho disponível no estoque.");
       onClose();
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao finalizar reparo: " + err.message);
     } finally {
       setLoading(false);

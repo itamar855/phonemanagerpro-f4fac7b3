@@ -122,7 +122,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       );
       toast.success(`Comissão da OS ${orderNumber ? `#${orderNumber}` : ""} anulada com sucesso!`);
       onSuccess();
-    } catch (err: any) {
+    } catch (err) {
       toast.error('Erro ao anular comissao: ' + err.message);
     }
   };
@@ -280,7 +280,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   useEffect(() => {
     if (!selectedStoreId) return;
     supabase
-      .from("store_bank_accounts" as any)
+      .from("store_bank_accounts")
       .select("*")
       .eq("store_id", selectedStoreId)
       .then(({ data }) => {
@@ -297,7 +297,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     if (!selectedStoreId) return;
     setLoadingOpenRegister(true);
     supabase
-      .from("cash_registers" as any)
+      .from("cash_registers")
       .select("*")
       .eq("store_id", selectedStoreId)
       .eq("status", "open")
@@ -343,7 +343,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     Promise.all(
       chunks.map((chunk) =>
         supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, unit_cost, quantity")
           .in("service_order_id", chunk)
       )
@@ -365,7 +365,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     // Sincroniza status financeiro (Caixa): comissão só é liberada com entrada ("entrada") ativa e confirmada
     Promise.all([
       supabase
-        .from("cash_entries" as any)
+        .from("cash_entries")
         .select("reference_id, description, confirmed, created_at, store_id")
         .eq("type", "entrada")
         .or(`store_id.eq.${selectedStoreId},store_id.is.null`),
@@ -705,7 +705,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       setSelectedItemIds(new Set());
       setNotes("");
       setReceiptFile(null);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao liquidar comissões:", err);
       const rawMsg = err?.message || String(err) || "Erro desconhecido";
 

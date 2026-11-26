@@ -124,13 +124,13 @@ export default function Configuracoes() {
   };
 
   const handleToggle = async (id: string, current: boolean) => {
-    const { error } = await supabase.from("webhooks" as any).update({ is_active: !current }).eq("id", id);
+    const { error } = await supabase.from("webhooks").update({ is_active: !current }).eq("id", id);
     if (error) toast.error("Erro ao atualizar!");
     else fetchData();
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("webhooks" as any).delete().eq("id", id);
+    const { error } = await supabase.from("webhooks").delete().eq("id", id);
     if (error) toast.error("Erro ao excluir!");
     else { toast.success("Excluído!"); fetchData(); }
   };
@@ -204,8 +204,8 @@ export default function Configuracoes() {
     toast.loading("Procurando e conciliando vendas...", { id: "reconcile" });
     try {
       const { data: transactions } = await supabase.from('transactions').select('*').in('type', ['sale', 'income']);
-      const { data: cashEntries } = await supabase.from('cash_entries' as any).select('*').in('type', ['entrada', 'misto', 'dinheiro', 'pix', 'cartao_credito']);
-      const { data: registers } = await supabase.from('cash_registers' as any).select('*').eq('status', 'open');
+      const { data: cashEntries } = await supabase.from('cash_entries').select('*').in('type', ['entrada', 'misto', 'dinheiro', 'pix', 'cartao_credito']);
+      const { data: registers } = await supabase.from('cash_registers').select('*').eq('status', 'open');
 
       if (!transactions || !cashEntries || !registers) throw new Error("Erro ao carregar dados.");
 
@@ -246,15 +246,15 @@ export default function Configuracoes() {
                 const cleanDesc = m.description.replace(/\[MISTO:.*\]/, '').trim();
                 
                 if (parsed.dinheiro > 0) {
-                  const { error } = await supabase.from('cash_entries' as any).insert({ ...payload, payment_method: 'dinheiro', amount: parsed.dinheiro, description: cleanDesc });
+                  const { error } = await supabase.from('cash_entries').insert({ ...payload, payment_method: 'dinheiro', amount: parsed.dinheiro, description: cleanDesc });
                   if (error) success = false;
                 }
                 if (parsed.pix > 0) {
-                  const { error } = await supabase.from('cash_entries' as any).insert({ ...payload, payment_method: 'pix', amount: parsed.pix, description: cleanDesc });
+                  const { error } = await supabase.from('cash_entries').insert({ ...payload, payment_method: 'pix', amount: parsed.pix, description: cleanDesc });
                   if (error) success = false;
                 }
                 if (parsed.cartao_credito > 0) {
-                  const { error } = await supabase.from('cash_entries' as any).insert({ ...payload, payment_method: 'cartao_credito', amount: parsed.cartao_credito, description: cleanDesc });
+                  const { error } = await supabase.from('cash_entries').insert({ ...payload, payment_method: 'cartao_credito', amount: parsed.cartao_credito, description: cleanDesc });
                   if (error) success = false;
                 }
                 if (success) inserted++;
@@ -269,12 +269,12 @@ export default function Configuracoes() {
             payload.payment_method = 'cartao_credito';
           }
 
-          const { error } = await supabase.from('cash_entries' as any).insert(payload);
+          const { error } = await supabase.from('cash_entries').insert(payload);
           if (!error) inserted++;
         }
       }
       toast.success(`${inserted} vendas órfãs foram conciliadas no caixa!`, { id: "reconcile" });
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro na conciliação: " + err.message, { id: "reconcile" });
     }
   };

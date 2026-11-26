@@ -149,7 +149,7 @@ const AIAssistant = () => {
           } catch {}
         }
       }
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e.message || "Erro");
     }
     setLoading(false);
@@ -207,7 +207,7 @@ const AIAssistant = () => {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Exportação concluída!");
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e.message || "Erro ao exportar");
     }
     setExportLoading(null);
