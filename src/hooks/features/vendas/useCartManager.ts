@@ -1,10 +1,10 @@
-
-import type { User } from "@supabase/supabase-js";
-import type { PdvPaymentForm, Store } from "@/components/features/vendas/types";import { useState, useRef } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { createPendingCashEntry } from "@/lib/services/salesService";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
+import type { User } from "@supabase/supabase-js";
+import type { PdvPaymentForm, Store } from "@/components/features/vendas/types";
 
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };

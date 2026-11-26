@@ -69,7 +69,7 @@ export function performedServices(order: { services_performed?: unknown; service
   if (list.length) return list;
   return String(order.service_performed ?? "")
     .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-    .map((description) => ({ description, price: null }));
+    .map((description): PerformedService => ({ description, price: null }));
 }
 
 /** Linha do formulário (valores como texto dos inputs). */

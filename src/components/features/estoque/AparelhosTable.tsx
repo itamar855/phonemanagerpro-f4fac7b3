@@ -1,6 +1,4 @@
-
-import type { Product, ProductForm } from "./types";
-import type { Store } from "@/types/db";import React from "react";
+import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Plus, Package, ArrowRightLeft, AlertTriangle, Wrench, Pencil, Trash2 } from "lucide-react";
 import { DeviceScreenScanner, ScannedDeviceData } from "@/components/features/ai/DeviceScreenScanner";
+import type { Product, ProductForm } from "./types";
+import type { Store } from "@/types/db";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela", "Troca de Bateria", "Conector de Carga",

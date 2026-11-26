@@ -1,10 +1,10 @@
-
-import type { Product } from "./types";import React from "react";
+import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Wrench, AlertTriangle } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import type { Product } from "./types";
 
 interface EmReparoTabProps {
   inRepair: Tables<"products">[];

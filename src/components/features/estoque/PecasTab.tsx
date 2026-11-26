@@ -1,5 +1,4 @@
-
-import type { PartForm, Product, SupplierOption } from "./types";import React from "react";
+import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Plus, Cpu, FileText, Upload, ArrowRightLeft, Trash2 } from "lucide-react";
+import type { PartForm, Product, SupplierOption } from "./types";
 
 interface PecasTabProps {
   partsSearch: string;

@@ -1,5 +1,4 @@
-
-import type { EditProductForm } from "./types";import React from "react";
+import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Tables } from "@/integrations/supabase/types";
+import type { EditProductForm } from "./types";
 
 interface ProductEditDialogProps {
   open: boolean;

@@ -1,5 +1,4 @@
-
-import type { AccessoryForm, EditProductForm, PartForm, ProductForm, ProductHistoryEntry, SupplierOption } from "@/components/features/estoque/types";import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +32,7 @@ import { ProductDeleteDialog } from "@/components/features/estoque/ProductDelete
 import { AccessoryModal } from "@/components/features/estoque/AccessoryModal";
 import { EstoqueConsulta } from "@/components/features/estoque/EstoqueConsulta";
 import { isConsultOnly, stockAccess } from "@/components/features/estoque/consultaRules";
+import type { AccessoryForm, EditProductForm, PartForm, ProductForm, ProductHistoryEntry, SupplierOption } from "@/components/features/estoque/types";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela",

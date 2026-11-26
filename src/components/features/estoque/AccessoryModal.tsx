@@ -1,5 +1,4 @@
-
-import type { AccessoryForm } from "./types";import React from "react";
+import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { AccessoryForm } from "./types";
 
 interface AccessoryModalProps {
   open: boolean;

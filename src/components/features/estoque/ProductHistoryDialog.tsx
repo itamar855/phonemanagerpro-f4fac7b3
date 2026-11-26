@@ -1,5 +1,4 @@
-
-import type { ProductHistoryEntry } from "./types";import React from "react";
+import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -7,6 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Tables } from "@/integrations/supabase/types";
+import type { ProductHistoryEntry } from "./types";
 
 interface ProductHistoryDialogProps {
   open: boolean;

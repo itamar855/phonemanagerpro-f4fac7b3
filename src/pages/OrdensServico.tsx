@@ -33,7 +33,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { triggerWebhook } from "@/utils/webhookSender";
 import { logAction } from "@/utils/auditLogger";
 import { OSCard } from "@/components/features/os/OSCard";
-import { OSFormModal } from "@/components/features/os/OSFormModal";
+import { OSFormModal, type OsForm } from "@/components/features/os/OSFormModal";
 import { OSDetailModal } from "@/components/features/os/OSDetailModal";
 import { OSJustificationDialog } from "@/components/features/os/OSJustificationDialog";
 import { OSFinancialConfirmDialog } from "@/components/features/os/OSFinancialConfirmDialog";
@@ -98,8 +98,8 @@ const OrdensServico = () => {
   const [patternImageData, setPatternImageData] = useState<string>("");
   const [deviceOffAgreed, setDeviceOffAgreed] = useState(false);
 
-  const [form, setForm] = useState({
-    customer_id: null as string | null,
+  const [form, setForm] = useState<OsForm>({
+    customer_id: null,
     customer_name: "", customer_phone: "", customer_cpf: "",
     device_brand: "iPhone", device_model: "", device_imei: "", device_color: "",
     device_condition: "", device_password: "", device_accessories: "",

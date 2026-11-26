@@ -43,9 +43,10 @@ import { OsParts } from "@/components/OsParts";
 import { OS_STATUS_CONFIG as statusConfig, ALL_OS_STATUSES as allStatuses } from "@/utils/osStatus";
 import { formatCurrency, TERMS_TEXT } from "./osPdf";
 import { toast } from "sonner";
+import type { ServiceOrder } from "@/types/db";
 
 interface OSDetailModalProps {
-  detailOrder: any | null;
+  detailOrder: ServiceOrder | null;
   onClose: () => void;
   stores: Tables<"stores">[];
   profileMap: Map<string, string>;
@@ -66,7 +67,7 @@ interface OSDetailModalProps {
     discount_amount: string;
     justification: string;
   };
-  setUpdateForm: React.Dispatch<React.SetStateAction<any>>;
+  setUpdateForm: React.Dispatch<React.SetStateAction<OSDetailModalProps["updateForm"]>>;
   receiptFile: File | null;
   setReceiptFile: (f: File | null) => void;
   receiptFiles?: File[];
@@ -79,16 +80,16 @@ interface OSDetailModalProps {
   pdfLoading: boolean;
   justification: string;
   setJustification: (value: string) => void;
-  handleDuplicateOS: (order) => void;
-  handleExportPdf: (order) => void;
-  handleExportThermal: (order) => void;
-  handleSendWhatsApp: (order) => void;
+  handleDuplicateOS: (order: ServiceOrder) => void;
+  handleExportPdf: (order: ServiceOrder) => void;
+  handleExportThermal: (order: ServiceOrder) => void;
+  handleSendWhatsApp: (order: ServiceOrder) => void;
   handleUpdateService: () => void | Promise<void>;
   handleMoveStore: (newStoreId: string, justification: string) => void | Promise<void>;
   onRequestDelete: () => void;
   updateStatus: (orderId: string, newStatus: string, oldStatus: string) => void | Promise<void>;
   getPublicUrl: (orderId: string) => string;
-  totalPaid: (order) => number;
+  totalPaid: (order: ServiceOrder) => number;
   isFinancialPending?: boolean;
   onConfirmFinancial?: () => void | Promise<void>;
   onToggleWaiveCommission?: (reason: string) => void | Promise<void>;

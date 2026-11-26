@@ -1,6 +1,13 @@
 import { OS_STATUS_CONFIG as statusConfig } from "@/utils/osStatus";
 import { checklistCount, checklistRows, formatDay, serviceBreakdown, type CheckMark, type OsPdfItem } from "./osPdfRules";
 import { supabase } from "@/integrations/supabase/client";
+import type { jsPDF } from "jspdf";
+import type { ServiceOrder, Store } from "@/types/db";
+
+/** OS que vai para o PDF (os testes mandam só parte das colunas). */
+export type OsPdfOrder = Partial<ServiceOrder>;
+/** Dados da loja que aparecem no cabeçalho/rodapé. */
+export type OsPdfStore = Partial<Store> & { name: string };
 
 export type { OsPdfItem } from "./osPdfRules";
 
@@ -41,7 +48,7 @@ export const paymentLabels: Record<string, string> = {
 };
 
 // ── Gera PDF via jsPDF (importado dinamicamente) ──────────────────────────
-export const generateOSPdf = async (order, store, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
+export const generateOSPdf = async (order: OsPdfOrder, store: OsPdfStore, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
@@ -477,10 +484,10 @@ export const generateOSPdf = async (order, store, techName: string, publicUrl: s
 };
 
 // ── Gera Cupom 80mm ───────────────────────────────────────────────────────
-export const generateThermalPdf = async (order, store, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
+export const generateThermalPdf = async (order: OsPdfOrder, store: OsPdfStore, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   // Papel contínuo 80mm: desenha uma vez para medir e de novo no tamanho exato do conteúdo
-  const render = (doc) => {
+  const render = (doc: jsPDF) => {
     let y = 10;
     const W = 80;
   
@@ -572,7 +579,7 @@ export const generateThermalPdf = async (order, store, techName: string, publicU
  * Resolve a incompatibilidade do Chrome/Chromium onde doc.save() sem anexar ao DOM
  * faz o download com nome de UUID sem extensão .pdf, gerando erro ao abrir no Windows.
  */
-export const saveAndOpenPdf = (doc, filename: string, openInNewTab = true) => {
+export const saveAndOpenPdf = (doc: jsPDF, filename: string, openInNewTab = true) => {
   const safeName = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
   const blobOutput = doc.output("blob");
   const pdfBlob = new Blob([blobOutput], { type: "application/pdf" });

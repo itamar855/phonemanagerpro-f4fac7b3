@@ -14,6 +14,8 @@ import { AndroidPatternLock } from "@/components/AndroidPatternLock";
 import { OsChecklist } from "@/components/OsChecklist";
 import { DeviceScreenScanner } from "@/components/features/ai/DeviceScreenScanner";
 import { supabase } from "@/integrations/supabase/client";
+import type { ChecklistData } from "@/components/OsChecklist";
+import type { Customer, Profile, Store } from "@/types/db";
 
 const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condições descritas nesta OS.
 2. A loja não se responsabiliza por dados contidos no aparelho. Recomenda-se backup prévio.
@@ -23,20 +25,48 @@ const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condiç
 6. A loja não se responsabiliza por danos pré-existentes não descritos nesta OS.
 7. Serviços de diagnóstico podem ter custo mesmo que o reparo não seja efetuado.`;
 
+/** Cliente como a busca do formulário traz. */
+type CustomerHit = Pick<Customer, "id" | "name" | "phone" | "cpf" | "address" | "email">;
+
+/** Formulário de abertura de OS. */
+export type OsForm = {
+  customer_id: string | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_cpf: string;
+  device_brand: string;
+  device_model: string;
+  device_imei: string;
+  device_color: string;
+  device_condition: string;
+  device_password: string;
+  device_accessories: string;
+  reported_defect: string;
+  requested_service: string;
+  store_id: string;
+  estimated_price: string;
+  estimated_completion: string;
+  technician_id: string;
+  terms_accepted: boolean;
+  internal_notes: string;
+  entry_checklist: ChecklistData;
+  device_is_off: boolean;
+};
+
 interface OSFormModalProps {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   resetForm: () => void;
   handleSubmit: (e: React.FormEvent) => void;
-  form: any;
-  setForm: any;
+  form: OsForm;
+  setForm: React.Dispatch<React.SetStateAction<OsForm>>;
   passwordType: "text" | "pattern";
   setPasswordType: (type: "text" | "pattern") => void;
   setPatternImageData: (data: string) => void;
   handleDeviceOffChange: (checked: boolean) => void;
   activeStoreId: string | null;
-  stores: any[];
-  profiles: any[];
+  stores: Store[];
+  profiles: Profile[];
   signatureData: string;
   setSignatureData: (data: string) => void;
   deviceOffAgreed: boolean;
@@ -67,9 +97,9 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
   isSubmitting
 }) => {
   const [customerSearch, setCustomerSearch] = useState("");
-  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [customerResults, setCustomerResults] = useState<CustomerHit[]>([]);
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerHit | null>(null);
 
   // Se o modal fechar ou resetar, limpa estado de busca
   useEffect(() => {
@@ -110,7 +140,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
     return () => clearTimeout(timer);
   }, [customerSearch]);
 
-  const handleSelectCustomer = (c) => {
+  const handleSelectCustomer = (c: CustomerHit) => {
     setSelectedCustomer(c);
     setForm((prev) => ({
       ...prev,

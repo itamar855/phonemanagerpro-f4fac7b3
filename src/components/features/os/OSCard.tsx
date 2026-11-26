@@ -3,17 +3,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MessageCircle, Phone, Calendar, Smartphone, Wrench, AlertTriangle, CheckCircle2 } from "lucide-react";
+import type { ServiceOrder } from "@/types/db";
+import type { StatusConfigItem } from "@/utils/osStatus";
 
 interface OSCardProps {
-  order: any;
-  statusConfig: Record<string, { label: string; color: string; icon: any }>;
+  order: ServiceOrder;
+  statusConfig: Record<string, StatusConfigItem>;
   storeMap: Map<string, string>;
   profileMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  totalPaid: (order) => number;
+  totalPaid: (order: ServiceOrder) => number;
   isFinancialPending?: boolean;
   onClick: () => void;
-  onWhatsApp?: (order) => void;
+  onWhatsApp?: (order: ServiceOrder) => void;
 }
 
 export const OSCard: React.FC<OSCardProps> = ({
