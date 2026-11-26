@@ -4,15 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Trophy, FileText, MessageCircle } from "lucide-react";
 import { formatCurrency, formatPct, exportVendasPDF, exportCSV } from "./relatorioPdf";
 import { Filters, ExportBtns } from "./types";
+import type { FilterProps, ProductRankRow, SalesDetailRow } from "./reportTypes";
 
 export interface VendasTabProps {
-  filterProps: any;
-  salesDetail: any[];
-  rankingProducts: any[];
+  filterProps: FilterProps;
+  salesDetail: SalesDetailRow[];
+  rankingProducts: ProductRankRow[];
   currentPeriodLabel: string;
   currentStoreName: string;
   notaLoading: string | null;
-  handleGerarNota: (r: any, sendWhatsApp: boolean) => void;
+  handleGerarNota: (r: SalesDetailRow, sendWhatsApp: boolean) => void;
 }
 
 export const VendasTab: React.FC<VendasTabProps> = ({

@@ -41,7 +41,7 @@ export const paymentLabels: Record<string, string> = {
 };
 
 // ── Gera PDF via jsPDF (importado dinamicamente) ──────────────────────────
-export const generateOSPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
+export const generateOSPdf = async (order, store, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
@@ -477,10 +477,10 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
 };
 
 // ── Gera Cupom 80mm ───────────────────────────────────────────────────────
-export const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
+export const generateThermalPdf = async (order, store, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   // Papel contínuo 80mm: desenha uma vez para medir e de novo no tamanho exato do conteúdo
-  const render = (doc: any) => {
+  const render = (doc) => {
     let y = 10;
     const W = 80;
   
@@ -572,7 +572,7 @@ export const generateThermalPdf = async (order: any, store: any, techName: strin
  * Resolve a incompatibilidade do Chrome/Chromium onde doc.save() sem anexar ao DOM
  * faz o download com nome de UUID sem extensão .pdf, gerando erro ao abrir no Windows.
  */
-export const saveAndOpenPdf = (doc: any, filename: string, openInNewTab = true) => {
+export const saveAndOpenPdf = (doc, filename: string, openInNewTab = true) => {
   const safeName = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
   const blobOutput = doc.output("blob");
   const pdfBlob = new Blob([blobOutput], { type: "application/pdf" });

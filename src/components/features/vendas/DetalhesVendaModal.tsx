@@ -16,7 +16,7 @@ interface DetalhesVendaModalProps {
   productMap: Map<string, any>;
   storeMap: Map<string, any>;
   profileMap: Map<string, any>;
-  handleGerarNota: (sale: any, whats: boolean) => void;
+  handleGerarNota: (sale, whats: boolean) => void;
   notaLoading: string | null;
 }
 
@@ -35,7 +35,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
   const navigate = useNavigate();
   const [emitindoFiscal, setEmitindoFiscal] = useState(false);
 
-  const handleEmitirFiscal = async (sale: any, product: any) => {
+  const handleEmitirFiscal = async (sale, product) => {
     try {
       setEmitindoFiscal(true);
       const saleNet = Number(sale.sale_price) - (Number(sale.discount) || 0);

@@ -10,8 +10,8 @@ export interface KanbanBoardProps {
   storeMap: Map<string, string>;
   profileMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  isFinancialPending?: (order: any) => boolean;
-  onOrderClick: (order: any) => void;
+  isFinancialPending?: (order) => boolean;
+  onOrderClick: (order) => void;
   onStatusChange: (orderId: string, newStatus: string, oldStatus: string) => void;
 }
 

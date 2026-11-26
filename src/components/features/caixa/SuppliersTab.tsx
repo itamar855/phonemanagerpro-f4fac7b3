@@ -178,25 +178,25 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Nome / Razão Social *</Label>
-              <Input value={supplierForm.name} onChange={e => setSupplierForm((prev: any) => ({ ...prev, name: e.target.value }))} placeholder="Distribuidora de Peças Ltda" className="h-10" />
+              <Input value={supplierForm.name} onChange={e => setSupplierForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Distribuidora de Peças Ltda" className="h-10" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">CNPJ / CPF</Label>
-                <Input value={supplierForm.document} onChange={e => setSupplierForm((prev: any) => ({ ...prev, document: e.target.value }))} placeholder="00.000.000/0001-00" className="h-10" />
+                <Input value={supplierForm.document} onChange={e => setSupplierForm((prev) => ({ ...prev, document: e.target.value }))} placeholder="00.000.000/0001-00" className="h-10" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Telefone</Label>
-                <Input value={supplierForm.phone} onChange={e => setSupplierForm((prev: any) => ({ ...prev, phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-10" />
+                <Input value={supplierForm.phone} onChange={e => setSupplierForm((prev) => ({ ...prev, phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-10" />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Categoria</Label>
-              <Input value={supplierForm.category} onChange={e => setSupplierForm((prev: any) => ({ ...prev, category: e.target.value }))} placeholder="Peças, Acessórios, Ferramentas..." className="h-10" />
+              <Input value={supplierForm.category} onChange={e => setSupplierForm((prev) => ({ ...prev, category: e.target.value }))} placeholder="Peças, Acessórios, Ferramentas..." className="h-10" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Observações</Label>
-              <Textarea value={supplierForm.notes} onChange={e => setSupplierForm((prev: any) => ({ ...prev, notes: e.target.value }))} placeholder="Anotações internas..." />
+              <Textarea value={supplierForm.notes} onChange={e => setSupplierForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Anotações internas..." />
             </div>
             <Button className="w-full h-11 font-semibold" onClick={handleSaveSupplier}>Cadastrar</Button>
           </div>
@@ -209,11 +209,11 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Valor do Lançamento (R$) *</Label>
-              <Input type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm((prev: any) => ({ ...prev, amount: e.target.value }))} placeholder="0.00" className="h-10" />
+              <Input type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm((prev) => ({ ...prev, amount: e.target.value }))} placeholder="0.00" className="h-10" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Forma de Pagamento *</Label>
-              <Select value={payForm.payment_method} onValueChange={v => setPayForm((prev: any) => ({ ...prev, payment_method: v }))}>
+              <Select value={payForm.payment_method} onValueChange={v => setPayForm((prev) => ({ ...prev, payment_method: v }))}>
                 <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="dinheiro">Dinheiro (Sai do Caixa)</SelectItem>
@@ -225,12 +225,12 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Ajuste de Crédito/Débito (R$)</Label>
-              <Input type="number" step="0.01" value={payForm.credit_adjust} onChange={e => setPayForm((prev: any) => ({ ...prev, credit_adjust: e.target.value }))} placeholder="0.00" className="h-10" />
+              <Input type="number" step="0.01" value={payForm.credit_adjust} onChange={e => setPayForm((prev) => ({ ...prev, credit_adjust: e.target.value }))} placeholder="0.00" className="h-10" />
               <p className="text-[10px] text-muted-foreground">Valor pago a mais entra como crédito positivo. Valor pago a menos abate do débito.</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Descrição / Notas</Label>
-              <Input value={payForm.description} onChange={e => setPayForm((prev: any) => ({ ...prev, description: e.target.value }))} placeholder="Pagamento referente à compra de telas" className="h-10" />
+              <Input value={payForm.description} onChange={e => setPayForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="Pagamento referente à compra de telas" className="h-10" />
             </div>
 
             <div className="space-y-2">

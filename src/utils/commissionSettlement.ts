@@ -145,7 +145,7 @@ export async function fetchSettledItemIds(): Promise<{
   const settledOsIds = new Set<string>();
 
   if (!error && data) {
-    data.forEach((item: any) => {
+    data.forEach((item) => {
       if (item.sale_id) settledSaleIds.add(item.sale_id);
       if (item.service_order_id) settledOsIds.add(item.service_order_id);
     });
@@ -291,11 +291,11 @@ export async function fetchSettlementItems(
       : Promise.resolve({ data: [] as any[] }),
   ]);
 
-  const osMap = new Map<string, any>((osRes.data || []).map((o: any) => [o.id, o]));
-  const saleMap = new Map<string, any>((salesRes.data || []).map((s: any) => [s.id, s]));
+  const osMap = new Map<string, any>((osRes.data || []).map((o) => [o.id, o]));
+  const saleMap = new Map<string, any>((salesRes.data || []).map((s) => [s.id, s]));
 
   const partsListMap = new Map<string, string[]>();
-  (osPartsRes.data || []).forEach((pt: any) => {
+  (osPartsRes.data || []).forEach((pt) => {
     if (!pt.service_order_id) return;
     const pName = pt.products?.name || "Peça";
     const qty = Number(pt.quantity || 1);

@@ -663,7 +663,7 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
                       borderRadius: "8px",
                       fontSize: "12px",
                     }}
-                    formatter={(val: any, name: string) => [
+                    formatter={(val, name: string) => [
                       name === "commission" ? formatCurrency(Number(val)) : `${val} OS`,
                       name === "commission" ? "Comissão" : "Reparos Entregues",
                     ]}

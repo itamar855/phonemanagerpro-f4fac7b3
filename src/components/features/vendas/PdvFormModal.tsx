@@ -22,7 +22,7 @@ interface PdvFormModalProps {
   updateCartQty: (id: string, qty: number) => void;
   updateCartPrice: (id: string, price: number) => void;
   pdvPayment: any;
-  setPdvPayment: (payment: any) => void;
+  setPdvPayment: (payment) => void;
   stores: any[];
   handlePdvSubmit: (
     gerarNotinha: boolean,

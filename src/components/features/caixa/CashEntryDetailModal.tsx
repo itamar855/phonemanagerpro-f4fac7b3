@@ -32,7 +32,7 @@ interface CashEntryDetailModalProps {
   handleConfirmEntry: (fromDetailModal: boolean) => Promise<void>;
   loading: boolean;
 
-  handleOpenFullOs: (order: any) => void;
+  handleOpenFullOs: (order) => void;
 
   // Visualização de OS
   osModalOpen: boolean;
@@ -279,7 +279,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                         <Package className="h-3 w-3 text-primary" /> Peças Utilizadas ({linkedOrderItems.length})
                       </span>
                       <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {linkedOrderItems.map((item: any) => {
+                        {linkedOrderItems.map((item) => {
                           const partReceipt = item.receipt_url || item.products?.parts_payment_voucher;
                           const orderReceipt = item.supplier_order_receipt_url;
                           return (
@@ -353,7 +353,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
               {(selectedEntry.receipt_url ||
                 linkedServiceOrder?.receipt_url ||
                 (selectedEntry as any).supplier_order_receipt_url ||
-                (linkedOrderItems && linkedOrderItems.some((it: any) => it.receipt_url || it.supplier_order_receipt_url || it.products?.parts_payment_voucher))) && (
+                (linkedOrderItems && linkedOrderItems.some((it) => it.receipt_url || it.supplier_order_receipt_url || it.products?.parts_payment_voucher))) && (
                 <div className="space-y-2 pt-1 border-t border-border/40">
                   <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wide flex items-center gap-1">
                     <Receipt className="h-3 w-3 text-primary" /> Comprovantes Anexados
@@ -398,7 +398,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                     )}
 
                     {/* Comprovantes de cada peça vinculada */}
-                    {linkedOrderItems && linkedOrderItems.map((item: any, idx: number) => {
+                    {linkedOrderItems && linkedOrderItems.map((item, idx: number) => {
                       const partReceipt = item.receipt_url || item.products?.parts_payment_voucher;
                       const orderReceipt = item.supplier_order_receipt_url;
                       if (!partReceipt && !orderReceipt) return null;
@@ -671,7 +671,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {osModalItems.map((item: any) => (
+                    {osModalItems.map((item) => (
                       <div
                         key={item.id}
                         className="p-2.5 rounded border border-border/60 bg-background/50 space-y-1.5"

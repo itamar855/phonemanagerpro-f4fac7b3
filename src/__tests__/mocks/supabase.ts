@@ -169,7 +169,7 @@ export class MockQueryBuilder {
   }
 
   // Terminal — returns the result as a resolved promise (for await)
-  then(resolve: (value: MockQueryResult) => any, reject?: (reason: any) => any) {
+  then(resolve: (value: MockQueryResult) => any, reject?: (reason) => any) {
     this._record();
     return Promise.resolve(this._result).then(resolve, reject);
   }

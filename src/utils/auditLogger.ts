@@ -1,3 +1,4 @@
+import type { Json } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { logger } from "./logger";
@@ -10,14 +11,15 @@ export type AuditAction =
   | "UPDATE_RECORD"
   | "DELETE_RECORD" 
   | "LOGIN" 
-  | "TRANSFER_STOCK";
+  | "TRANSFER_STOCK"
+  | "DOWNLOAD_REPORT";
 
 export const logAction = async (
   action: AuditAction,
   entityType?: string,
   entityId?: string,
-  oldValues?: any,
-  newValues?: any,
+  oldValues?: Json,
+  newValues?: { [key: string]: Json | undefined } | null,
   storeId?: string | null
 ) => {
   try {
@@ -50,7 +52,7 @@ export const logAction = async (
       entity_id: entityId,
       before_state: oldValues,
       after_state: newValues ? { ...newValues, _meta } : { _meta },
-    } as any);
+    });
 
     if (error) {
       console.error("Audit Log Error:", error);

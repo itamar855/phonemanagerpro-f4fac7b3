@@ -342,7 +342,7 @@ describe('Cash Entries — Integration Flow', () => {
       expect(pixSale.confirmed).toBe(false);
 
       // Validação da trava de anexo
-      const validateConfirmation = (entry: any, filesCount: number) => {
+      const validateConfirmation = (entry, filesCount: number) => {
         const isCash = entry.payment_method === 'dinheiro';
         if (!isCash && filesCount === 0) {
           return { allowed: false, error: 'Comprovante obrigatório para não-dinheiro' };

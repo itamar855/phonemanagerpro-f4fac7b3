@@ -74,7 +74,7 @@ const Ranking = () => {
     const [salesRes, productsRes, rolesRes, accTxRes, osRes, partsRes, profsRes, storesRes] = await Promise.all([
       supabase
         .from("sales")
-        .select("*, products(*)")
+        .select("*, products!sales_product_id_fkey(*)")
         .gte("created_at", start)
         .lte("created_at", end),
       supabase.from("products").select("*"),
@@ -98,7 +98,7 @@ const Ranking = () => {
 
     const allSales = (salesRes.data ?? []) as any[];
     const products = (productsRes.data ?? []) as any[];
-    const productMap = new Map(products.map((p: any) => [p.id, p]));
+    const productMap = new Map(products.map((p) => [p.id, p]));
     const roles = (rolesRes.data ?? []) as any[];
     const allAccTx = (accTxRes.data ?? []) as any[];
     const activeProfiles = (profsRes.data && profsRes.data.length > 0) ? profsRes.data : profiles;

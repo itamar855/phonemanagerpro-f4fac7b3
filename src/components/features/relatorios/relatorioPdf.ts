@@ -2,6 +2,8 @@ import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
 import { getStatusLabel } from "@/utils/osStatus";
+import type { ServiceOrder } from "@/types/db";
+import type { CaixaRow, CaixaStats, DreData, DreLine, FinanceiroRow, FinanceiroStats, OsStats, SalesDetailRow, SellerStat } from "./reportTypes";
 
 export const formatCurrency = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -136,7 +138,7 @@ export function pdfCheckPage(doc: jsPDF, y: number, pg: { n: number }): number {
   return y;
 }
 
-export function exportDREPDF(dreLines: any[], dre: any, periodo: string, loja: string) {
+export function exportDREPDF(dreLines: DreLine[], dre: DreData, periodo: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const M = 12;
   const W = 210;
@@ -192,12 +194,12 @@ export function exportDREPDF(dreLines: any[], dre: any, periodo: string, loja: s
   toast.success("PDF do DRE gerado!");
 }
 
-export function exportVendasPDF(rows: any[], periodo: string, loja: string) {
+export function exportVendasPDF(rows: SalesDetailRow[], periodo: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
   const pg = { n: 1 };
   let y = pdfHeader(doc, "Relatorio de Vendas", loja, periodo);
-  const total = rows.reduce((s: number, r: any) => s + r.valor, 0);
-  const lucro = rows.reduce((s: number, r: any) => s + r.lucro, 0);
+  const total = rows.reduce((s: number, r) => s + r.valor, 0);
+  const lucro = rows.reduce((s: number, r) => s + r.lucro, 0);
   y = pdfKpiRow(doc, y, [
     { label: "Total Vendido", value: formatCurrency(total), color: PDF_GREEN },
     { label: "Lucro Total", value: formatCurrency(lucro), color: lucro >= 0 ? PDF_GREEN : PDF_RED },
@@ -219,7 +221,7 @@ export function exportVendasPDF(rows: any[], periodo: string, loja: string) {
     { label: "MARGEM", w: 22 },
   ];
   y = pdfTableHead(doc, y, cols);
-  rows.forEach((r: any, i: number) => {
+  rows.forEach((r, i: number) => {
     y = pdfCheckPage(doc, y, pg);
     y = pdfTableRow(doc, y, cols, [
       r.data,
@@ -239,7 +241,7 @@ export function exportVendasPDF(rows: any[], periodo: string, loja: string) {
   toast.success("PDF de Vendas gerado!");
 }
 
-export function exportOSPDF(osData: any[], osStats: any, profileMap: Map<string, string>, periodo: string, loja: string) {
+export function exportOSPDF(osData: ServiceOrder[], osStats: OsStats, profileMap: Map<string, string>, periodo: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
   const pg = { n: 1 };
   let y = pdfHeader(doc, "Relatorio de OS - Servicos", loja, periodo);
@@ -264,7 +266,7 @@ export function exportOSPDF(osData: any[], osStats: any, profileMap: Map<string,
     { label: "VALOR FINAL", w: 26 },
   ];
   y = pdfTableHead(doc, y, cols);
-  osData.forEach((o: any, i: number) => {
+  osData.forEach((o, i: number) => {
     y = pdfCheckPage(doc, y, pg);
     y = pdfTableRow(doc, y, cols, [
       String(o.order_number ?? "-"),
@@ -283,7 +285,7 @@ export function exportOSPDF(osData: any[], osStats: any, profileMap: Map<string,
   toast.success("PDF de OS gerado!");
 }
 
-export function exportCaixaPDF(caixaData: any[], caixaStats: any, periodo: string, loja: string) {
+export function exportCaixaPDF(caixaData: CaixaRow[], caixaStats: CaixaStats, periodo: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pg = { n: 1 };
   let y = pdfHeader(doc, "Relatorio de Caixa", loja, periodo);
@@ -304,7 +306,7 @@ export function exportCaixaPDF(caixaData: any[], caixaStats: any, periodo: strin
     { label: "DIFERENCA", w: 28 },
   ];
   y = pdfTableHead(doc, y, cols);
-  caixaData.forEach((r: any, i: number) => {
+  caixaData.forEach((r, i: number) => {
     y = pdfCheckPage(doc, y, pg);
     y = pdfTableRow(doc, y, cols, [
       r.data,
@@ -321,7 +323,7 @@ export function exportCaixaPDF(caixaData: any[], caixaStats: any, periodo: strin
   toast.success("PDF de Caixa gerado!");
 }
 
-export function exportRankingPDF(ranking: any[], periodo: string, loja: string) {
+export function exportRankingPDF(ranking: SellerStat[], periodo: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pg = { n: 1 };
   let y = pdfHeader(doc, "Ranking de Vendedores", loja, periodo);
@@ -342,7 +344,7 @@ export function exportRankingPDF(ranking: any[], periodo: string, loja: string) 
     { label: "OS ENTREGUES", w: 28 },
   ];
   y = pdfTableHead(doc, y, cols);
-  ranking.forEach((v: any, i: number) => {
+  ranking.forEach((v, i: number) => {
     y = pdfCheckPage(doc, y, pg);
     y = pdfTableRow(doc, y, cols, [
       (i + 1) + "o",
@@ -359,7 +361,7 @@ export function exportRankingPDF(ranking: any[], periodo: string, loja: string) 
   toast.success("PDF de Ranking gerado!");
 }
 
-export function exportComissoesPDF(comissoes: any[], periodo: string, loja: string) {
+export function exportComissoesPDF(comissoes: SellerStat[], periodo: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pg = { n: 1 };
   let y = pdfHeader(doc, "Relatorio de Comissoes", loja, periodo);
@@ -382,7 +384,7 @@ export function exportComissoesPDF(comissoes: any[], periodo: string, loja: stri
     { label: "TOTAL COM.", w: 28 },
   ];
   y = pdfTableHead(doc, y, cols);
-  comissoes.forEach((v: any, i: number) => {
+  comissoes.forEach((v, i: number) => {
     y = pdfCheckPage(doc, y, pg);
     const cargo = v.role === "tecnico" ? "Técnico" : "Vendedor";
     const qtdStr = `${v.qtdVendas}v / ${v.osEntregues} OS`;
@@ -402,7 +404,7 @@ export function exportComissoesPDF(comissoes: any[], periodo: string, loja: stri
   toast.success("PDF de Comissoes gerado!");
 }
 
-export function exportFinanceiroPDF(rows: any[], stats: any, period: string, loja: string) {
+export function exportFinanceiroPDF(rows: FinanceiroRow[], stats: FinanceiroStats, period: string, loja: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
   const pg = { n: 1 };
   let y = pdfHeader(doc, "Relatorio Financeiro Detalhado", loja, period);
@@ -427,7 +429,7 @@ export function exportFinanceiroPDF(rows: any[], stats: any, period: string, loj
   
   y = pdfTableHead(doc, y, cols);
   
-  rows.forEach((r: any, i: number) => {
+  rows.forEach((r, i: number) => {
     y = pdfCheckPage(doc, y, pg);
     y = pdfTableRow(doc, y, cols, [
       r.data,
@@ -444,12 +446,12 @@ export function exportFinanceiroPDF(rows: any[], stats: any, period: string, loj
   toast.success("PDF Financeiro gerado!");
 }
 
-export function exportCSV(rows: Record<string, any>[], filename: string) {
+export function exportCSV<T extends object>(rows: T[], filename: string) {
   if (!rows.length) {
     toast.error("Sem dados para exportar");
     return;
   }
-  const keys = Object.keys(rows[0]);
+  const keys = Object.keys(rows[0]) as (keyof T)[];
   const csv = [keys.join(";"), ...rows.map(r => keys.map(k => String(r[k] ?? "").replace(/;/g, ",")).join(";"))].join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -459,5 +461,5 @@ export function exportCSV(rows: Record<string, any>[], filename: string) {
   a.click();
   URL.revokeObjectURL(url);
   toast.success("CSV exportado!");
-  logAction("DOWNLOAD_REPORT" as any, "reports", filename);
+  logAction("DOWNLOAD_REPORT", "reports", filename);
 }

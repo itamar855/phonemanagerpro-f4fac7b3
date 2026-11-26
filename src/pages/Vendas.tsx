@@ -233,7 +233,7 @@ const Vendas = () => {
   });
 
   const discount = parseFloat(form.discount) || 0;
-  const tradeInVal = form.has_trade_in ? (form.trade_in_devices?.reduce((acc: number, d: any) => acc + (parseFloat(d.value) || 0), 0) || 0) : 0;
+  const tradeInVal = form.has_trade_in ? (form.trade_in_devices?.reduce((acc: number, d) => acc + (parseFloat(d.value) || 0), 0) || 0) : 0;
   const cashVal = parseFloat(form.payment_cash) || 0;
   const cardVal = parseFloat(form.payment_card) || 0;
   const pixVal = parseFloat(form.payment_pix) || 0;
@@ -897,7 +897,7 @@ const Vendas = () => {
   };
 
   // ── Editar venda PDV (acessório) ──────────────────────────────────────────
-  const handleOpenPdvEdit = async (tx: any) => {
+  const handleOpenPdvEdit = async (tx) => {
     setLoading(true);
     let cash = 0, card = 0, pix = 0;
     try {

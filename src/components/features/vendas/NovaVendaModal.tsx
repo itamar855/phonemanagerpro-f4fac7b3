@@ -56,7 +56,7 @@ interface NovaVendaModalProps {
   customerSearch: string;
   setCustomerSearch: (v: string) => void;
   customerResults: any[];
-  selectCustomer: (c: any) => void;
+  selectCustomer: (c) => void;
   showNewCustomerForm: boolean;
   setShowNewCustomerForm: React.Dispatch<React.SetStateAction<boolean>>;
   newCustomerForm: any;
@@ -230,7 +230,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <Label className="text-xs">Nome *</Label>
                       <Input
                         value={newCustomerForm.name}
-                        onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, name: e.target.value }))}
+                        onChange={(e) => setNewCustomerForm((f) => ({ ...f, name: e.target.value }))}
                         placeholder="Nome completo"
                         className="h-9"
                       />
@@ -240,7 +240,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Label className="text-xs">Telefone</Label>
                         <Input
                           value={newCustomerForm.phone}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, phone: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, phone: e.target.value }))}
                           placeholder="(87) 99999-9999"
                           className="h-9"
                         />
@@ -249,7 +249,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Label className="text-xs">CPF</Label>
                         <Input
                           value={newCustomerForm.cpf}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, cpf: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, cpf: e.target.value }))}
                           placeholder="000.000.000-00"
                           className="h-9"
                         />
@@ -259,7 +259,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <Label className="text-xs">Endereço</Label>
                       <Input
                         value={newCustomerForm.address}
-                        onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, address: e.target.value }))}
+                        onChange={(e) => setNewCustomerForm((f) => ({ ...f, address: e.target.value }))}
                         placeholder="Rua, número, bairro..."
                         className="h-9"
                       />
@@ -270,7 +270,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Input
                           type="email"
                           value={newCustomerForm.email}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, email: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, email: e.target.value }))}
                           placeholder="email@exemplo.com"
                           className="h-9"
                         />
@@ -280,7 +280,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Input
                           type="date"
                           value={newCustomerForm.birth}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, birth: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, birth: e.target.value }))}
                           className="h-9"
                         />
                       </div>
@@ -504,7 +504,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                 </Button>
               </div>
 
-              {(form.trade_in_devices || []).map((device: any, index: number) => (
+              {(form.trade_in_devices || []).map((device, index: number) => (
                 <div key={index} className="space-y-3 p-2.5 rounded-md border border-border/50 bg-background/50 relative">
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] font-bold text-muted-foreground uppercase">Aparelho #{index + 1}</p>

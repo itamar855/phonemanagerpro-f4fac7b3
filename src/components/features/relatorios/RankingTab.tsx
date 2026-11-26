@@ -38,6 +38,8 @@ import {
 import { toast } from "sonner";
 import { formatCurrency, exportRankingPDF, exportCSV, COLORS } from "./relatorioPdf";
 import { RankBadge, PeriodSelect, ExportBtns } from "./types";
+import type { SellerStat } from "./reportTypes";
+import type { Store as StoreRow } from "@/types/db";
 import {
   PATENT_CONFIGS,
   PHONE_TIERS,
@@ -139,8 +141,8 @@ export interface RankingTabProps {
   isAdmin: boolean;
   storeId: string;
   setStoreId: (v: string) => void;
-  stores: any[];
-  ranking: any[];
+  stores: StoreRow[];
+  ranking: SellerStat[];
   rankingPhones?: RankSellerPhone[];
   rankingAccessories?: RankSellerAccessory[];
   rankingTechs?: RankTechnician[];
@@ -200,13 +202,13 @@ export const RankingTab: React.FC<RankingTabProps> = ({
     setAdminConfigOpen(true);
   };
 
-  const updatePhoneTierField = (tierName: "prata" | "ouro" | "diamante", field: keyof PhoneRuleTier, value: any) => {
+  const updatePhoneTierField = (tierName: "prata" | "ouro" | "diamante", field: keyof PhoneRuleTier, value: PhoneRuleTier[keyof PhoneRuleTier]) => {
     setEditPhoneTiers((prev) =>
       prev.map((t) => (t.tier === tierName ? { ...t, [field]: value } : t))
     );
   };
 
-  const updateAccessoryTierField = (tierName: "prata" | "ouro" | "diamante", field: keyof AccessoryRuleTier, value: any) => {
+  const updateAccessoryTierField = (tierName: "prata" | "ouro" | "diamante", field: keyof AccessoryRuleTier, value: AccessoryRuleTier[keyof AccessoryRuleTier]) => {
     setEditAccessoryTiers((prev) =>
       prev.map((t) => (t.tier === tierName ? { ...t, [field]: value } : t))
     );

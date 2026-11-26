@@ -10,7 +10,7 @@ interface EmReparoTabProps {
   activeStoreId: string;
   storeMap: Map<string, string>;
   formatCurrency: (value: number) => string;
-  setRepairProduct: (p: any) => void;
+  setRepairProduct: (p) => void;
   setRepairModalOpen: (open: boolean) => void;
   setDefectsProduct: (p: Tables<"products">) => void;
   setDefectsList: (list: string[]) => void;

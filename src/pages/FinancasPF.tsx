@@ -121,7 +121,7 @@ const FinancasPF = () => {
     setTransactions(txRes.data ?? []);
     const rawAccounts = accRes.data ?? [];
     const seenPfNames = new Set<string>();
-    const dedupedAccounts = rawAccounts.filter((a: any) => {
+    const dedupedAccounts = rawAccounts.filter((a) => {
       const key = (a.bank_name || "").toLowerCase().trim();
       if (seenPfNames.has(key)) return false;
       seenPfNames.add(key);

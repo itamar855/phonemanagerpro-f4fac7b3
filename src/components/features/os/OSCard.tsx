@@ -10,10 +10,10 @@ interface OSCardProps {
   storeMap: Map<string, string>;
   profileMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  totalPaid: (order: any) => number;
+  totalPaid: (order) => number;
   isFinancialPending?: boolean;
   onClick: () => void;
-  onWhatsApp?: (order: any) => void;
+  onWhatsApp?: (order) => void;
 }
 
 export const OSCard: React.FC<OSCardProps> = ({

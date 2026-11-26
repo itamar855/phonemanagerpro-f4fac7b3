@@ -14,7 +14,7 @@ interface AcessoriosTableProps {
   activeStoreId: string | null;
   storeMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  openAccDialog: (a?: any) => void;
+  openAccDialog: (a?) => void;
   setDeleteId: (id: string) => void;
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;

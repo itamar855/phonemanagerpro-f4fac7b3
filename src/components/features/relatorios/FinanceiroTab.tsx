@@ -3,11 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, exportFinanceiroPDF, exportCSV } from "./relatorioPdf";
 import { Filters, ExportBtns } from "./types";
+import type { FilterProps, FinanceiroRow, FinanceiroStats } from "./reportTypes";
 
 export interface FinanceiroTabProps {
-  filterProps: any;
-  financeiroData: any[];
-  financeiroStats: any;
+  filterProps: FilterProps;
+  financeiroData: FinanceiroRow[];
+  financeiroStats: FinanceiroStats;
   currentPeriodLabel: string;
   currentStoreName: string;
 }
@@ -26,7 +27,7 @@ export const FinanceiroTab: React.FC<FinanceiroTabProps> = ({
         <ExportBtns
           onCSV={() =>
             exportCSV(
-              financeiroData.map((t: any) => ({
+              financeiroData.map((t) => ({
                 data: t.data,
                 descricao: t.descricao,
                 categoria: t.categoria,
@@ -83,7 +84,7 @@ export const FinanceiroTab: React.FC<FinanceiroTabProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {financeiroData.map((t: any, i: number) => (
+                {financeiroData.map((t, i: number) => (
                   <tr key={i} className="border-b border-border/30 hover:bg-muted/30">
                     <td className="py-2 px-2">{t.data}</td>
                     <td className="py-2 px-2 font-medium">{t.descricao}</td>

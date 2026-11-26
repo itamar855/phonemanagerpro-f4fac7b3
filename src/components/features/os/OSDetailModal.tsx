@@ -79,16 +79,16 @@ interface OSDetailModalProps {
   pdfLoading: boolean;
   justification: string;
   setJustification: (value: string) => void;
-  handleDuplicateOS: (order: any) => void;
-  handleExportPdf: (order: any) => void;
-  handleExportThermal: (order: any) => void;
-  handleSendWhatsApp: (order: any) => void;
+  handleDuplicateOS: (order) => void;
+  handleExportPdf: (order) => void;
+  handleExportThermal: (order) => void;
+  handleSendWhatsApp: (order) => void;
   handleUpdateService: () => void | Promise<void>;
   handleMoveStore: (newStoreId: string, justification: string) => void | Promise<void>;
   onRequestDelete: () => void;
   updateStatus: (orderId: string, newStatus: string, oldStatus: string) => void | Promise<void>;
   getPublicUrl: (orderId: string) => string;
-  totalPaid: (order: any) => number;
+  totalPaid: (order) => number;
   isFinancialPending?: boolean;
   onConfirmFinancial?: () => void | Promise<void>;
   onToggleWaiveCommission?: (reason: string) => void | Promise<void>;
@@ -465,7 +465,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                     partsTotal={partsTotal}
                     finalPrice={updateForm.final_price}
                     onChange={(next) =>
-                      setUpdateForm((f: any) => ({
+                      setUpdateForm((f) => ({
                         ...f,
                         services: next.services,
                         discount_amount: next.discount_amount,
@@ -485,7 +485,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         step="0.01"
                         value={updateForm.final_price}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, final_price: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, final_price: e.target.value }))
                         }
                         placeholder="0.00"
                         className="h-9"
@@ -499,7 +499,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         type="date"
                         value={updateForm.warranty_end_date}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, warranty_end_date: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, warranty_end_date: e.target.value }))
                         }
                         className="h-9 text-xs"
                       />
@@ -512,7 +512,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         disabled={userRole === "vendedor"}
                         value={updateForm.technician_id || "none"}
                         onValueChange={(v) =>
-                          setUpdateForm((f: any) => ({ ...f, technician_id: v }))
+                          setUpdateForm((f) => ({ ...f, technician_id: v }))
                         }
                       >
                         <SelectTrigger className="h-9">
@@ -553,7 +553,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         step="0.01"
                         value={updateForm.payment_cash}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, payment_cash: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, payment_cash: e.target.value }))
                         }
                         placeholder="0.00"
                         className="h-8 text-xs"
@@ -568,7 +568,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         step="0.01"
                         value={updateForm.payment_card}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, payment_card: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, payment_card: e.target.value }))
                         }
                         placeholder="0.00"
                         className="h-8 text-xs"
@@ -583,7 +583,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         step="0.01"
                         value={updateForm.payment_pix}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, payment_pix: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, payment_pix: e.target.value }))
                         }
                         placeholder="0.00"
                         className="h-8 text-xs"
@@ -598,7 +598,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                         step="0.01"
                         value={updateForm.payment_other}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, payment_other: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, payment_other: e.target.value }))
                         }
                         placeholder="0.00"
                         className="h-8 text-xs"
@@ -610,7 +610,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                     <Input
                       value={updateForm.payment_notes}
                       onChange={(e) =>
-                        setUpdateForm((f: any) => ({ ...f, payment_notes: e.target.value }))
+                        setUpdateForm((f) => ({ ...f, payment_notes: e.target.value }))
                       }
                       placeholder="Ex: Parte em dinheiro, parte no cartão"
                       className="h-9"
@@ -764,7 +764,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                       <Input
                         value={updateForm.justification}
                         onChange={(e) =>
-                          setUpdateForm((f: any) => ({ ...f, justification: e.target.value }))
+                          setUpdateForm((f) => ({ ...f, justification: e.target.value }))
                         }
                         placeholder="Ex: Atualização de preço, peça adicionada, técnico alterado..."
                         required

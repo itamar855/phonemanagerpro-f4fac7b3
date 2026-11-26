@@ -61,7 +61,7 @@ const Clientes = () => {
 
   useEffect(() => { fetchData(); }, [activeStoreId]);
 
-  const productMap = new Map(products.map((p: any) => [p.id, p.name]));
+  const productMap = new Map(products.map((p) => [p.id, p.name]));
 
   const filtered = customers.filter((c) => {
     const q = search.toLowerCase();

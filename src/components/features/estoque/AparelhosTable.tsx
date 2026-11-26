@@ -33,7 +33,7 @@ const statusColors: Record<string, string> = {
 interface AparelhosTableProps {
   inStock: any[];
   form: any;
-  setForm: (form: any) => void;
+  setForm: (form) => void;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   handleSubmit: (e: React.FormEvent) => void;
@@ -42,16 +42,16 @@ interface AparelhosTableProps {
   storeMap: Map<string, string>;
   stores: any[];
   formatCurrency: (v: number) => string;
-  loadHistory: (p: any) => void;
-  setTransferProduct: (p: any) => void;
+  loadHistory: (p) => void;
+  setTransferProduct: (p) => void;
   setTransferDialogOpen: (open: boolean) => void;
-  setRepairProduct: (p: any) => void;
+  setRepairProduct: (p) => void;
   setRepairModalOpen: (open: boolean) => void;
-  setDefectsProduct: (p: any) => void;
+  setDefectsProduct: (p) => void;
   setDefectsList: (d: string[]) => void;
   setCustomDefect: (d: string) => void;
   setDefectsDialogOpen: (open: boolean) => void;
-  openEditProduct: (p: any) => void;
+  openEditProduct: (p) => void;
   setDeleteId: (id: string) => void;
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;

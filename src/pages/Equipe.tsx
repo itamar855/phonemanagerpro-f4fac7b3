@@ -127,7 +127,7 @@ const Equipe = () => {
     });
 
     setMembers(
-      profiles.map((p: any) => {
+      profiles.map((p) => {
         const roleData = roleMap.get(p.user_id);
         return {
           ...p,
@@ -269,7 +269,7 @@ const Equipe = () => {
         } catch (_) {}
         toast.error(errorMsg || "Erro ao remover membro");
       } else {
-        logAction("DELETE_RECORD" as any, "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
+        logAction("DELETE_RECORD", "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
         toast.success(response.data?.message || "Membro removido com sucesso!");
         setMemberToDelete(null);
         fetchData();

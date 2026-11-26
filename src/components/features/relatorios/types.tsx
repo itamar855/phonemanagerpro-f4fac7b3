@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MONTHS } from "./relatorioPdf";
+import type { FilterProps } from "./reportTypes";
 
 export const getPeriodDates = (period: string, customStart: string, customEnd: string, specificDay?: string) => {
   const now = new Date();
@@ -119,7 +120,7 @@ export const Filters = ({
   specificDay,
   setSpecificDay,
   userRole,
-}: any) => (
+}: FilterProps) => (
   <div className="flex flex-wrap gap-2 items-end">
     <div className="space-y-1">
       <Label className="text-xs">Periodo</Label>
@@ -167,7 +168,7 @@ export const Filters = ({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as lojas</SelectItem>
-            {stores.map((s: any) => (
+            {stores.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
               </SelectItem>

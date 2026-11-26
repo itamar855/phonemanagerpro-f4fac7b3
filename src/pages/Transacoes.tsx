@@ -146,7 +146,7 @@ const Transacoes = () => {
     const rawAccounts = accountsRes.data ?? [];
     // Deduplicate PF accounts by bank_name
     const seenPfNames = new Set<string>();
-    const dedupedAccounts = rawAccounts.filter((a: any) => {
+    const dedupedAccounts = rawAccounts.filter((a) => {
       if (a.owner_type === "PF") {
         const key = (a.bank_name || "").toLowerCase().trim();
         if (seenPfNames.has(key)) return false;

@@ -113,7 +113,7 @@ describe("PDF da OS: gera o documento com as seções novas", () => {
     exit_checklist: { "Display / LCD": "ok" },
     payment_pix: 700,
   };
-  const textOf = (doc: any) => {
+  const textOf = (doc) => {
     const pages: string[] = doc.internal.pages.slice(1).map((p: string[]) => p.join("\n"));
     return pages.join("\n");
   };

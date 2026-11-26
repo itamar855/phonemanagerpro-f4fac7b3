@@ -84,12 +84,12 @@ export default function Contas() {
     // Filter accounts:
     // PJ accounts: loaded if they are linked to the active store OR if they are global (store_id is null)
     // PF accounts: loaded globally (all PF accounts)
-    const pjAccounts = allAccounts.filter((a: any) => a.owner_type !== "PF" && (!a.store_id || a.store_id === activeStoreId));
+    const pjAccounts = allAccounts.filter((a) => a.owner_type !== "PF" && (!a.store_id || a.store_id === activeStoreId));
     
     // Deduplicate PF accounts by bank_name (PF accounts are global/personal, only 1 per bank)
     const seenPfNames = new Set<string>();
     const pfAccounts = userRole === "admin"
-      ? allAccounts.filter((a: any) => a.owner_type === "PF").filter((a: any) => {
+      ? allAccounts.filter((a) => a.owner_type === "PF").filter((a) => {
           const key = (a.bank_name || "").toLowerCase().trim();
           if (seenPfNames.has(key)) return false;
           seenPfNames.add(key);
@@ -214,13 +214,13 @@ export default function Contas() {
   // Agrupamento por Categoria para PF
   const pfCategories = pfTransactions
     .filter(t => pf.some(a => a.account_id === t.source_account_id)) // Apenas saídas
-    .reduce((acc: any, t) => {
+    .reduce((acc, t) => {
       const cat = t.category || "Outros";
       acc[cat] = (acc[cat] || 0) + Number(t.amount);
       return acc;
     }, {});
   const sortedPfCategories = Object.entries(pfCategories)
-    .sort(([, a]: any, [, b]: any) => b - a)
+    .sort(([, a], [, b]) => b - a)
     .slice(0, 5);
   const AccountCard = ({ acc }: { acc: AccountBalance }) => (
     <Card className="border-primary/10 bg-card overflow-hidden shadow-sm hover:border-primary transition-all">
@@ -443,7 +443,7 @@ export default function Contas() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    {sortedPfCategories.length > 0 ? sortedPfCategories.map(([cat, val]: any) => {
+                    {sortedPfCategories.length > 0 ? sortedPfCategories.map(([cat, val]) => {
                       const perc = (val / (pfExpense || 1)) * 100;
                       return (
                         <div key={cat} className="space-y-1.5">

@@ -40,6 +40,9 @@ import {
 } from "@/utils/commissionSettlement";
 import { openComprovante } from "@/lib/storageHelper";
 import { logAction } from "@/utils/auditLogger";
+import type { User } from "@supabase/supabase-js";
+import type { Profile, SaleWithProduct, ServiceOrder, Store, UserRole } from "@/types/db";
+import type { OsItemCost, SellerStat } from "./reportTypes";
 
 export interface ComissoesTabProps {
   rankPeriod: string;
@@ -50,21 +53,21 @@ export interface ComissoesTabProps {
   canSettleCommissions: boolean;
   storeId: string;
   setStoreId: (v: string) => void;
-  stores: any[];
-  profiles: any[];
-  comissoes: any[];
+  stores: Store[];
+  profiles: Profile[];
+  comissoes: SellerStat[];
   settlementsHistory: CommissionSettlement[];
   profileMap: Map<string, string>;
-  storeMap: Map<string, any>;
+  storeMap: Map<string, Store>;
   currentRankPeriodLabel: string;
   currentStoreName: string;
-  rawSalesForPayout: any[];
-  rawOsForPayout: any[];
-  osItemsForPayout: any[];
-  roleMapForPayout: Map<string, any>;
+  rawSalesForPayout: SaleWithProduct[];
+  rawOsForPayout: ServiceOrder[];
+  osItemsForPayout: OsItemCost[];
+  roleMapForPayout: Map<string, UserRole>;
   settledSaleIds: Set<string>;
   settledOsIds: Set<string>;
-  user: any;
+  user: User | null;
   fetchRanking: () => void;
 }
 
@@ -114,11 +117,11 @@ export const ComissoesTab: React.FC<ComissoesTabProps> = ({
 
     if (s.payment_method === "dinheiro" && s.cash_register_id) {
       try {
-        const { data } = await (supabase
+        const { data } = await supabase
           .from("cash_registers")
           .select("status")
           .eq("id", s.cash_register_id)
-          .maybeSingle() as any);
+          .maybeSingle();
         if (data?.status === "closed") {
           setOrigRegisterClosed(true);
         }

@@ -161,7 +161,7 @@ const OrdensServico = () => {
 
     const lastReopenMap = new Map<string, string>();
     if (reopenRes.data) {
-      reopenRes.data.forEach((h: any) => {
+      reopenRes.data.forEach((h) => {
         if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
           lastReopenMap.set(h.service_order_id, h.created_at);
         }
@@ -171,7 +171,7 @@ const OrdensServico = () => {
     const entries = (cashRes.data as any[]) ?? [];
     const idSet = new Set<string>();
 
-    loadedOrders.forEach((o: any) => {
+    loadedOrders.forEach((o) => {
       if (o.status !== "delivered") return;
       const expectedVal = Number(o.final_price || o.estimated_price || 0);
       if (expectedVal <= 0) return;
@@ -179,7 +179,7 @@ const OrdensServico = () => {
       const lastReopenAt = lastReopenMap.get(o.id) || null;
       const orderNum = Number(o.order_number);
 
-      const matchingEntries = entries.filter((entry: any) => {
+      const matchingEntries = entries.filter((entry) => {
         const desc = entry.description || "";
         if (desc.startsWith("PDV:") || desc.startsWith("Venda:")) return false;
         if (lastReopenAt && entry.created_at && entry.created_at <= lastReopenAt) return false;
@@ -195,7 +195,7 @@ const OrdensServico = () => {
       const refDate = o.delivered_at || o.created_at || "";
       const isPostIntegration = refDate >= "2026-11-01";
 
-      if (matchingEntries.some((e: any) => !e.confirmed) || (matchingEntries.length === 0 && isPostIntegration)) {
+      if (matchingEntries.some((e) => !e.confirmed) || (matchingEntries.length === 0 && isPostIntegration)) {
         idSet.add(o.id);
       }
     });
@@ -204,7 +204,7 @@ const OrdensServico = () => {
     setPendingFinancialOSNumbers(new Set());
   };
 
-  const isFinancialPending = (order: any) => {
+  const isFinancialPending = (order) => {
     if (!order || order.status !== "delivered") return false;
     return (
       pendingFinancialOSIds.has(order.id) ||
@@ -246,7 +246,7 @@ const OrdensServico = () => {
       setOrders(prev => prev.map(o => o.id === finalPriceRequiredOrder.id ? { ...o, final_price: priceNum } : o));
       if (detailOrder?.id === finalPriceRequiredOrder.id) {
         setDetailOrder(prev => prev ? { ...prev, final_price: priceNum } : null);
-        setUpdateForm((prev: any) => ({ ...prev, final_price: String(priceNum) }));
+        setUpdateForm((prev) => ({ ...prev, final_price: String(priceNum) }));
       }
 
       const pending = finalPricePendingStatus;
@@ -265,7 +265,7 @@ const OrdensServico = () => {
     }
   };
 
-  const executeFinancialConfirmation = async (order: any, isBypass = false) => {
+  const executeFinancialConfirmation = async (order, isBypass = false) => {
     if (!user || !order) return;
     setFinancialConfirmLoading(true);
     try {
@@ -363,7 +363,7 @@ const OrdensServico = () => {
     }
   };
 
-  const checkMissingReceipts = async (orderId: string, fallbackOrder?: any) => {
+  const checkMissingReceipts = async (orderId: string, fallbackOrder?) => {
     const { data: freshOrder } = await supabase
       .from("service_orders")
       .select("*")
@@ -395,7 +395,7 @@ const OrdensServico = () => {
       .eq("service_order_id", orderId);
 
     if (parts && parts.length > 0) {
-      parts.forEach((p: any) => {
+      parts.forEach((p) => {
         const hasPartReceipt = p.receipt_url || p.products?.parts_payment_voucher;
         if (!hasPartReceipt) {
           const partName = p.products?.name || "Peça";
@@ -408,7 +408,7 @@ const OrdensServico = () => {
     return { targetOrder, missing };
   };
 
-  const handleConfirmFinancial = async (order: any) => {
+  const handleConfirmFinancial = async (order) => {
     if (!user || !order) return;
     try {
       const { targetOrder, missing } = await checkMissingReceipts(order.id, order);
@@ -791,7 +791,7 @@ const OrdensServico = () => {
           if (openEntryIds.length > 0) {
             await supabase.from("cash_entries").delete().in("id", openEntryIds);
             if (activeTxs && activeTxs.length > 0 && closedEntries.length === 0) {
-              await supabase.from("transactions").delete().in("id", activeTxs.map((t: any) => t.id));
+              await supabase.from("transactions").delete().in("id", activeTxs.map((t) => t.id));
             }
             toast.info(`Lançamento da OS #${targetOs.order_number} estornado do caixa aberto.`);
           }
@@ -845,7 +845,7 @@ const OrdensServico = () => {
             }
           }
         } else if (activeTxs && activeTxs.length > 0) {
-          await supabase.from("transactions").delete().in("id", activeTxs.map((t: any) => t.id));
+          await supabase.from("transactions").delete().in("id", activeTxs.map((t) => t.id));
         }
       }
     }
@@ -857,7 +857,7 @@ const OrdensServico = () => {
         .select("product_id")
         .eq("service_order_id", orderId);
       if (items && items.length > 0) {
-        const prodIds = items.map((i: any) => i.product_id).filter(Boolean);
+        const prodIds = items.map((i) => i.product_id).filter(Boolean);
         if (prodIds.length > 0) {
           await supabase
             .from("products")
@@ -1317,7 +1317,7 @@ const OrdensServico = () => {
     }
   };
 
-  const handleToggleWaiveCommission = async (order: any, reason?: string) => {
+  const handleToggleWaiveCommission = async (order, reason?: string) => {
     if (!user || !order) return;
     const isCurrentlyWaived = isOSCommissionWaived(order);
     const newWaived = !isCurrentlyWaived;
@@ -1359,7 +1359,7 @@ const OrdensServico = () => {
 
       toast.success(newWaived ? `Comissão da OS #${order.order_number} anulada!` : `Comissão da OS #${order.order_number} reativada!`);
       if (detailOrder?.id === order.id) {
-        setDetailOrder((prev: any) => ({ ...prev, ...updates }));
+        setDetailOrder((prev) => ({ ...prev, ...updates }));
       }
       fetchData();
     } catch (err) {
@@ -1379,12 +1379,12 @@ const OrdensServico = () => {
       toast.success("OS movida para a nova unidade!");
       setDetailOrder({ ...detailOrder, store_id: newStoreId });
       fetchData();
-      logAction("TRANSFER_STOCK" as any, "service_orders", detailOrder.id, { from: detailOrder.store_id }, { to: newStoreId, reason }, activeStoreId);
+      logAction("TRANSFER_STOCK", "service_orders", detailOrder.id, { from: detailOrder.store_id }, { to: newStoreId, reason }, activeStoreId);
     }
     setLoading(false);
   };
 
-  const handleExportPdf = async (order: any) => {
+  const handleExportPdf = async (order) => {
     setPdfLoading(true);
     try {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
@@ -1400,7 +1400,7 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
-  const handleExportThermal = async (order: any) => {
+  const handleExportThermal = async (order) => {
     setPdfLoading(true);
     try {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
@@ -1414,7 +1414,7 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
-  const handleSendWhatsApp = async (order: any) => {
+  const handleSendWhatsApp = async (order) => {
     if (!order.customer_phone) { toast.error("Cliente sem telefone cadastrado!"); return; }
     setPdfLoading(true);
     try {
@@ -1447,7 +1447,7 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
-  const handleDuplicateOS = (order: any) => {
+  const handleDuplicateOS = (order) => {
     if (!order) return;
 
     const isPattern = typeof order.device_password === "string" && order.device_password.startsWith("Padrão: ");
@@ -1500,7 +1500,7 @@ const OrdensServico = () => {
     toast.info(`Dados da OS #${order.order_number} duplicados no formulário. Revise os campos e confirme para gerar a nova OS/Orçamento.`);
   };
 
-  const filtered = orders.filter((o: any) => {
+  const filtered = orders.filter((o) => {
     // Filtro por Técnico / Minhas OS
     if (onlyMyOrders && user?.id) {
       if (o.technician_id !== user.id) return false;
@@ -1533,12 +1533,12 @@ const OrdensServico = () => {
     return match && (filterStatus === "all" || o.status === filterStatus);
   });
 
-  const statusCounts = orders.reduce((acc: any, o: any) => {
+  const statusCounts = orders.reduce((acc, o) => {
     acc[o.status] = (acc[o.status] || 0) + 1; return acc;
   }, {} as Record<string, number>);
 
   // Preenche updateForm quando abre o detail
-  const openDetail = (order: any) => {
+  const openDetail = (order) => {
     setDetailOrder(order);
     setReceiptFile(null);
     setReceiptFiles([]);
@@ -1612,7 +1612,7 @@ const OrdensServico = () => {
     });
   }, [openOsParam, orders]);
 
-  const totalPaid = (o: any) =>
+  const totalPaid = (o) =>
     (Number(o?.payment_cash) || 0) + (Number(o?.payment_card) || 0) +
     (Number(o?.payment_pix) || 0) + (Number(o?.payment_other) || 0);
 
@@ -1800,7 +1800,7 @@ const OrdensServico = () => {
       {/* List or Kanban */}
       {viewMode === "list" ? (
       <div className="space-y-2.5">
-        {filtered.length > 0 ? filtered.map((order: any) => (
+        {filtered.length > 0 ? filtered.map((order) => (
           <OSCard
             key={order.id}
             order={order}

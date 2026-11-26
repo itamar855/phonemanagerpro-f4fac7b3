@@ -9,18 +9,20 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import { Search } from "lucide-react";
 import { formatCurrency, exportOSPDF, exportCSV, COLORS } from "./relatorioPdf";
 import { Filters, ExportBtns } from "./types";
+import type { FilterProps, OsStats } from "./reportTypes";
+import type { Profile, ServiceOrder } from "@/types/db";
 import { getStatusLabel, getStatusColor, ALL_OS_STATUSES } from "@/utils/osStatus";
 
 export interface OsTabProps {
-  filterProps: any;
-  filteredOSData: any[];
-  osStats: any;
+  filterProps: FilterProps;
+  filteredOSData: ServiceOrder[];
+  osStats: OsStats;
   profileMap: Map<string, string>;
   currentPeriodLabel: string;
   currentStoreName: string;
   osFilterTechId: string;
   setOsFilterTechId: (v: string) => void;
-  profiles: any[];
+  profiles: Profile[];
   osFilterStatus: string;
   setOsFilterStatus: (v: string) => void;
   osDateMode: "delivery" | "entry";
@@ -53,7 +55,7 @@ export const OsTab: React.FC<OsTabProps> = ({
         <ExportBtns
           onCSV={() =>
             exportCSV(
-              filteredOSData.map((o: any) => ({
+              filteredOSData.map((o) => ({
                 numero: o.order_number,
                 cliente: o.customer_name,
                 aparelho: (o.device_brand || "") + " " + (o.device_model || ""),
@@ -111,7 +113,7 @@ export const OsTab: React.FC<OsTabProps> = ({
 
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground uppercase font-semibold">Critério da Data</Label>
-          <Select value={osDateMode} onValueChange={(v: any) => setOsDateMode(v)}>
+          <Select value={osDateMode} onValueChange={(v) => setOsDateMode(v as "delivery" | "entry")}>
             <SelectTrigger className="h-8 w-[180px] text-xs bg-card">
               <SelectValue />
             </SelectTrigger>
@@ -222,7 +224,7 @@ export const OsTab: React.FC<OsTabProps> = ({
           <CardContent>
             {(osStats.byTech ?? []).length > 0 ? (
               <div className="space-y-2">
-                {(osStats.byTech ?? []).map((t: any) => (
+                {(osStats.byTech ?? []).map((t) => (
                   <div key={t.tecnico} className="rounded-lg bg-muted/40 p-3 border border-border/40 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold">{t.tecnico}</p>
@@ -270,7 +272,7 @@ export const OsTab: React.FC<OsTabProps> = ({
                     outerRadius={70}
                     label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
                   >
-                    {(osStats.byService ?? []).map((_: any, i: number) => (
+                    {(osStats.byService ?? []).map((_, i: number) => (
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
@@ -309,7 +311,7 @@ export const OsTab: React.FC<OsTabProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOSData.map((o: any, i: number) => (
+                  {filteredOSData.map((o, i: number) => (
                     <tr key={i} className="border-b border-border/30 hover:bg-muted/30">
                       <td className="py-2 px-2 whitespace-nowrap font-mono font-bold text-foreground">
                         #{o.order_number ?? "-"}

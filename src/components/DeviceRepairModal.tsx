@@ -410,7 +410,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
 
       clearInterval(progressInterval);
       setUploadProgress(prev => ({ ...prev, [type]: 100 }));
-      setLocalProduct((prev: any) => prev ? { ...prev, ...updatePayload } : null);
+      setLocalProduct((prev) => prev ? { ...prev, ...updatePayload } : null);
       toast.success("Comprovante enviado com sucesso!");
 
       setTimeout(() => {

@@ -63,7 +63,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
               <Label className="text-xs">Nome</Label>
               <Input
                 value={editForm.name}
-                onChange={(e) => setEditForm((f: any) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                 required
                 className="h-10"
               />
@@ -72,7 +72,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
               <Label className="text-xs">Marca</Label>
               <Select
                 value={editForm.brand}
-                onValueChange={(v) => setEditForm((f: any) => ({ ...f, brand: v }))}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, brand: v }))}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -92,7 +92,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
               <Label className="text-xs">Modelo</Label>
               <Input
                 value={editForm.model}
-                onChange={(e) => setEditForm((f: any) => ({ ...f, model: e.target.value }))}
+                onChange={(e) => setEditForm((f) => ({ ...f, model: e.target.value }))}
                 required
                 className="h-10"
               />
@@ -101,7 +101,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
               <Label className="text-xs">Condição</Label>
               <Select
                 value={editForm.condition}
-                onValueChange={(v) => setEditForm((f: any) => ({ ...f, condition: v }))}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, condition: v }))}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -120,7 +120,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
               <Label className="text-xs">Capacidade (GB)</Label>
               <Input
                 value={editForm.capacity}
-                onChange={(e) => setEditForm((f: any) => ({ ...f, capacity: e.target.value }))}
+                onChange={(e) => setEditForm((f) => ({ ...f, capacity: e.target.value }))}
                 placeholder="128"
                 className="h-10"
               />
@@ -129,7 +129,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
               <Label className="text-xs">Cor</Label>
               <Input
                 value={editForm.color}
-                onChange={(e) => setEditForm((f: any) => ({ ...f, color: e.target.value }))}
+                onChange={(e) => setEditForm((f) => ({ ...f, color: e.target.value }))}
                 placeholder="Preto"
                 className="h-10"
               />
@@ -140,7 +140,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
                 type="number"
                 value={editForm.battery_percentage}
                 onChange={(e) =>
-                  setEditForm((f: any) => ({ ...f, battery_percentage: e.target.value }))
+                  setEditForm((f) => ({ ...f, battery_percentage: e.target.value }))
                 }
                 placeholder="100"
                 className="h-10"
@@ -151,7 +151,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
             <Label className="text-xs">IMEI</Label>
             <Input
               value={editForm.imei}
-              onChange={(e) => setEditForm((f: any) => ({ ...f, imei: e.target.value }))}
+              onChange={(e) => setEditForm((f) => ({ ...f, imei: e.target.value }))}
               className="h-10"
             />
           </div>
@@ -162,7 +162,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
                 type="number"
                 step="0.01"
                 value={editForm.cost_price}
-                onChange={(e) => setEditForm((f: any) => ({ ...f, cost_price: e.target.value }))}
+                onChange={(e) => setEditForm((f) => ({ ...f, cost_price: e.target.value }))}
                 required
                 className="h-10"
               />
@@ -173,7 +173,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
                 type="number"
                 step="0.01"
                 value={editForm.sale_price}
-                onChange={(e) => setEditForm((f: any) => ({ ...f, sale_price: e.target.value }))}
+                onChange={(e) => setEditForm((f) => ({ ...f, sale_price: e.target.value }))}
                 className="h-10"
               />
             </div>
@@ -182,7 +182,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
             <Label className="text-xs">Loja</Label>
             <Select
               value={editForm.store_id}
-              onValueChange={(v) => setEditForm((f: any) => ({ ...f, store_id: v }))}
+              onValueChange={(v) => setEditForm((f) => ({ ...f, store_id: v }))}
             >
               <SelectTrigger className="h-10">
                 <SelectValue />
@@ -200,7 +200,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
             <Label className="text-xs">Status do Aparelho</Label>
             <Select
               value={editForm.status}
-              onValueChange={(v) => setEditForm((f: any) => ({ ...f, status: v }))}
+              onValueChange={(v) => setEditForm((f) => ({ ...f, status: v }))}
             >
               <SelectTrigger className="h-10">
                 <SelectValue />
@@ -217,7 +217,7 @@ export const ProductEditDialog: React.FC<ProductEditDialogProps> = ({
             <Label className="text-xs font-semibold text-primary">Motivo da Alteração</Label>
             <Input
               value={editForm.justification}
-              onChange={(e) => setEditForm((f: any) => ({ ...f, justification: e.target.value }))}
+              onChange={(e) => setEditForm((f) => ({ ...f, justification: e.target.value }))}
               placeholder="Ex: Erro no cadastro, atualização de preço..."
               required
               className="h-10 border-primary/30"

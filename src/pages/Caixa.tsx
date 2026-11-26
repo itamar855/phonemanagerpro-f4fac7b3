@@ -129,7 +129,7 @@ const Caixa = () => {
     const profileMap = new Map((profilesRes.data || []).map(p => [p.user_id, p.display_name]));
     const storeMap = new Map((storesRes.data || []).map(s => [s.id, s.name]));
 
-    const mappedOpenData = (openData || []).map((reg: any) => ({
+    const mappedOpenData = (openData || []).map((reg) => ({
       ...reg,
       profiles: { display_name: profileMap.get(reg.opened_by) },
       stores: { name: storeMap.get(reg.store_id) }
@@ -162,8 +162,8 @@ const Caixa = () => {
         regToUse = targetReg;
       } else {
         if (storeId !== "all") {
-          const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
-          const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+          const userOwnedReg = mappedOpenData.find((reg) => reg.opened_by === user?.id && reg.store_id === storeId);
+          const activeOne = mappedOpenData.find((reg) => reg.store_id === storeId);
           const defaultReg = userOwnedReg || activeOne || null;
           setCurrentRegister(defaultReg);
           regToUse = defaultReg;
@@ -174,8 +174,8 @@ const Caixa = () => {
       }
     } else {
       // Vendedores/Gerentes sempre veem o próprio caixa da loja selecionada se existir, ou null
-      const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
-      const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+      const userOwnedReg = mappedOpenData.find((reg) => reg.opened_by === user?.id && reg.store_id === storeId);
+      const activeOne = mappedOpenData.find((reg) => reg.store_id === storeId);
       const defaultReg = userOwnedReg || activeOne || null;
       setCurrentRegister(defaultReg);
       regToUse = defaultReg;
@@ -196,7 +196,7 @@ const Caixa = () => {
 
        // Auto-cura para lançamentos com "undefined" na descrição (ex: OS #97 / OS #98)
        if (entriesData && entriesData.length > 0) {
-         entriesData.forEach(async (entry: any) => {
+         entriesData.forEach(async (entry) => {
            if (entry.description && entry.description.includes("undefined")) {
              const match = entry.description.match(/\bOS\s*#?\s*(\d+)\b/i);
              if (match && match[1]) {
@@ -246,7 +246,7 @@ const Caixa = () => {
       const { data: historyData, error: historyError } = await historyQuery;
       if (historyError) console.error("Error fetching history:", historyError);
       
-      const mappedHistoryData = (historyData || []).map((reg: any) => ({
+      const mappedHistoryData = (historyData || []).map((reg) => ({
         ...reg,
         profiles: { display_name: profileMap.get(reg.opened_by) },
         stores: { name: storeMap.get(reg.store_id) }
@@ -339,7 +339,7 @@ const Caixa = () => {
 
       const lastReopenMap = new Map<string, string>();
       if (reopenRows) {
-        reopenRows.forEach((h: any) => {
+        reopenRows.forEach((h) => {
           if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
             lastReopenMap.set(h.service_order_id, h.created_at);
           }
@@ -357,7 +357,7 @@ const Caixa = () => {
       for (const o of deliveredOrders as any[]) {
         const lastReopenAt = lastReopenMap.get(o.id) || null;
 
-        const wasManuallyDeleted = (deletedEntryLogs || []).some((log: any) => {
+        const wasManuallyDeleted = (deletedEntryLogs || []).some((log) => {
           if (lastReopenAt && log.created_at <= lastReopenAt) return false;
           const before = log.before_state;
           if (!before || typeof before !== "object") return false;
@@ -710,7 +710,7 @@ const Caixa = () => {
     }
 
     toast.success("Caixa fechado!");
-    logAction("UPDATE_RECORD" as any, "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
+    logAction("UPDATE_RECORD", "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
     setCloseDialog(false);
     selectedRegisterIdRef.current = null;
     setCurrentRegister(null);
@@ -951,7 +951,7 @@ const Caixa = () => {
     }
   };
 
-  const handleOpenFullOs = async (order: any) => {
+  const handleOpenFullOs = async (order) => {
     setOsModalOrder(order);
     setOsModalOpen(true);
     setLoadingOsItems(true);
@@ -962,16 +962,16 @@ const Caixa = () => {
         .eq("service_order_id", order.id) as any);
 
       if (items && items.length > 0) {
-        const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean))) as string[];
+        const productIds = Array.from(new Set(items.map((it) => it.product_id).filter(Boolean))) as string[];
         const prodMap = new Map<string, any>();
         if (productIds.length > 0) {
           const { data: prods } = await supabase
             .from("products")
             .select("id, name, brand, model")
             .in("id", productIds);
-          (prods || []).forEach((p: any) => prodMap.set(p.id, p));
+          (prods || []).forEach((p) => prodMap.set(p.id, p));
         }
-        const enrichedItems = items.map((it: any) => ({
+        const enrichedItems = items.map((it) => ({
           ...it,
           products: prodMap.get(it.product_id) || null
         }));
@@ -1091,7 +1091,7 @@ const Caixa = () => {
   const handleUnconfirmEntry = async (id: string, reason: string) => {
     setLoading(true);
     await supabase.from("cash_entries").update({ confirmed: false, receipt_url: null }).eq("id", id);
-    logAction("UPDATE_RECORD" as any, "cash_entries", id, { status: "confirmed" }, { status: "unconfirmed", reason });
+    logAction("UPDATE_RECORD", "cash_entries", id, { status: "confirmed" }, { status: "unconfirmed", reason });
     toast.success("Lançamento desconfirmado!");
     fetchRegister(activeStoreId);
     setLoading(false);
@@ -1119,7 +1119,7 @@ const Caixa = () => {
   const handleReopenRegister = async (id: string, reason: string) => {
     setLoading(true);
     await supabase.from("cash_registers").update({ status: "open", closed_at: null }).eq("id", id);
-    logAction("UPDATE_RECORD" as any, "cash_registers", id, { status: "closed" }, { status: "open", reason });
+    logAction("UPDATE_RECORD", "cash_registers", id, { status: "closed" }, { status: "open", reason });
     toast.success("Caixa reaberto!");
     setActiveTab("current");
     fetchRegister(activeStoreId);
@@ -1163,7 +1163,7 @@ const Caixa = () => {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="current" className="flex-1 sm:flex-none">Caixa Atual</TabsTrigger>
           {userRole === "admin" && (

@@ -61,7 +61,7 @@ export type PerformedService = { description: string; price: number | null };
 export function performedServices(order: { services_performed?: unknown; service_performed?: string | null }): PerformedService[] {
   const raw = Array.isArray(order.services_performed) ? order.services_performed : [];
   const list = raw
-    .map((x: any) => ({
+    .map((x) => ({
       description: String(x?.description ?? "").trim(),
       price: x?.price === null || x?.price === undefined || x?.price === "" || Number.isNaN(Number(x.price)) ? null : round2(Number(x.price)),
     }))

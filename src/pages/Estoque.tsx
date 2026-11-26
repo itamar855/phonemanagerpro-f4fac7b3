@@ -179,9 +179,9 @@ const Estoque = () => {
     
     const costsMap = new Map<string, number>();
     if (repairsRes?.data) {
-      repairsRes.data.forEach((r: any) => {
+      repairsRes.data.forEach((r) => {
         const items = r.product_repair_items || [];
-        const cost = items.reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
+        const cost = items.reduce((sum: number, item) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
         const current = costsMap.get(r.product_id) || 0;
         costsMap.set(r.product_id, current + cost);
       });
@@ -372,7 +372,7 @@ const Estoque = () => {
 
       // 3. Conciliar peças consumidas em Ordens de Serviço
       const { data: osItems } = await supabase.from("service_order_items").select("product_id");
-      const osProductIds = [...new Set((osItems || []).map((i: any) => i.product_id).filter(Boolean))];
+      const osProductIds = [...new Set((osItems || []).map((i) => i.product_id).filter(Boolean))];
       let reconciledOSParts = 0;
       if (osProductIds.length > 0) {
         const { data: updatedOSParts } = await supabase
@@ -415,7 +415,7 @@ const Estoque = () => {
   };
 
   const storeMap = new Map(stores.map((s) => [s.id, s.name]));
-  const supplierMap = new Map(suppliers.map((s: any) => [s.id, s.name]));
+  const supplierMap = new Map(suppliers.map((s) => [s.id, s.name]));
 
   const filteredParts = parts.filter((p) => {
     const q = partsSearch.toLowerCase();
@@ -534,7 +534,7 @@ const Estoque = () => {
     setLoading(false);
   };
 
-  const handleReturnPart = async (p: any) => {
+  const handleReturnPart = async (p) => {
     const confirm = window.confirm(`Deseja realmente devolver a peça "${p.name}" ao fornecedor? O valor de custo de R$ ${p.cost_price.toFixed(2)} será revertido em crédito.`);
     if (!confirm) return;
 

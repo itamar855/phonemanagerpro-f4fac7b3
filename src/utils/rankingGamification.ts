@@ -608,7 +608,7 @@ export function aggregateAccessoryRanking(params: {
     // Extrair quantidade de peças do carrinho ou fallback
     let pecasCount = 0;
     if (Array.isArray(metadata?.cart)) {
-      pecasCount = metadata.cart.reduce((sum: number, it: any) => sum + (Number(it.qty) || 1), 0);
+      pecasCount = metadata.cart.reduce((sum: number, it) => sum + (Number(it.qty) || 1), 0);
     } else {
       pecasCount = 1; // Fallback caso não haja cart array
     }
