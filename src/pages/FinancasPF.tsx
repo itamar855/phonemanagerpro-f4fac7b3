@@ -208,7 +208,7 @@ const FinancasPF = () => {
       description: form.description || null,
       category: form.category || null,
       source_account_id: form.source_account_id || null,
-      destination_account_id: null,
+      destination_account_id: null as string | null,
       store_id: form.type === "expense_pf" ? null : activeStoreId,
       net_amount: parseFloat(form.amount) || 0,
       receipt_url: existingReceiptUrl

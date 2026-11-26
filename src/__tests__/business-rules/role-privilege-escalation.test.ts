@@ -405,7 +405,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
     it("create-user: se usuário pré-existente não possuía profile antes da operação (profileData === null), o rollback compensatório deleta o profile criado", async () => {
       const existingSnapshot = {
         roleData: { user_id: "user-123", role: "vendedor", permissions: {} },
-        profileData: null,
+        profileData: null as Record<string, unknown> | null,
       };
 
       let modifiedProfile = false;
@@ -537,8 +537,8 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         profileData: {
           user_id: targetUserId,
           display_name: "Sem Loja",
-          phone: null,
-          store_id: null,
+          phone: null as string | null,
+          store_id: null as string | null,
         },
         storeIds: [] as string[],
       };
@@ -663,8 +663,8 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         profileData: {
           user_id: targetUserId,
           display_name: "Original Name",
-          phone: null,
-          store_id: null,
+          phone: null as string | null,
+          store_id: null as string | null,
         },
         storeIds: [] as string[],
       };
@@ -673,7 +673,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       const dbProfile = {
         user_id: targetUserId,
         display_name: "Original Name",
-        phone: null,
+        phone: null as string | null,
         store_id: newStoreId,
       };
 
@@ -769,7 +769,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
 
       const existingSnapshot = {
         roleData: { user_id: targetUserId, role: "vendedor" as AppRole, permissions: {} },
-        profileData: null,
+        profileData: null as Record<string, unknown> | null,
       };
 
       let dbMemberStores = [
@@ -778,7 +778,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       const dbProfile = {
         user_id: targetUserId,
         display_name: "New Profile",
-        phone: null,
+        phone: null as string | null,
         store_id: newStoreId, // profile recém criado
       };
 

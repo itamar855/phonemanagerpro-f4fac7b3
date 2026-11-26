@@ -37,6 +37,7 @@ import {
   type TechRankingItem,
 } from "@/utils/technicianMetrics";
 import type { ProductRepairItem, ServiceOrder, ServiceOrderItem, Store as StoreRow } from "@/types/db";
+import type { TechQueueOrder } from "@/components/features/tecnico/TechDashboard";
 
 const COLORS = ["hsl(152, 60%, 45%)", "hsl(38, 92%, 50%)", "hsl(0, 62%, 50%)", "hsl(220, 25%, 50%)", "hsl(280, 50%, 50%)"];
 
@@ -127,7 +128,7 @@ const Dashboard = () => {
     myRank: number;
     totalTechs: number;
   }>({ items: [], myRank: 1, totalTechs: 1 });
-  const [techQueue, setTechQueue] = useState<ServiceOrder[]>([]);
+  const [techQueue, setTechQueue] = useState<TechQueueOrder[]>([]);
 
   const handleUpdateTechGoals = (newGoals: TechGoalConfig) => {
     setTechGoals(newGoals);
@@ -163,11 +164,11 @@ const Dashboard = () => {
     }
 
     const [ordersRes, roleRes, shopOrdersRes, profilesRes, storesRes, settledIds] = await Promise.all([
-      Promise.resolve(q.order("created_at", { ascending: false })).catch(err => ({ data: [], error: err })),
-      Promise.resolve(supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle()).catch(err => ({ data: null, error: err })),
-      Promise.resolve(shopOrdersQuery).catch(err => ({ data: [], error: err })),
-      Promise.resolve(supabase.from("profiles").select("user_id, display_name")).catch(err => ({ data: [], error: err })),
-      Promise.resolve(supabase.from("stores").select("id, name")).catch(err => ({ data: [], error: err })),
+      Promise.resolve(q.order("created_at", { ascending: false })).catch(err => ({ data: [] as never[], error: err })),
+      Promise.resolve(supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle()).catch(err => ({ data: null as never, error: err })),
+      Promise.resolve(shopOrdersQuery).catch(err => ({ data: [] as never[], error: err })),
+      Promise.resolve(supabase.from("profiles").select("user_id, display_name")).catch(err => ({ data: [] as never[], error: err })),
+      Promise.resolve(supabase.from("stores").select("id, name")).catch(err => ({ data: [] as never[], error: err })),
       fetchSettledItemIds().catch(() => ({ settledSaleIds: new Set<string>(), settledOsIds: new Set<string>() })),
     ]);
 

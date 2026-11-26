@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- respostas JSON da Meta sem tipos */
 // Retorno do login oficial do Instagram (Business Login for Instagram).
 // A Meta redireciona para cá com ?code&state; trocamos o code por um token de 60 dias,
 // salvamos a conta na loja, inscrevemos no webhook e voltamos para o CRM.

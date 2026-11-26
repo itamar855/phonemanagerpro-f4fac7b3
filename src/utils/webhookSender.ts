@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export const triggerWebhook = async (eventType: string, storeId: string, payload) => {
+export const triggerWebhook = async (eventType: string, storeId: string, payload: Record<string, unknown>) => {
   try {
     const { data: webhooks } = await supabase
       .from("webhooks")

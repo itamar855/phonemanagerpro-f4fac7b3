@@ -93,7 +93,7 @@ export function ShareLinkPanel({ evaluation, onChanged, className }: {
             </Button>
             {canShare && (
               <Button variant="outline" className="h-11"
-                onClick={() => navigator.share({ text }).catch(() => undefined)}>
+                onClick={() => navigator.share({ text }).catch((): void => undefined)}>
                 <Share2 className="mr-2 h-4 w-4" /> Compartilhar
               </Button>
             )}

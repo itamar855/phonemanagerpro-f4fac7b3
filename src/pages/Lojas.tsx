@@ -171,7 +171,7 @@ const Lojas = () => {
   };
 
   // ── Detalhes da loja ──────────────────────────────────────────────────────
-  const openDetailsDialog = (store) => {
+  const openDetailsDialog = (store: StoreRow) => {
     setSelectedStoreId(store.id);
     setDetailsForm({
       name:       store.name       ?? "",

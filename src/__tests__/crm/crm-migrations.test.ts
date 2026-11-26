@@ -471,9 +471,9 @@ describe("CRM — relatórios e vínculo com Vendas/OS", () => {
     const r = await asUser(U1, () => val<any>(`select crm_report($1, ${period})`, [A]));
     expect(r.totals).toMatchObject({ deals_created: 2, won: 2, lost: 0 });
     expect(Number(r.totals.won_value)).toBe(5200);
-    expect(r.funnel.map((f) => f.name)).toEqual(["Em atendimento", "Orçamento / negociação", "Ganho"]);
-    expect(r.funnel.map((f) => f.deals)).toEqual([2, 2, 2]);
-    expect(r.by_origin.find((o) => o.origin === "instagram")).toMatchObject({ created: 1, won: 1 });
+    expect(r.funnel.map((f: { name: string }) => f.name)).toEqual(["Em atendimento", "Orçamento / negociação", "Ganho"]);
+    expect(r.funnel.map((f: { deals: number }) => f.deals)).toEqual([2, 2, 2]);
+    expect(r.by_origin.find((o: { origin: string }) => o.origin === "instagram")).toMatchObject({ created: 1, won: 1 });
     expect(r.totals.conversations).toBeGreaterThan(0);
     expect(r.totals.answered).toBeGreaterThanOrEqual(1);
     expect(r.series).toHaveLength(8);

@@ -174,8 +174,8 @@ describe('Cash Register — Business Rules', () => {
         closing_amount: 250,
         expected_amount: 250,
         difference: 0,
-        difference_reason: null,
-        closing_note: null,
+        difference_reason: null as string | null,
+        closing_note: null as string | null,
         status: 'closed',
         closed_at: expect.any(String),
       };

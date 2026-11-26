@@ -82,7 +82,7 @@ describe("IA consulta o estoque", () => {
   });
 
   it("com estoque, as instruções mudam: pode dizer que tem e o preço; sem estoque, regra antiga", () => {
-    const base = { storeName: "Loja X", knowledge: "", persona: null, contactName: null, isCustomer: false, now: new Date(), openNow: true, hoursText: null, serviceOrders: [], handoffMessage: null };
+    const base = { storeName: "Loja X", knowledge: "", persona: null as string | null, contactName: null as string | null, isCustomer: false, now: new Date(), openNow: true, hoursText: null as string | null, serviceOrders: [] as { number: number; device: string; status: string }[], handoffMessage: null as string | null };
     const withStock = buildSystemPrompt({ ...base, stock: ["Na Vila Eulalia:", "- Iphone 13 Pro 256GB Azul (usado, bateria 85%) · R$ 2.690"] });
     expect(withStock).toContain("ESTOQUE AGORA");
     expect(withStock).toContain("- Iphone 13 Pro 256GB Azul (usado, bateria 85%) · R$ 2.690");

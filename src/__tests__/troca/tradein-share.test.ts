@@ -175,7 +175,7 @@ describe("tradein link: cliente refaz a avaliação", () => {
     expect(d.review.offer).toBe(1770);
     expect(d.review.blocked).toBe(false);
     expect(d.review.note).toBe("A bateria está 88%");
-    expect(d.review.answers.map((l) => l.question)).toEqual(["conta", "tela", "bateria", "carcaca", "biometria", "acessorios"]);
+    expect(d.review.answers.map((l: { question: string }) => l.question)).toEqual(["conta", "tela", "bateria", "carcaca", "biometria", "acessorios"]);
     expect(d.reviews_left).toBe(4);
     // a avaliação da loja não muda
     expect(await val(`select offer_max::int from tradein_evaluations where id = $1`, [E1])).toBe(1900);

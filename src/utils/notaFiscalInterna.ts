@@ -71,7 +71,7 @@ export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<jsPD
     y += 8;
   };
 
-  const drawField = (label: string, value, x: number, w: number, size = 9, bold = true) => {
+  const drawField = (label: string, value: string | number | null | undefined, x: number, w: number, size = 9, bold = true) => {
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(...COLORS.LIGHT_TEXT);
     doc.text(label.toUpperCase(), x + 4, y + 5);
     doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...COLORS.TEXT);

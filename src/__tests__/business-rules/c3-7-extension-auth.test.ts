@@ -99,10 +99,10 @@ describe('C3.7 — Suíte de Testes da Extensão Autenticada e Isolamento Multi-
 
     const resolveStores = (stores: Store[]) => {
       if (stores.length === 0) {
-        return { error: 'Operador não está vinculado a nenhuma loja no sistema.', activeStore: null, requiresSelection: false };
+        return { error: 'Operador não está vinculado a nenhuma loja no sistema.', activeStore: null as Store | null, requiresSelection: false };
       }
       if (stores.length === 1) {
-        return { error: null, activeStore: stores[0], requiresSelection: false };
+        return { error: null as string | null, activeStore: stores[0], requiresSelection: false };
       }
       return { error: null, activeStore: null, requiresSelection: true };
     };

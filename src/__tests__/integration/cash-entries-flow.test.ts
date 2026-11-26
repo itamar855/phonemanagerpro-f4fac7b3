@@ -196,7 +196,7 @@ describe('Cash Entries — Integration Flow', () => {
     it('should update entry to confirmed=false (unconfirm) with null receipt_url', () => {
       const unconfirmPayload = {
         confirmed: false,
-        receipt_url: null,
+        receipt_url: null as string | null,
       };
 
       expect(unconfirmPayload.confirmed).toBe(false);
@@ -342,7 +342,7 @@ describe('Cash Entries — Integration Flow', () => {
       expect(pixSale.confirmed).toBe(false);
 
       // Validação da trava de anexo
-      const validateConfirmation = (entry, filesCount: number) => {
+      const validateConfirmation = (entry: { payment_method?: unknown }, filesCount: number) => {
         const isCash = entry.payment_method === 'dinheiro';
         if (!isCash && filesCount === 0) {
           return { allowed: false, error: 'Comprovante obrigatório para não-dinheiro' };
