@@ -14,6 +14,10 @@ const MIGRATION = readFileSync(
   path.resolve(__dirname, "../../../supabase/migrations/20261125000000_tradein_module.sql"),
   "utf8",
 );
+const EMAIL = readFileSync(
+  path.resolve(__dirname, "../../../supabase/migrations/20261126000000_tradein_customer_email.sql"),
+  "utf8",
+);
 
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -76,6 +80,7 @@ beforeAll(async () => {
     insert into public.sales (id, store_id) values ('${SALE}', '${A}');
   `);
   await db.exec(MIGRATION);
+  await db.exec(EMAIL);
 });
 
 describe("tradein: estrutura e descontos padrão", () => {
@@ -183,8 +188,16 @@ describe("tradein: RLS por loja", () => {
     expect(await val(`select count(*)::int from tradein_evaluations where id = $1 and model_id is null and model = 'iPhone 12'`, [withModel])).toBe(1);
   });
 
-  it("migration roda de novo sem erro (idempotente)", async () => {
+  it("e-mail do cliente: opcional, validado e editável depois de salvo", async () => {
+    const id = await val<string>(`select id from tradein_evaluations limit 1`);
+    expect(await errorOf(`update tradein_evaluations set customer_email = 'sem-arroba' where id = $1`, [id])).toMatch(/customer_email_check/);
+    await asUser(V1, () => db.query(`update tradein_evaluations set customer_email = 'ana@exemplo.com' where id = $1`, [id]));
+    expect(await val(`select customer_email from tradein_evaluations where id = $1`, [id])).toBe("ana@exemplo.com");
+  });
+
+  it("migrations rodam de novo sem erro (idempotentes)", async () => {
     await db.exec(MIGRATION);
+    await db.exec(EMAIL);
     expect(await val(`select count(*)::int from tradein_settings`)).toBe(2);
   });
 });

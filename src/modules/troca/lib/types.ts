@@ -47,6 +47,7 @@ export interface TradeEvaluation {
   created_by: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  customer_email: string | null;
   model_id: string | null;
   brand: string;
   model: string;

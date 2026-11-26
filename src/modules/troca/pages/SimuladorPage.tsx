@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Ban, Check, CheckCircle2, ChevronRight, Info, RotateCcw, Search, ShoppingBag, Smartphone, ThumbsDown, Clock,
+  ArrowLeft, Ban, Check, UserRound, CheckCircle2, ChevronRight, Info, RotateCcw, Search, ShoppingBag, Smartphone, ThumbsDown, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { createEvaluation } from "../api/db";
 import { AcceptDialog } from "../components/AcceptDialog";
 import { EmptyState } from "../components/EmptyState";
+import { ValueTracker } from "../components/ValueTracker";
 import { useTrocaContext } from "../hooks/context";
 import { useInvalidateTroca, useModels, useRules, useSettings } from "../hooks/useTroca";
 import { computeOffer, formatBRL, toAnswerLine } from "../lib/calc";
@@ -21,12 +22,14 @@ import { QUESTION_BY_KEY } from "../lib/questions";
 import type { EvalStatus, QuestionKey, TradeEvaluation, TradeModel, TradeRule } from "../lib/types";
 import { activeQuestions, brandsOf, chosenRules, modelNames, variantsOf } from "../lib/wizard";
 
-type Step = { kind: "device" } | { kind: "storage" } | { kind: "question"; index: number } | { kind: "result" };
+type Step = { kind: "customer" } | { kind: "device" } | { kind: "storage" } | { kind: "question"; index: number } | { kind: "result" };
 
 const card = "glass rounded-2xl border border-border/50 bg-card/70";
 const NO_MODELS: TradeModel[] = [];
 const NO_RULES: TradeRule[] = [];
 const DEFAULT_SETTINGS = { negotiation_pct: 10, round_to: 10 };
+const EMPTY_CUSTOMER = { name: "", phone: "", email: "", imei: "", notes: "" };
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 function BigOption({ selected, onClick, children, right, tone, multi }: {
   selected?: boolean;
@@ -71,13 +74,14 @@ export default function SimuladorPage() {
   const rules = useRules(storeId);
   const settings = useSettings(storeId);
 
-  const [steps, setSteps] = useState<Step[]>([{ kind: "device" }]);
+  const [steps, setSteps] = useState<Step[]>([{ kind: "customer" }]);
   const [brand, setBrand] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<{ brand: string; model: string } | null>(null);
   const [variant, setVariant] = useState<TradeModel | null>(null);
   const [answers, setAnswers] = useState<Partial<Record<QuestionKey, string[]>>>({});
-  const [customer, setCustomer] = useState({ name: "", phone: "", imei: "", notes: "" });
+  const [customer, setCustomer] = useState(EMPTY_CUSTOMER);
+  const [editCustomer, setEditCustomer] = useState(false);
   const [saved, setSaved] = useState<TradeEvaluation | null>(null);
   const [saving, setSaving] = useState(false);
   const [acceptOpen, setAcceptOpen] = useState(false);
@@ -97,17 +101,25 @@ export default function SimuladorPage() {
   );
 
   const step = steps[steps.length - 1];
+  // painel do cliente: só as respostas até a pergunta da tela (ao voltar, não mostra as da frente)
+  const shownKeys = step.kind === "question" ? questions.slice(0, step.index + 1).map((q) => q.question.key).join() : null;
+  const progressOffer = useMemo(() => {
+    const keys = shownKeys?.split(",");
+    const visible = keys ? Object.fromEntries(Object.entries(answers).filter(([k]) => keys.includes(k))) : answers;
+    return computeOffer(base, chosenRules(allRules, visible), offerSettings);
+  }, [base, allRules, answers, offerSettings, shownKeys]);
   const go = (s: Step) => setSteps((prev) => [...prev, s]);
   const back = () => setSteps((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
   const firstQuestion = (): Step => (questions.length ? { kind: "question", index: 0 } : { kind: "result" });
 
   const reset = () => {
-    setSteps([{ kind: "device" }]);
+    setSteps([{ kind: "customer" }]);
     setSearch("");
     setPicked(null);
     setVariant(null);
     setAnswers({});
-    setCustomer({ name: "", phone: "", imei: "", notes: "" });
+    setCustomer(EMPTY_CUSTOMER);
+    setEditCustomer(false);
     setSaved(null);
   };
 
@@ -138,6 +150,8 @@ export default function SimuladorPage() {
 
   const save = async (status: EvalStatus, agreed: number | null = null) => {
     if (!variant) return;
+    const email = customer.email.trim().toLowerCase();
+    if (email && !EMAIL_RE.test(email)) { toast.error("E-mail inválido. Confira ou deixe em branco."); return; }
     setSaving(true);
     try {
       const ev = await createEvaluation({
@@ -156,6 +170,7 @@ export default function SimuladorPage() {
         agreed_value: status === "aceita" ? agreed : null,
         customer_name: customer.name.trim() || null,
         customer_phone: customer.phone.trim() || null,
+        customer_email: email || null,
         imei: customer.imei.replace(/\s/g, "") || null,
         notes: customer.notes.trim() || null,
       });
@@ -194,11 +209,13 @@ export default function SimuladorPage() {
     );
   }
 
-  const totalSteps = 1 + (variants.length > 1 ? 1 : 0) + questions.length + 1;
-  const position = step.kind === "device" ? 1
-    : step.kind === "storage" ? 2
-    : step.kind === "question" ? 1 + (variants.length > 1 ? 1 : 0) + step.index + 1
+  const totalSteps = 2 + (variants.length > 1 ? 1 : 0) + questions.length + 1;
+  const position = step.kind === "customer" ? 1
+    : step.kind === "device" ? 2
+    : step.kind === "storage" ? 3
+    : step.kind === "question" ? 2 + (variants.length > 1 ? 1 : 0) + step.index + 1
     : totalSteps;
+  const customerLine = [customer.name.trim(), customer.phone.trim()].filter(Boolean).join(" · ");
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-4 pb-20 pt-4 sm:pb-4">
@@ -219,11 +236,42 @@ export default function SimuladorPage() {
         )}
       </div>
 
-      {picked && step.kind !== "device" && (
-        <p className="-mt-2 text-center text-sm text-muted-foreground">
-          {picked.model}{variant ? ` · ${variant.storage}` : ""}
+      {step.kind !== "customer" && (customerLine || (picked && step.kind !== "device")) && (
+        <p className="-mt-2 flex flex-wrap items-center justify-center gap-x-2 text-center text-sm text-muted-foreground">
+          {customerLine && <span className="inline-flex items-center gap-1"><UserRound className="h-3.5 w-3.5" aria-hidden="true" />{customerLine}</span>}
+          {customerLine && picked && step.kind !== "device" && <span aria-hidden="true">·</span>}
+          {picked && step.kind !== "device" && <span>{picked.model}{variant ? ` ${variant.storage}` : ""}</span>}
         </p>
       )}
+
+      {/* 0. cliente: nome e WhatsApp agora; e-mail e observação no fim */}
+      {step.kind === "customer" && (
+        <section className="space-y-4" aria-labelledby="t-customer">
+          <div>
+            <h2 id="t-customer" className="font-display text-xl font-bold">Quem é o cliente?</h2>
+            <p className="text-sm text-muted-foreground">Opcional, mas ajuda a achar a avaliação depois e chamar no WhatsApp.</p>
+          </div>
+          <div className={cn(card, "space-y-3 p-4")}>
+            <div className="space-y-1.5">
+              <Label htmlFor="tc-name">Nome</Label>
+              <Input id="tc-name" className="h-12 text-base" maxLength={120} autoComplete="off" value={customer.name}
+                onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tc-phone">WhatsApp</Label>
+              <Input id="tc-phone" className="h-12 text-base" type="tel" inputMode="tel" maxLength={30} autoComplete="off" placeholder="(87) 9 9999-9999"
+                value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && go({ kind: "device" })} />
+            </div>
+          </div>
+          <Button className="h-14 w-full text-base" onClick={() => go({ kind: "device" })}>
+            {customer.name.trim() || customer.phone.trim() ? "Avaliar o aparelho" : "Pular e avaliar o aparelho"} <ChevronRight className="ml-1 h-5 w-5" />
+          </Button>
+        </section>
+      )}
+
+      {/* painel que o cliente acompanha: valor base e descontos entrando a cada resposta */}
+      {step.kind === "question" && variant && <ValueTracker offer={progressOffer} deviceLabel={deviceName(variant)} />}
 
       {/* 1. aparelho */}
       {step.kind === "device" && (
@@ -337,7 +385,7 @@ export default function SimuladorPage() {
               </div>
               <dl className="divide-y divide-border/40 px-4 text-sm">
                 <div className="flex justify-between gap-3 py-2.5">
-                  <dt className="text-muted-foreground">{deviceName(variant)} perfeito</dt>
+                  <dt className="text-muted-foreground">Valor base na loja ({deviceName(variant)})</dt>
                   <dd className="font-semibold tabular-nums">{formatBRL(offer.base)}</dd>
                 </div>
                 {offer.lines.filter((l) => l.value > 0).map((l, i) => (
@@ -359,17 +407,32 @@ export default function SimuladorPage() {
           {!saved ? (
             <>
               <div className={cn(card, "space-y-3 p-4")}>
-                <p className="text-sm font-semibold">Cliente <span className="font-normal text-muted-foreground">(opcional)</span></p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Cliente <span className="font-normal text-muted-foreground">(opcional)</span></p>
+                  {customerLine && !editCustomer && (
+                    <Button variant="ghost" size="sm" className="h-8" onClick={() => setEditCustomer(true)}>Editar</Button>
+                  )}
+                </div>
+                {customerLine && !editCustomer && <p className="text-sm text-muted-foreground">{customerLine}</p>}
                 <div className="grid gap-3 sm:grid-cols-2">
+                  {(!customerLine || editCustomer) && (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="tc-name2">Nome</Label>
+                        <Input id="tc-name2" className="h-11" maxLength={120} autoComplete="off" value={customer.name}
+                          onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="tc-phone2">WhatsApp</Label>
+                        <Input id="tc-phone2" className="h-11" type="tel" inputMode="tel" maxLength={30} autoComplete="off" value={customer.phone}
+                          onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+                      </div>
+                    </>
+                  )}
                   <div className="space-y-1.5">
-                    <Label htmlFor="tc-name">Nome</Label>
-                    <Input id="tc-name" className="h-11" maxLength={120} autoComplete="off" value={customer.name}
-                      onChange={(e) => setCustomer({ ...customer, name: e.target.value })} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="tc-phone">WhatsApp</Label>
-                    <Input id="tc-phone" className="h-11" inputMode="tel" maxLength={30} autoComplete="off" value={customer.phone}
-                      onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} />
+                    <Label htmlFor="tc-email">E-mail</Label>
+                    <Input id="tc-email" className="h-11" type="email" inputMode="email" maxLength={160} autoComplete="off" placeholder="cliente@email.com"
+                      value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="tc-imei">IMEI</Label>
