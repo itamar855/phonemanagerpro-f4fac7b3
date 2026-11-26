@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { createEvaluation } from "../api/db";
 import { AcceptDialog } from "../components/AcceptDialog";
 import { EmptyState } from "../components/EmptyState";
+import { ShareLinkPanel } from "../components/ShareLinkPanel";
 import { ValueTracker } from "../components/ValueTracker";
 import { useTrocaContext } from "../hooks/context";
 import { useInvalidateTroca, useModels, useRules, useSettings } from "../hooks/useTroca";
@@ -481,6 +482,7 @@ export default function SimuladorPage() {
                   <ShoppingBag className="mr-2 h-5 w-5" /> Usar na venda
                 </Button>
               )}
+              {saved.status !== "aceita" && <ShareLinkPanel evaluation={saved} onChanged={() => invalidate("evaluations")} />}
               <Button variant={buildHandoff(saved) ? "ghost" : "default"} className="h-12 w-full" onClick={reset}>Nova avaliação</Button>
             </div>
           )}

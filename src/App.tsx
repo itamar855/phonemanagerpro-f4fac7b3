@@ -41,6 +41,8 @@ import "@/utils/debugLogger";
 const CrmModule = lazy(() => import("./modules/crm"));
 // Simulador de troca (trade-in): módulo separado, só baixa quem abre /troca
 const TrocaModule = lazy(() => import("./modules/troca"));
+// link público da avaliação de troca (cliente sem login)
+const AvaliacaoTrocaPublica = lazy(() => import("./modules/troca/public/AvaliacaoPublicaPage"));
 const Privacidade = lazy(() => import("./pages/Privacidade"));
 const Termos = lazy(() => import("./pages/Termos"));
 const IntegracaoInstagram = lazy(() => import("./pages/IntegracaoInstagram"));
@@ -110,6 +112,7 @@ const App = () => (
                 {/* Rota pública para o cliente acompanhar a OS */}
                 <Route path="/os/:id" element={<OSPublica />} />
                 <Route path="/avaliacao" element={<Avaliacao />} />
+                <Route path="/avaliacao/:token" element={<Suspense fallback={<ModuleFallback />}><AvaliacaoTrocaPublica /></Suspense>} />
                 <Route path="/privacidade" element={<Suspense fallback={<ModuleFallback />}><Privacidade /></Suspense>} />
                 <Route path="/termos" element={<Suspense fallback={<ModuleFallback />}><Termos /></Suspense>} />
                 <Route path="/integracao/instagram" element={<Suspense fallback={<ModuleFallback />}><IntegracaoInstagram /></Suspense>} />
