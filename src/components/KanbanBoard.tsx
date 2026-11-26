@@ -2,16 +2,18 @@ import React, { useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import type { ServiceOrder } from "@/types/db";
+import type { StatusConfigItem } from "@/utils/osStatus";
 
 export interface KanbanBoardProps {
-  orders: any[];
-  statusConfig: Record<string, { label: string; color: string; icon: any }>;
+  orders: ServiceOrder[];
+  statusConfig: Record<string, StatusConfigItem>;
   allStatuses: string[];
   storeMap: Map<string, string>;
   profileMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  isFinancialPending?: (order) => boolean;
-  onOrderClick: (order) => void;
+  isFinancialPending?: (order: ServiceOrder) => boolean;
+  onOrderClick: (order: ServiceOrder) => void;
   onStatusChange: (orderId: string, newStatus: string, oldStatus: string) => void;
 }
 

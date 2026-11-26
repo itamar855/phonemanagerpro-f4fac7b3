@@ -65,7 +65,7 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       expect(isValidPublishableKeyFormat(FAKE_LEGACY_JWT)).toBe(true);
 
       // Garante que nenhum split com '.' foi executado sobre as chaves
-      const dotSplitsOnKey = splitSpy.mock.calls.filter((args) => args[0] === '.');
+      const dotSplitsOnKey = splitSpy.mock.calls.filter((args) => (args[0] as unknown) === '.');
       expect(dotSplitsOnKey).toHaveLength(0);
 
       splitSpy.mockRestore();

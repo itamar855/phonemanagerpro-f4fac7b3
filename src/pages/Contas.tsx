@@ -212,13 +212,13 @@ export default function Contas() {
     return isSrc ? acc + Number(t.amount) : acc;
   }, 0);
   // Agrupamento por Categoria para PF
-  const pfCategories = pfTransactions
+  const pfCategories: Record<string, number> = pfTransactions
     .filter(t => pf.some(a => a.account_id === t.source_account_id)) // Apenas saídas
     .reduce((acc, t) => {
       const cat = t.category || "Outros";
       acc[cat] = (acc[cat] || 0) + Number(t.amount);
       return acc;
-    }, {});
+    }, {} as Record<string, number>);
   const sortedPfCategories = Object.entries(pfCategories)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 5);

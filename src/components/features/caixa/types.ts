@@ -1,33 +1,13 @@
-export interface CashEntry {
-  id: string;
-  type: "entrada" | "saida" | "sangria" | "abertura";
-  amount: number;
-  description: string;
-  payment_method: string;
-  confirmed: boolean;
-  receipt_url: string | null;
-  supplier_order_receipt_url?: string | null;
-  created_at: string;
-}
+import type { CashEntry as CashEntryRow, CashRegister as CashRegisterRow } from "@/types/db";
 
-export interface CashRegister {
-  id: string;
-  store_id: string;
-  opened_by: string;
-  opened_at: string;
-  closed_at: string | null;
-  opening_amount: number;
-  closing_amount: number | null;
-  expected_amount: number | null;
-  difference: number | null;
-  difference_reason?: string | null;
-  closing_note?: string | null;
-  opening_receipt_url?: string | null;
-  closing_receipt_url?: string | null;
-  status: "open" | "closed";
-  profiles?: { display_name: string };
-  stores?: { name: string };
-}
+/** Lançamento do caixa como vem do banco. */
+export type CashEntry = CashEntryRow;
+
+/** Caixa como vem do banco, com o nome de quem abriu e da loja quando a consulta traz o join. */
+export type CashRegister = CashRegisterRow & {
+  profiles?: { display_name: string } | null;
+  stores?: { name: string } | null;
+};
 
 export interface Supplier {
   id: string;

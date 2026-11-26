@@ -359,8 +359,8 @@ const Caixa = () => {
 
         const wasManuallyDeleted = (deletedEntryLogs || []).some((log) => {
           if (lastReopenAt && log.created_at <= lastReopenAt) return false;
-          const before = log.before_state;
-          if (!before || typeof before !== "object") return false;
+          const before = log.before_state as { reference_id?: unknown; description?: unknown } | null;
+          if (!before || typeof before !== "object" || Array.isArray(before)) return false;
           if (before.reference_id && before.reference_id === o.id) return true;
           if (typeof before.description === "string") {
             const match = before.description.match(/\bOS\s*#?\s*(\d+)\b/i);
