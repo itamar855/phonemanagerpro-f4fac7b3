@@ -1,4 +1,6 @@
-import React from "react";
+
+import type { Product, ProductForm } from "./types";
+import type { Store } from "@/types/db";import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,27 +33,27 @@ const statusColors: Record<string, string> = {
 };
 
 interface AparelhosTableProps {
-  inStock: any[];
-  form: any;
-  setForm: (form) => void;
+  inStock: Product[];
+  form: ProductForm;
+  setForm: React.Dispatch<React.SetStateAction<ProductForm>>;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   handleSubmit: (e: React.FormEvent) => void;
   loading: boolean;
   activeStoreId: string | null;
   storeMap: Map<string, string>;
-  stores: any[];
+  stores: Store[];
   formatCurrency: (v: number) => string;
-  loadHistory: (p) => void;
-  setTransferProduct: (p) => void;
+  loadHistory: (p: Product) => void;
+  setTransferProduct: (p: Product) => void;
   setTransferDialogOpen: (open: boolean) => void;
-  setRepairProduct: (p) => void;
+  setRepairProduct: (p: Product) => void;
   setRepairModalOpen: (open: boolean) => void;
-  setDefectsProduct: (p) => void;
+  setDefectsProduct: (p: Product) => void;
   setDefectsList: (d: string[]) => void;
   setCustomDefect: (d: string) => void;
   setDefectsDialogOpen: (open: boolean) => void;
-  openEditProduct: (p) => void;
+  openEditProduct: (p: Product) => void;
   setDeleteId: (id: string) => void;
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;

@@ -1,4 +1,5 @@
-import React from "react";
+
+import type { Product } from "./types";import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ interface EmReparoTabProps {
   activeStoreId: string;
   storeMap: Map<string, string>;
   formatCurrency: (value: number) => string;
-  setRepairProduct: (p) => void;
+  setRepairProduct: (p: Product) => void;
   setRepairModalOpen: (open: boolean) => void;
   setDefectsProduct: (p: Tables<"products">) => void;
   setDefectsList: (list: string[]) => void;

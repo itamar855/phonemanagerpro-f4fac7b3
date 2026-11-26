@@ -1,4 +1,5 @@
-import React from "react";
+
+import type { PartForm, Product, SupplierOption } from "./types";import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,27 +27,17 @@ interface PecasTabProps {
   addPartOpen: boolean;
   setAddPartOpen: (open: boolean) => void;
   activeStoreId: string;
-  partForm: {
-    name: string;
-    brand: string;
-    model: string;
-    cost_price: string;
-    sale_price: string;
-    supplier_id: string;
-    launch_cash_out: boolean;
-    payment_method: string;
-    use_credit: boolean;
-  };
-  setPartForm: React.Dispatch<React.SetStateAction<any>>;
+  partForm: PartForm;
+  setPartForm: React.Dispatch<React.SetStateAction<PartForm>>;
   setPartVoucherFile: (f: File | null) => void;
-  suppliers: any[];
+  suppliers: SupplierOption[];
   supplierMap: Map<string, string>;
   storeMap: Map<string, string>;
-  filteredParts: any[];
+  filteredParts: Product[];
   formatCurrency: (value: number) => string;
   handleAddPart: (e: React.FormEvent) => void | Promise<void>;
   handleQuickUploadVoucher: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void | Promise<void>;
-  handleReturnPart: (p) => void | Promise<void>;
+  handleReturnPart: (p: Product) => void | Promise<void>;
   onRequestDeletePart: (id: string) => void;
   loading: boolean;
 }

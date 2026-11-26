@@ -1,4 +1,5 @@
-import React from "react";
+
+import type { ProductHistoryEntry } from "./types";import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +12,7 @@ interface ProductHistoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   historyProduct: Tables<"products"> | null;
-  productHistory: any[];
+  productHistory: ProductHistoryEntry[];
   formatCurrency: (value: number) => string;
 }
 

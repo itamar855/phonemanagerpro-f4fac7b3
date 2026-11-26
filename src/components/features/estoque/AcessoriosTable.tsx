@@ -1,4 +1,5 @@
-import React from "react";
+
+import type { Accessory as EstoqueAccessory } from "./types";import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,11 +11,11 @@ const categoryLabels: Record<string, string> = {
 };
 
 interface AcessoriosTableProps {
-  filteredAccessories: any[];
+  filteredAccessories: EstoqueAccessory[];
   activeStoreId: string | null;
   storeMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  openAccDialog: (a?) => void;
+  openAccDialog: (a?: EstoqueAccessory) => void;
   setDeleteId: (id: string) => void;
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;

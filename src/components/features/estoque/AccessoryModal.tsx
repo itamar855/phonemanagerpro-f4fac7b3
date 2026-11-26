@@ -1,4 +1,5 @@
-import React from "react";
+
+import type { AccessoryForm } from "./types";import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,20 +20,9 @@ import {
 interface AccessoryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editAcc: any | null;
-  accForm: {
-    name: string;
-    category: string;
-    brand: string;
-    quantity: string;
-    min_quantity: string;
-    cost_price: string;
-    sale_price: string;
-    store_id: string;
-    description: string;
-    justification: string;
-  };
-  setAccForm: React.Dispatch<React.SetStateAction<any>>;
+  editAcc: { id: string } | null;
+  accForm: AccessoryForm;
+  setAccForm: React.Dispatch<React.SetStateAction<AccessoryForm>>;
   activeStoreId: string;
   storeMap: Map<string, string>;
   onSubmit: (e: React.FormEvent) => void | Promise<void>;

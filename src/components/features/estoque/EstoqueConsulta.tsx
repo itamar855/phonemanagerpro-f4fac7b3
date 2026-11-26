@@ -93,12 +93,12 @@ export function EstoqueConsulta({ storeId, storeName }: { storeId: string; store
             </TabsContent>
             <TabsContent value="acessorios" className="mt-3">
               <StockList empty="Nenhum acessório em estoque." items={accs.map((a) => ({
-                id: a.id, title: a.name, details: [a.brand, `${a.quantity} un.`].filter(Boolean).join(" · "), badge: null, price: brl(a.sale_price),
+                id: a.id, title: a.name, details: [a.brand, `${a.quantity} un.`].filter(Boolean).join(" · "), badge: null as string | null, price: brl(a.sale_price),
               }))} />
             </TabsContent>
             <TabsContent value="pecas" className="mt-3">
               <StockList empty="Nenhuma peça em estoque." items={parts.map((p) => ({
-                id: p.id, title: p.name, details: [p.brand, p.model].filter(Boolean).join(" · "), badge: null, price: brl(p.sale_price),
+                id: p.id, title: p.name, details: [p.brand, p.model].filter(Boolean).join(" · "), badge: null as string | null, price: brl(p.sale_price),
               }))} />
             </TabsContent>
           </>

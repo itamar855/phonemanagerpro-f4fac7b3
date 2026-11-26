@@ -1,4 +1,5 @@
-import React from "react";
+
+import type { EditProductForm } from "./types";import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,23 +21,8 @@ import type { Tables } from "@/integrations/supabase/types";
 interface ProductEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editForm: {
-    name: string;
-    brand: string;
-    model: string;
-    imei: string;
-    serial_number: string;
-    cost_price: string;
-    sale_price: string;
-    store_id: string;
-    condition: string;
-    color: string;
-    capacity: string;
-    battery_percentage: string;
-    justification: string;
-    status: string;
-  };
-  setEditForm: React.Dispatch<React.SetStateAction<any>>;
+  editForm: EditProductForm;
+  setEditForm: React.Dispatch<React.SetStateAction<EditProductForm>>;
   stores: Tables<"stores">[];
   onSubmit: (e: React.FormEvent) => void | Promise<void>;
   loading: boolean;

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+
+import type { AccessoryForm, EditProductForm, PartForm, ProductForm, ProductHistoryEntry, SupplierOption } from "@/components/features/estoque/types";import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -104,43 +105,43 @@ const Estoque = () => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editProductOpen, setEditProductOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Tables<"products"> | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", brand: "iPhone", model: "", imei: "", serial_number: "", cost_price: "", sale_price: "", store_id: "", condition: "used", color: "", capacity: "", battery_percentage: "", justification: "", status: "in_stock" });
+  const [editForm, setEditForm] = useState<EditProductForm>({ name: "", brand: "iPhone", model: "", imei: "", serial_number: "", cost_price: "", sale_price: "", store_id: "", condition: "used", color: "", capacity: "", battery_percentage: "", justification: "", status: "in_stock" });
   const [historyProduct, setHistoryProduct] = useState<Tables<"products"> | null>(null);
-  const [productHistory, setProductHistory] = useState<any[]>([]);
+  const [productHistory, setProductHistory] = useState<ProductHistoryEntry[]>([]);
   const [justification, setJustification] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<"product" | "accessory" | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [repairModalOpen, setRepairModalOpen] = useState(false);
-  const [repairProduct, setRepairProduct] = useState<any>(null);
+  const [repairProduct, setRepairProduct] = useState<Tables<"products"> | null>(null);
   const [defectsDialogOpen, setDefectsDialogOpen] = useState(false);
   const [defectsProduct, setDefectsProduct] = useState<Tables<"products"> | null>(null);
   const [defectsList, setDefectsList] = useState<string[]>([]);
   const [customDefect, setCustomDefect] = useState("");
-  const [parts, setParts] = useState<any[]>([]);
+  const [parts, setParts] = useState<Tables<"products">[]>([]);
   const [partsSearch, setPartsSearch] = useState("");
   const [addPartOpen, setAddPartOpen] = useState(false);
-  const [partForm, setPartForm] = useState({
+  const [partForm, setPartForm] = useState<PartForm>({
     name: "", brand: "", model: "", cost_price: "", sale_price: "",
     supplier_id: "", launch_cash_out: false, payment_method: "dinheiro",
     use_credit: false
   });
   const [partVoucherFile, setPartVoucherFile] = useState<File | null>(null);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [repairCostsMap, setRepairCostsMap] = useState<Map<string, number>>(new Map());
   const [showAlerts, setShowAlerts] = useState(false);
 
-  const [form, setForm] = useState({
-    name: "", brand: "iPhone" as string, model: "", imei: "",
+  const [form, setForm] = useState<ProductForm>({
+    name: "", brand: "iPhone", model: "", imei: "",
     serial_number: "", cost_price: "", sale_price: "", store_id: "",
     product_type: "celular", condition: "used", color: "", capacity: "",
     battery_percentage: "",
     needsRepair: false,
-    selectedRepairs: [] as string[],
+    selectedRepairs: [],
     notes: ""
   });
 
-  const [accForm, setAccForm] = useState({
+  const [accForm, setAccForm] = useState<AccessoryForm>({
     name: "", category: "outro", brand: "", quantity: "0", min_quantity: "5",
     cost_price: "", sale_price: "", store_id: "", description: "", justification: "",
   });
@@ -258,8 +259,16 @@ const Estoque = () => {
 
   const loadHistory = async (p: Tables<"products">) => {
     setHistoryProduct(p);
-    const { data } = await supabase.from("product_history").select(`*, created_by_profile:profiles!product_history_created_by_fkey(display_name)`).eq("product_id", p.id).order("created_at", { ascending: false });
-    setProductHistory(data ?? []);
+    // product_history não tem chave estrangeira para profiles, então o nome de quem
+    // alterou vem numa segunda consulta (o join antigo falhava e o histórico ficava vazio).
+    const { data } = await supabase.from("product_history").select("*").eq("product_id", p.id).order("created_at", { ascending: false });
+    const rows = data ?? [];
+    const authorIds = [...new Set(rows.map((h) => h.created_by).filter(Boolean))];
+    const { data: authors } = authorIds.length > 0
+      ? await supabase.from("profiles").select("user_id, display_name").in("user_id", authorIds)
+      : { data: [] as { user_id: string; display_name: string | null }[] };
+    const nameById = new Map((authors ?? []).map((a) => [a.user_id, a.display_name]));
+    setProductHistory(rows.map((h) => ({ ...h, created_by_profile: nameById.has(h.created_by) ? { display_name: nameById.get(h.created_by) ?? null } : null })));
     setHistoryOpen(true);
   };
 
@@ -534,7 +543,7 @@ const Estoque = () => {
     setLoading(false);
   };
 
-  const handleReturnPart = async (p) => {
+  const handleReturnPart = async (p: Tables<"products">) => {
     const confirm = window.confirm(`Deseja realmente devolver a peça "${p.name}" ao fornecedor? O valor de custo de R$ ${p.cost_price.toFixed(2)} será revertido em crédito.`);
     if (!confirm) return;
 
