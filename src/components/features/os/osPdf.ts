@@ -84,7 +84,7 @@ export const generateOSPdf = async (order: OsPdfOrder, store: OsPdfStore, techNa
       doc.circle(M + 8, 14, 9, "F");
       doc.addImage(store.logo_url, "PNG", M + 1.5, 7.5, 13, 13);
       tx = M + 22;
-    } catch (_) {}
+    } catch { /* falha ignorada de propósito */ }
   }
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...WHITE);
@@ -444,7 +444,7 @@ export const generateOSPdf = async (order: OsPdfOrder, store: OsPdfStore, techNa
   if (order.signature_data) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...MID);
     doc.text("ASSINATURA DO CLIENTE:", M, y); y += 4;
-    try { doc.addImage(order.signature_data, "PNG", M, y, 65, 24); y += 27; } catch (_) {}
+    try { doc.addImage(order.signature_data, "PNG", M, y, 65, 24); y += 27; } catch { /* falha ignorada de propósito */ }
     doc.setDrawColor(...BLACK); doc.setLineWidth(0.5); doc.line(M, y, M + 70, y);
     y += 5;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MID);
@@ -588,7 +588,7 @@ export const saveAndOpenPdf = (doc: jsPDF, filename: string, openInNewTab = true
   if (openInNewTab) {
     try {
       window.open(blobUrl, "_blank");
-    } catch (_) {}
+    } catch { /* falha ignorada de propósito */ }
   }
 
   const link = document.createElement("a");
@@ -601,7 +601,7 @@ export const saveAndOpenPdf = (doc: jsPDF, filename: string, openInNewTab = true
   setTimeout(() => {
     try {
       document.body.removeChild(link);
-    } catch (_) {}
+    } catch { /* falha ignorada de propósito */ }
     setTimeout(() => {
       URL.revokeObjectURL(blobUrl);
     }, 120000);

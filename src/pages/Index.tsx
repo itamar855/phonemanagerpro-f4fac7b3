@@ -119,7 +119,7 @@ const Dashboard = () => {
     try {
       const saved = localStorage.getItem("cellmanager_tech_goals");
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
     return { targetOrders: 40, targetCommission: 2500 };
   });
   const [techShopRanking, setTechShopRanking] = useState<{
@@ -133,7 +133,7 @@ const Dashboard = () => {
     setTechGoals(newGoals);
     try {
       localStorage.setItem("cellmanager_tech_goals", JSON.stringify(newGoals));
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
   };
 
   const fetchTechnicianData = async () => {

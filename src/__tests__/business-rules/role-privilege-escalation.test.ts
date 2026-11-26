@@ -608,7 +608,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       let dbMemberStores = [
         { user_id: targetUserId, store_id: newStoreId },
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "New Name",
         phone: "1188888888",
@@ -670,7 +670,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       };
 
       let dbMemberStores = [{ user_id: targetUserId, store_id: newStoreId }];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "Original Name",
         phone: null,
@@ -724,7 +724,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         { user_id: targetUserId, store_id: initialStoreId },
         { user_id: targetUserId, store_id: newStoreId }, // membership B criada
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "New Name",
         phone: "1199999999",
@@ -775,7 +775,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       let dbMemberStores = [
         { user_id: targetUserId, store_id: newStoreId }, // membership criada
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "New Profile",
         phone: null,
@@ -834,7 +834,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         { user_id: targetUserId, store_id: initialStoreId },
         { user_id: targetUserId, store_id: newStoreId }, // membership criada no passo 7
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "Original Name",
         phone: "1199999999",
@@ -847,7 +847,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       const rollbackErrors: string[] = [];
 
       // Inicializa com !modifiedProfile = true porque profile nunca foi alterado nesta execução
-      let profileRollbackSafeForMembershipCleanup = !modifiedProfile;
+      const profileRollbackSafeForMembershipCleanup = !modifiedProfile;
 
       // 1. modifiedProfile é false, então o bloco do profile é ignorado
       if (modifiedProfile) {

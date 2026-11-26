@@ -288,7 +288,7 @@ describe('Cash Entries — Integration Flow', () => {
           if (Array.isArray(parsed)) {
             return parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
           }
-        } catch (e) {}
+        } catch { /* falha ignorada de propósito */ }
       }
       if (trimmed.includes(",")) {
         return trimmed.split(",").map((s) => s.trim()).filter(Boolean);

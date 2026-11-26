@@ -38,7 +38,9 @@ export const createPendingCashEntry = async (
     query = query.eq("store_id", storeId);
   }
 
-  let { data: register, error: regError } = await query.maybeSingle();
+  const registerRes = await query.maybeSingle();
+  let register = registerRes.data;
+  const regError = registerRes.error;
 
   if (regError) {
     console.error("Erro ao buscar caixa do usuário:", regError);

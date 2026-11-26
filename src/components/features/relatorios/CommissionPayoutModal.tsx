@@ -735,7 +735,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       const isWaivedError = rawMsg.includes("OS_COMMISSION_WAIVED") || rawMsg.includes("anulada pela gestão");
       const isFinPendingError = rawMsg.includes("OS_FINANCIAL_PENDING") || rawMsg.includes("confirmado no Caixa");
 
-      const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
+      const profitMatch = rawMsg.match(/R\$\s*(-?[\d.,]+)/i);
       const profitText = profitMatch ? profitMatch[1] : "";
 
       let errorTitle = "Divergência na Ordem de Serviço";

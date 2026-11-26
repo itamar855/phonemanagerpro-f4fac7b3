@@ -190,7 +190,7 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao alterar senha do membro");
       } else {
         toast.success(response.data?.message || "Senha atualizada com sucesso!");
@@ -231,7 +231,7 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao atualizar membro da equipe");
       } else {
         toast.success(response.data?.message || "Membro e unidades atualizados!");
@@ -266,7 +266,7 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao remover membro");
       } else {
         logAction("DELETE_RECORD", "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
@@ -301,7 +301,7 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao criar usuário");
       } else {
         toast.success("Usuário cadastrado com sucesso!");

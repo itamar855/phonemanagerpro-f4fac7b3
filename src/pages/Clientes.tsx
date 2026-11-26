@@ -37,7 +37,7 @@ const Clientes = () => {
     if (!activeStoreId) return;
     
     // Filtro de loja para clientes (se a coluna existir)
-    let customersQuery = supabase.from("customers").select("*").order("created_at", { ascending: false });
+    const customersQuery = supabase.from("customers").select("*").order("created_at", { ascending: false });
     let salesQuery = supabase.from("sales").select("*");
     let ordersQuery = supabase.from("service_orders").select("*");
     let productsQuery = supabase.from("products").select("id, name");

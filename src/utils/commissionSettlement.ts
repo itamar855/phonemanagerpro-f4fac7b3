@@ -126,7 +126,7 @@ const pdfSafe = (text?: string | null): string => {
     .replace(/[\u2013\u2014]/g, "-")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "")
+    .replace(/[^\t\n\r\x20-\xFF]/g, "")
     .trim();
 };
 

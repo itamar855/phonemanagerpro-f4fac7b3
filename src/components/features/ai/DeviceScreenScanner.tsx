@@ -109,7 +109,7 @@ export function DeviceScreenScanner({
             const errJson = await error.context.json();
             if (errJson?.error) msg = errJson.error;
           }
-        } catch {}
+        } catch { /* falha ignorada de propósito */ }
         throw new Error(msg || "Erro ao comunicar com a inteligência artificial");
       }
 

@@ -868,7 +868,7 @@ const Caixa = () => {
 
       // 3. Fallback inteligente para peças avulsas já cadastradas ("Compra de Peça Avulsa (OS): ...")
       if (!foundOrder && entry.description && entry.description.includes("Compra de Peça Avulsa")) {
-        const matchPart = entry.description.match(/Compra de Peça Avulsa(?:\s*\(.*?\))?:\s*([^\[]+)/i);
+        const matchPart = entry.description.match(/Compra de Peça Avulsa(?:\s*\(.*?\))?:\s*([^[]+)/i);
         const partName = matchPart ? matchPart[1].trim() : "";
 
         // Estratégia A: Busca o produto pelo nome correspondente
@@ -924,7 +924,7 @@ const Caixa = () => {
 
       // 4. Fallback pelo prefixo de OS no comprovante anexado (ex: "os-3b2d1844/...")
       if (!foundOrder && entry.receipt_url) {
-        const matchOs = entry.receipt_url.match(/os-([a-f0-9\-]{8})/i);
+        const matchOs = entry.receipt_url.match(/os-([a-f0-9-]{8})/i);
         if (matchOs && matchOs[1]) {
           const { data: osList } = await supabase
             .from("service_orders")

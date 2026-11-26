@@ -146,7 +146,7 @@ const AIAssistant = () => {
               fullText += content;
               setResult(fullText);
             }
-          } catch {}
+          } catch { /* falha ignorada de propósito */ }
         }
       }
     } catch (e) {

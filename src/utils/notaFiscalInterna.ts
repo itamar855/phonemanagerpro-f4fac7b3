@@ -80,7 +80,7 @@ export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<jsPD
 
   // 1. PREMIUM HEADER
   if (data.lojaLogoUrl) {
-    try { doc.addImage(data.lojaLogoUrl, "PNG", M, y, 22, 22); } catch (_) {}
+    try { doc.addImage(data.lojaLogoUrl, "PNG", M, y, 22, 22); } catch { /* falha ignorada de propósito */ }
   }
   
   const tx = data.lojaLogoUrl ? 26 : 0;
