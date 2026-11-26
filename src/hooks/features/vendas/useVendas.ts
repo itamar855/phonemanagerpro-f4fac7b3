@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tables } from "@/integrations/supabase/types";
+import type { Profile, Sale, Store, StoreBankAccount, Transaction } from "@/types/db";
 import { toast } from "sonner";
 
-type Sale = any;
 type Customer = Tables<"customers">;
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };
@@ -14,11 +14,11 @@ export const useVendas = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Tables<"products">[]>([]);
   const [accessories, setAccessories] = useState<Accessory[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-  const [pdvSales, setPdvSales] = useState<any[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<StoreBankAccount[]>([]);
+  const [pdvSales, setPdvSales] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   

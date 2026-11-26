@@ -10,13 +10,15 @@ import {
 import { emitInvoice } from "@/lib/services/fiscalService";
 import { toast } from "sonner";
 
+import type { Product, Sale, Store as StoreRow } from "./types";
+
 interface DetalhesVendaModalProps {
-  selectedViewSale: any | null;
-  setSelectedViewSale: (sale: any | null) => void;
-  productMap: Map<string, any>;
-  storeMap: Map<string, any>;
-  profileMap: Map<string, any>;
-  handleGerarNota: (sale, whats: boolean) => void;
+  selectedViewSale: Sale | null;
+  setSelectedViewSale: (sale: Sale | null) => void;
+  productMap: Map<string, Product>;
+  storeMap: Map<string, StoreRow>;
+  profileMap: Map<string, string>;
+  handleGerarNota: (sale: Sale, whats: boolean) => void;
   notaLoading: string | null;
 }
 
@@ -35,7 +37,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
   const navigate = useNavigate();
   const [emitindoFiscal, setEmitindoFiscal] = useState(false);
 
-  const handleEmitirFiscal = async (sale, product) => {
+  const handleEmitirFiscal = async (sale: Sale, product: Product | undefined) => {
     try {
       setEmitindoFiscal(true);
       const saleNet = Number(sale.sale_price) - (Number(sale.discount) || 0);
@@ -92,7 +94,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
                       <p className="font-bold text-base">{product?.name || "—"}</p>
                       {product?.brand && <p className="text-xs text-muted-foreground">{product.brand}{product?.model ? ` · ${product.model}` : ""}</p>}
                       {product?.color && <p className="text-xs text-muted-foreground">Cor: {product.color}</p>}
-                      {product?.storage && <p className="text-xs text-muted-foreground">Armazenamento: {product.storage}</p>}
+                      {product?.capacity && <p className="text-xs text-muted-foreground">Armazenamento: {product.capacity}</p>}
                     </div>
                     {product?.imei && (
                       <div className="text-right">

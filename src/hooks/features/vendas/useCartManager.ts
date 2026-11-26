@@ -1,4 +1,6 @@
-import { useState, useRef } from "react";
+
+import type { User } from "@supabase/supabase-js";
+import type { PdvPaymentForm, Store } from "@/components/features/vendas/types";import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { createPendingCashEntry } from "@/lib/services/salesService";
@@ -12,15 +14,15 @@ const formatCurrency = (v: number) => new Intl.NumberFormat("pt-BR", { style: "c
 export const useCartManager = (
   accessories: Accessory[],
   activeStoreId: string | null,
-  user: any,
+  user: User | null,
   setLoading: (loading: boolean) => void,
   fetchData: () => void,
-  stores: any[]
+  stores: Store[]
 ) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [accSearch, setAccSearch] = useState("");
   const [pdvOpen, setPdvOpen] = useState(false);
-  const [pdvPayment, setPdvPayment] = useState({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: "" });
+  const [pdvPayment, setPdvPayment] = useState<PdvPaymentForm>({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: "" });
   
   const isPdvSubmitting = useRef(false);
 

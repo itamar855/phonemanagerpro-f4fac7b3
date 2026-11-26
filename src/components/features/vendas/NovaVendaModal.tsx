@@ -15,20 +15,21 @@ import {
   Smartphone, Store, Tag, Trash2, Banknote, CreditCard, QrCode, Landmark,
   Shield, Percent, CalendarDays
 } from "lucide-react";
-import { Customer } from "./types";
+import type { User } from "@supabase/supabase-js";
+import type { Customer, CustomerForm, Product, Profile, Sale, SaleForm, Store as StoreRow, StoreBankAccount } from "./types";
 
 interface NovaVendaModalProps {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   resetForm: () => void;
   handleSubmit: (e: React.FormEvent) => Promise<void>;
-  form: any;
-  setForm: React.Dispatch<React.SetStateAction<any>>;
-  products: any[];
-  availableProducts: any[];
-  selectedProduct: any | null;
-  storeMap: Map<string, any>;
-  bankAccounts: any[];
+  form: SaleForm;
+  setForm: React.Dispatch<React.SetStateAction<SaleForm>>;
+  products: Product[];
+  availableProducts: Product[];
+  selectedProduct: Product | null;
+  storeMap: Map<string, StoreRow>;
+  bankAccounts: StoreBankAccount[];
   salePrice: number;
   discount: number;
   salePriceAfterDiscount: number;
@@ -45,22 +46,22 @@ interface NovaVendaModalProps {
   formatCurrency: (v: number) => string;
 
   // Customer Manager Props
-  currentProfile: any;
-  user: any;
-  selectedCustomer: any;
+  currentProfile: Profile | undefined;
+  user: User | null;
+  selectedCustomer: Customer | null;
   clearCustomer: () => void;
-  customerSalesHistory: any[];
+  customerSalesHistory: Sale[];
   showCustomerHistory: boolean;
   setShowCustomerHistory: React.Dispatch<React.SetStateAction<boolean>>;
-  productMap: Map<string, any>;
+  productMap: Map<string, Product>;
   customerSearch: string;
   setCustomerSearch: (v: string) => void;
-  customerResults: any[];
-  selectCustomer: (c) => void;
+  customerResults: Customer[];
+  selectCustomer: (c: Customer) => void;
   showNewCustomerForm: boolean;
   setShowNewCustomerForm: React.Dispatch<React.SetStateAction<boolean>>;
-  newCustomerForm: any;
-  setNewCustomerForm: React.Dispatch<React.SetStateAction<any>>;
+  newCustomerForm: CustomerForm;
+  setNewCustomerForm: React.Dispatch<React.SetStateAction<CustomerForm>>;
   handleCreateCustomer: () => Promise<void>;
 }
 

@@ -10,20 +10,20 @@ import {
   Pencil, UserPlus, Banknote, CreditCard, QrCode,
   Smartphone, Shield, CalendarDays
 } from "lucide-react";
-import { Sale, Customer } from "./types";
+import type { Sale, Customer, CustomerForm, EditSaleForm } from "./types";
 
 interface EditarVendaModalProps {
   editSale: Sale | null;
   setEditSale: (sale: Sale | null) => void;
   handleSaveEdit: (e: React.FormEvent) => Promise<void>;
-  editForm: any;
-  setEditForm: React.Dispatch<React.SetStateAction<any>>;
+  editForm: EditSaleForm;
+  setEditForm: React.Dispatch<React.SetStateAction<EditSaleForm>>;
   editSaleCustomerId: string;
   setEditSaleCustomerId: (id: string) => void;
   showEditNewCustomerForm: boolean;
   setShowEditNewCustomerForm: (v: boolean | ((prev: boolean) => boolean)) => void;
-  editNewCustomerForm: any;
-  setEditNewCustomerForm: React.Dispatch<React.SetStateAction<any>>;
+  editNewCustomerForm: CustomerForm;
+  setEditNewCustomerForm: React.Dispatch<React.SetStateAction<CustomerForm>>;
   handleCreateCustomerForEdit: () => Promise<void>;
   customers: Customer[];
   userRole?: string;

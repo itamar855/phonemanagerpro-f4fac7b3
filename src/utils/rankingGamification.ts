@@ -1,3 +1,17 @@
+import type { Product, Profile, Sale, ServiceOrder, ServiceOrderItem, Store, Transaction, UserRole } from "@/types/db";
+
+// Entradas das agregações: linhas do banco, mas aceitando só parte das colunas
+// (as telas buscam colunas escolhidas e os testes montam objetos mínimos).
+type RankSale = Partial<Sale> & { products?: Partial<Product> | null };
+/** `role` e `name` não existem em profiles; ficam só como reserva para quem ainda manda. */
+type RankProfile = Partial<Profile> & { role?: string; name?: string };
+type RankStore = Partial<Store>;
+type RankUserRole = Omit<Partial<UserRole>, "role"> & { role?: string };
+type RankProduct = Partial<Product>;
+type RankTransaction = Partial<Transaction>;
+type RankServiceOrder = Partial<ServiceOrder>;
+type RankOsPart = Partial<ServiceOrderItem>;
+
 /**
  * rankingGamification.ts
  * Utilitário puro para regras de gamificação, cálculo de patentes, metas e pódios.
@@ -443,19 +457,19 @@ export function calculateAccessoryPatent(totalAmount: number, customTiers?: Acce
  * Agrega vendas de celulares em ranking unificado (Geral, todas as lojas, incluindo técnicos).
  */
 export function aggregatePhoneRanking(params: {
-  sales: any[];
-  profiles: any[];
-  stores: any[];
-  userRoles: any[];
-  productMap?: Map<string, any>;
+  sales: RankSale[];
+  profiles: RankProfile[];
+  stores: RankStore[];
+  userRoles: RankUserRole[];
+  productMap?: Map<string, RankProduct>;
   patentSettings?: PatentSettings;
 }): RankSellerPhone[] {
   const { sales, profiles, stores, userRoles, productMap, patentSettings } = params;
   const currentSettings = patentSettings || (typeof window !== "undefined" ? getPatentSettings() : DEFAULT_PATENT_SETTINGS);
 
-  const profileMap = new Map<string, any>(profiles.map((p) => [p.user_id || p.id, p]));
-  const storeMap = new Map<string, any>(stores.map((s) => [s.id, s]));
-  const roleMap = new Map<string, any>(userRoles.map((r) => [r.user_id, r]));
+  const profileMap = new Map<string, RankProfile>(profiles.map((p) => [p.user_id || p.id, p]));
+  const storeMap = new Map<string, RankStore>(stores.map((s) => [s.id, s]));
+  const roleMap = new Map<string, RankUserRole>(userRoles.map((r) => [r.user_id, r]));
 
   const map = new Map<string, {
     uid: string;
@@ -546,11 +560,11 @@ export function aggregatePhoneRanking(params: {
  * Agrega vendas de acessórios (por loja e por vendedor).
  */
 export function aggregateAccessoryRanking(params: {
-  transactions: any[];
-  sales: any[]; // Usado para calcular taxa de anexo
-  profiles: any[];
-  stores: any[];
-  userRoles: any[];
+  transactions: RankTransaction[];
+  sales: RankSale[]; // Usado para calcular taxa de anexo
+  profiles: RankProfile[];
+  stores: RankStore[];
+  userRoles: RankUserRole[];
   filterStoreId?: string; // Se 'all', traz todas
   patentSettings?: PatentSettings;
 }): {
@@ -560,9 +574,9 @@ export function aggregateAccessoryRanking(params: {
   const { transactions, sales, profiles, stores, userRoles, filterStoreId, patentSettings } = params;
   const currentSettings = patentSettings || (typeof window !== "undefined" ? getPatentSettings() : DEFAULT_PATENT_SETTINGS);
 
-  const profileMap = new Map<string, any>(profiles.map((p) => [p.user_id || p.id, p]));
-  const storeMap = new Map<string, any>(stores.map((s) => [s.id, s]));
-  const roleMap = new Map<string, any>(userRoles.map((r) => [r.user_id, r]));
+  const profileMap = new Map<string, RankProfile>(profiles.map((p) => [p.user_id || p.id, p]));
+  const storeMap = new Map<string, RankStore>(stores.map((s) => [s.id, s]));
+  const roleMap = new Map<string, RankUserRole>(userRoles.map((r) => [r.user_id, r]));
 
   // Filtrar transações por loja se especificado
   const txList = transactions.filter((tx) => {
@@ -593,7 +607,7 @@ export function aggregateAccessoryRanking(params: {
   }> = {};
 
   for (const tx of txList) {
-    const metadata = tx.metadata;
+    const metadata = tx.metadata as { seller_id?: string; cart?: { qty?: number | string }[] } | null;
     const sellerUid = metadata?.seller_id || tx.created_by;
     if (!sellerUid) continue;
 
@@ -710,11 +724,11 @@ export interface RankTechnician {
 }
 
 export function aggregateTechRanking(params: {
-  serviceOrders: any[];
-  parts?: any[];
-  profiles: any[];
-  stores: any[];
-  userRoles: any[];
+  serviceOrders: RankServiceOrder[];
+  parts?: RankOsPart[];
+  profiles: RankProfile[];
+  stores: RankStore[];
+  userRoles: RankUserRole[];
   filterStoreId?: string | null;
   awardConfig?: TechAwardConfig;
 }): {
@@ -724,12 +738,12 @@ export function aggregateTechRanking(params: {
   const { serviceOrders, parts = [], profiles, stores, userRoles, filterStoreId, awardConfig } = params;
   const cfg = awardConfig || (typeof window !== "undefined" ? getPatentSettings().techAward || DEFAULT_TECH_AWARD_CONFIG : DEFAULT_TECH_AWARD_CONFIG);
 
-  const profileMap = new Map<string, any>(profiles.map((p) => [p.user_id || p.id, p]));
-  const storeMap = new Map<string, any>(stores.map((s) => [s.id, s]));
-  const roleMap = new Map<string, any>(userRoles.map((r) => [r.user_id, r]));
+  const profileMap = new Map<string, RankProfile>(profiles.map((p) => [p.user_id || p.id, p]));
+  const storeMap = new Map<string, RankStore>(stores.map((s) => [s.id, s]));
+  const roleMap = new Map<string, RankUserRole>(userRoles.map((r) => [r.user_id, r]));
 
   // Agrupar peças por OS
-  const partsByOs = new Map<string, any[]>();
+  const partsByOs = new Map<string, RankOsPart[]>();
   for (const part of parts) {
     if (part.service_order_id) {
       const list = partsByOs.get(part.service_order_id) || [];

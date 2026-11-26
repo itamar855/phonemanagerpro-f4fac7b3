@@ -41,13 +41,19 @@ import {
   Accessory,
   CartItem,
   formatCurrency,
+  type CustomerForm,
+  type PdvMetadata,
+  type EditSaleForm,
+  type SaleForm,
+  type TradeInDeviceForm,
+  type Transaction,
 } from "@/components/features/vendas/types";
 
 import { createPendingCashEntry, formatDescription } from "@/lib/services/salesService";
 import { readTradeInHandoff, saleTradeBrand } from "@/lib/tradeinHandoff";
 // Note: cash_register_id is now delegated to salesService.ts to keep this component clean.
 
-const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
+const emptyCustomerForm: CustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
 
 const Vendas = () => {
   const navigate = useNavigate();
@@ -87,7 +93,7 @@ const Vendas = () => {
   const [salesSearch, setSalesSearch] = useState("");
   const [selectedViewSale, setSelectedViewSale] = useState<Sale | null>(null);
   const [editSale, setEditSale] = useState<Sale | null>(null);
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<EditSaleForm>({
     sale_price: "",
     discount: "",
     payment_cash: "",
@@ -112,17 +118,17 @@ const Vendas = () => {
   });
   const [editSaleCustomerId, setEditSaleCustomerId] = useState<string>("");
   const [showEditNewCustomerForm, setShowEditNewCustomerForm] = useState(false);
-  const [editNewCustomerForm, setEditNewCustomerForm] = useState(emptyCustomerForm);
+  const [editNewCustomerForm, setEditNewCustomerForm] = useState<CustomerForm>(emptyCustomerForm);
   const searchRef = useRef<HTMLDivElement>(null);
   const isSubmitting = useRef(false);
 
   // Estado para edição de venda PDV (acessórios)
-  const [editPdvSale, setEditPdvSale] = useState<any | null>(null);
+  const [editPdvSale, setEditPdvSale] = useState<Transaction | null>(null);
   const [editPdvForm, setEditPdvForm] = useState({
     description: "", amount: "", payment_cash: "", payment_card: "", payment_pix: "", retro_date: "",
   });
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<SaleForm>({
     product_id: "", sale_price: "", has_trade_in: false,
     trade_in_device_name: "", trade_in_device_brand: "iPhone",
     trade_in_device_model: "", trade_in_device_imei: "",
@@ -282,7 +288,7 @@ const Vendas = () => {
       }
 
       let tradeInProductId: string | null = null;
-      let tradeInDevicesList: any[] = [];
+      let tradeInDevicesList: TradeInDeviceForm[] = [];
       if (form.has_trade_in) {
         if (form.trade_in_devices && form.trade_in_devices.length > 0) {
           tradeInDevicesList = form.trade_in_devices;
@@ -618,7 +624,7 @@ const Vendas = () => {
 
         // Restaurar estoque dos acessórios via metadata
         const { data: pdvTx } = await supabase.from("transactions").select("metadata").eq("id", item.id).maybeSingle();
-        const meta = pdvTx?.metadata as { cart?: { id: string; qty: number }[] } | null;
+        const meta = pdvTx?.metadata as PdvMetadata;
         if (meta && meta.cart && Array.isArray(meta.cart)) {
           for (const cartItem of meta.cart) {
              const { data: acc } = await supabase.from("accessories").select("quantity").eq("id", cartItem.id).maybeSingle();
@@ -897,7 +903,7 @@ const Vendas = () => {
   };
 
   // ── Editar venda PDV (acessório) ──────────────────────────────────────────
-  const handleOpenPdvEdit = async (tx) => {
+  const handleOpenPdvEdit = async (tx: Transaction) => {
     setLoading(true);
     let cash = 0, card = 0, pix = 0;
     try {
@@ -1211,9 +1217,9 @@ const Vendas = () => {
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm truncate">{formatDescription(tx.description)}</p>
                         <Badge className="text-[10px] bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 shrink-0">PDV</Badge>
-                        {Number(tx.metadata?.discount) > 0 && (
+                        {Number((tx.metadata as PdvMetadata)?.discount) > 0 && (
                           <Badge className="text-[10px] text-yellow-500 border border-yellow-500/30 bg-transparent shrink-0">
-                            🏷️ -{formatCurrency(Number(tx.metadata.discount))}
+                            🏷️ -{formatCurrency(Number((tx.metadata as PdvMetadata).discount))}
                           </Badge>
                         )}
                         {activeStoreId === "all" && (
@@ -1242,8 +1248,8 @@ const Vendas = () => {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-display font-bold text-sm text-primary">{formatCurrency(Number(tx.amount))}</p>
-                      {Number(tx.metadata?.discount) > 0 && (
-                        <p className="text-[10px] text-yellow-500">-{formatCurrency(Number(tx.metadata.discount))}</p>
+                      {Number((tx.metadata as PdvMetadata)?.discount) > 0 && (
+                        <p className="text-[10px] text-yellow-500">-{formatCurrency(Number((tx.metadata as PdvMetadata).discount))}</p>
                       )}
                     </div>
                   </div>
