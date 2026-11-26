@@ -3,6 +3,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { AnswerLine, EvalStatus, TradeEvaluation, TradeModel, TradeRule, TradeSettings } from "../lib/types";
 import type { PriceRow } from "../lib/priceList";
+import type { TradeShare } from "../lib/share";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -107,9 +108,27 @@ export interface NewEvaluation {
 
 const EVAL_COLS = "id, store_id, created_by, customer_name, customer_phone, customer_email, model_id, brand, model, storage, imei, base_price, answers, discount_total, offer_min, offer_max, blocked, status, agreed_value, notes, sale_id, created_at";
 
-function toEvaluation(e: TradeEvaluation): TradeEvaluation {
+const SHARE_COLS = "token, expires_at, opened_at, review_answers, review_offer, review_discount_total, review_blocked, review_note, review_count, reviewed_at, accepted_at, accepted_value, photo_count, photos_at, activity_at, seen_at";
+
+function toShare(raw: unknown): TradeShare | null {
+  const s = (Array.isArray(raw) ? raw[0] : raw) as TradeShare | null | undefined;
+  if (!s) return null;
   return {
-    ...e,
+    ...s,
+    review_offer: s.review_offer === null ? null : num(s.review_offer),
+    review_discount_total: s.review_discount_total === null ? null : num(s.review_discount_total),
+    accepted_value: s.accepted_value === null ? null : num(s.accepted_value),
+    review_answers: Array.isArray(s.review_answers)
+      ? s.review_answers.map((l) => ({ ...l, amount: num(l.amount), value: num(l.value) }))
+      : null,
+  };
+}
+
+function toEvaluation(e: TradeEvaluation & { tradein_shares?: unknown }): TradeEvaluation {
+  const { tradein_shares, ...rest } = e;
+  return {
+    ...rest,
+    share: toShare(tradein_shares),
     base_price: num(e.base_price),
     discount_total: num(e.discount_total),
     offer_min: num(e.offer_min),
@@ -142,7 +161,7 @@ export async function deleteEvaluation(id: string): Promise<void> {
 export async function fetchEvaluations(storeId: string, limit = 150): Promise<TradeEvaluation[]> {
   const { data, error } = await db
     .from("tradein_evaluations")
-    .select(EVAL_COLS)
+    .select(`${EVAL_COLS}, tradein_shares(${SHARE_COLS})`)
     .eq("store_id", storeId)
     .order("created_at", { ascending: false })
     .limit(limit);

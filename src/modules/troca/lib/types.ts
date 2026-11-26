@@ -1,4 +1,5 @@
 // Tipos do simulador de troca (tabelas tradein_*). Não estão no types.ts gerado do Supabase.
+import type { TradeShare } from "./share";
 
 export type QuestionKey = "tela" | "bateria" | "carcaca" | "biometria" | "conta" | "pecas" | "acessorios";
 export type RuleKind = "pct" | "fixed" | "block";
@@ -64,4 +65,6 @@ export interface TradeEvaluation {
   notes: string | null;
   sale_id: string | null;
   created_at: string;
+  /** link enviado ao cliente (só vem no histórico) */
+  share?: TradeShare | null;
 }

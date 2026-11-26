@@ -6,7 +6,8 @@ import { ArrowLeftRight, History, Lock, Settings2, Smartphone } from "lucide-rea
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { trocaAccess, trocaIsManager } from "./lib/access";
-import { useTrocaStore } from "./hooks/useTroca";
+import { useEvaluations, useTrocaStore } from "./hooks/useTroca";
+import { hasNews } from "./lib/share";
 import { TrocaContext } from "./hooks/context";
 
 const SimuladorPage = lazy(() => import("./pages/SimuladorPage"));
@@ -44,6 +45,9 @@ export default function TrocaModule() {
   const access = trocaAccess(userRole, userPermissions);
   const isManager = trocaIsManager(userRole);
   const { stores, storeId, pick, loading } = useTrocaStore();
+  // selo na aba Histórico: cliente revisou, aceitou ou mandou foto pelo link
+  const evals = useEvaluations(access === "denied" || access === "loading" ? null : storeId);
+  const news = evals.data?.list.filter((e) => hasNews(e.share)).length ?? 0;
 
   if (access === "loading" || loading) return <PageFallback />;
   if (access === "denied") return <NoAccess />;
@@ -89,6 +93,10 @@ export default function TrocaModule() {
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 <span className="hidden sm:inline">{label}</span>
                 <span className="sm:hidden">{short ?? label}</span>
+                {to === "/troca/historico" && news > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white"
+                    aria-label={`${news} ${news === 1 ? "novidade" : "novidades"} do cliente`}>{news}</span>
+                )}
               </NavLink>
             ))}
           </nav>

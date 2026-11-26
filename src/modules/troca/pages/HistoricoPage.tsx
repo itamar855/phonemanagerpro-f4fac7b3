@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Ban, CheckCircle2, History, Search, ShoppingBag, ThumbsDown, Trash2 } from "lucide-react";
@@ -8,16 +8,19 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { deleteEvaluation, updateEvaluation } from "../api/db";
+import { markShareSeen } from "../api/share";
 import { AcceptDialog } from "../components/AcceptDialog";
+import { CustomerLinkSection, CustomerTag } from "../components/CustomerLinkSection";
 import { EmptyState } from "../components/EmptyState";
 import { useTrocaContext } from "../hooks/context";
 import { useEvaluations, useInvalidateTroca, useSettings } from "../hooks/useTroca";
 import { formatBRL } from "../lib/calc";
 import { buildHandoff, deviceName } from "../lib/handoff";
 import { QUESTION_BY_KEY } from "../lib/questions";
+import { hasNews } from "../lib/share";
 import type { EvalStatus, TradeEvaluation } from "../lib/types";
 
-type Filter = "todas" | EvalStatus;
+type Filter = "todas" | "cliente" | EvalStatus;
 const NO_EVALS: TradeEvaluation[] = [];
 
 const STATUS: Record<EvalStatus, { label: string; tone: string }> = {
@@ -56,10 +59,19 @@ export default function HistoricoPage() {
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return list.filter((e) =>
-      (filter === "todas" || e.status === filter) &&
+      (filter === "todas" || (filter === "cliente" ? !!(e.share?.reviewed_at || e.share?.accepted_at || e.share?.photo_count) : e.status === filter)) &&
       (!q || [e.customer_name, e.customer_phone, e.customer_email, e.model, e.storage, e.imei].some((v) => v?.toLowerCase().includes(q))));
   }, [list, filter, search]);
   const open = list.find((e) => e.id === openId) ?? null;
+  const newsCount = useMemo(() => list.filter((e) => hasNews(e.share)).length, [list]);
+
+  // abriu o detalhe com novidade do cliente → marca como visto (some o selo)
+  const openNews = !!open && hasNews(open.share);
+  useEffect(() => {
+    if (!openId || !openNews) return;
+    markShareSeen(openId).then(() => invalidate("evaluations")).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, openNews]);
 
   const patch = async (p: Parameters<typeof updateEvaluation>[1], msg: string) => {
     if (!open) return;
@@ -101,11 +113,11 @@ export default function HistoricoPage() {
           className="h-11 pl-9" aria-label="Buscar no histórico" />
       </div>
       <div className="-mx-4 flex gap-1 overflow-x-auto px-4 [scrollbar-width:none]" role="radiogroup" aria-label="Situação">
-        {(["todas", "simulada", "aceita", "recusada"] as Filter[]).map((f) => (
+        {(["todas", "cliente", "simulada", "aceita", "recusada"] as Filter[]).map((f) => (
           <button key={f} role="radio" aria-checked={filter === f} onClick={() => setFilter(f)}
             className={cn("min-h-[36px] shrink-0 rounded-full border px-3 text-xs font-medium transition-colors",
               filter === f ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
-            {f === "todas" ? "Todas" : STATUS[f].label}
+            {f === "todas" ? "Todas" : f === "cliente" ? `Do cliente${newsCount ? ` (${newsCount})` : ""}` : STATUS[f].label}
           </button>
         ))}
       </div>
@@ -133,7 +145,10 @@ export default function HistoricoPage() {
                   <p className="text-sm font-semibold tabular-nums">
                     {e.blocked ? "—" : e.status === "aceita" && e.agreed_value !== null ? formatBRL(e.agreed_value) : `até ${formatBRL(e.offer_max)}`}
                   </p>
-                  <StatusTag ev={e} />
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusTag ev={e} />
+                    <CustomerTag ev={e} fresh={hasNews(e.share)} />
+                  </div>
                 </div>
               </button>
             </li>
@@ -180,6 +195,8 @@ export default function HistoricoPage() {
                   {open.imei && <div className="flex justify-between gap-3 py-2"><dt className="text-muted-foreground">IMEI</dt><dd className="tabular-nums">{open.imei}</dd></div>}
                   {open.notes && <div className="py-2"><dt className="text-muted-foreground">Observação</dt><dd className="mt-1 whitespace-pre-wrap">{open.notes}</dd></div>}
                 </dl>
+
+                <CustomerLinkSection ev={open} onChanged={() => invalidate("evaluations")} />
 
                 <div className="grid gap-2 pb-2">
                   {handoff && (
