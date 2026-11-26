@@ -15,7 +15,7 @@ function getServiceRoleKey(): string {
       if (typeof key === "string" && key.startsWith("sb_secret_")) {
         return key;
       }
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
   }
   const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (legacy) return legacy;
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
 
     const callerRole = callerRoleRes.data?.role || "";
     const callerPermissions = callerRoleRes.data?.permissions || {};
-    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: any) => s.store_id);
+    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: { store_id: string }) => s.store_id);
 
     const authCheck = validateCallerAuthority(callerRole, callerPermissions);
     if (!authCheck.allowed) {
@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
     ]);
 
     const targetRole = targetRoleRes.data?.role || "vendedor";
-    const targetCurrentStoreIds: string[] = (targetStoresRes.data || []).map((s: any) => s.store_id);
+    const targetCurrentStoreIds: string[] = (targetStoresRes.data || []).map((s: { store_id: string }) => s.store_id);
 
     // 4. Validação de hierarquia (impede resetar senha de dono e restringe gerente a vendedor/tecnico)
     const resetCheck = validatePasswordReset(callerRole, callerPermissions, caller.id, user_id, targetRole);
@@ -140,8 +140,8 @@ Deno.serve(async (req) => {
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message || "Erro desconhecido ao alterar senha." }), {
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message || "Erro desconhecido ao alterar senha." }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

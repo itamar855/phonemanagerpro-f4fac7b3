@@ -14,7 +14,7 @@ function getServiceRoleKey(): string {
       if (typeof key === "string" && key.startsWith("sb_secret_")) {
         return key;
       }
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
   }
   const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (legacy) return legacy;
@@ -132,9 +132,9 @@ Deno.serve(async (req) => {
       },
     });
 
-  } catch (err: any) {
+  } catch (err) {
     console.error(`[${requestId}] CRITICAL:`, err);
-    return new Response(`ERRO_CRITICO: ${err.message || String(err)}`, {
+    return new Response(`ERRO_CRITICO: ${(err as Error).message || String(err)}`, {
       status: 500,
       headers: corsHeaders,
     });

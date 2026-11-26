@@ -37,7 +37,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  let supabaseAdmin: any = null;
+  // criado logo no começo do try; nos rollbacks o código já confere se ele existe
+  let supabaseAdmin!: ReturnType<typeof createClient>;
 
   try {
     supabaseAdmin = createClient(
@@ -80,7 +81,7 @@ Deno.serve(async (req) => {
 
     const callerRole = callerRoleRes.data?.role || "";
     const callerPermissions = callerRoleRes.data?.permissions || {};
-    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: any) => s.store_id);
+    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: { store_id: string }) => s.store_id);
 
     // 3. Validação de autoridade do chamador
     const authCheck = validateCallerAuthority(callerRole, callerPermissions);
@@ -132,7 +133,7 @@ Deno.serve(async (req) => {
     ]);
 
     const targetCurrentRole = targetRoleRes.data?.role || "vendedor";
-    const targetCurrentStoreIds: string[] = (targetStoresRes.data || []).map((s: any) => s.store_id);
+    const targetCurrentStoreIds: string[] = (targetStoresRes.data || []).map((s: { store_id: string }) => s.store_id);
 
     // 5. Validação de alteração de cargo (se informada)
     if (newRole) {
@@ -200,7 +201,7 @@ Deno.serve(async (req) => {
     try {
       // Passo 1: Atualizar / Inserir user_roles
       const finalRole = newRole || targetCurrentRole;
-      const rolePayload: any = {
+      const rolePayload: Record<string, unknown> = {
         user_id: target_user_id,
         role: finalRole as AppRole,
       };
@@ -252,7 +253,7 @@ Deno.serve(async (req) => {
       stepCompleted = 2;
 
       // Passo 3: Atualizar profiles (membership já garantida no Passo 2)
-      const profileUpdates: any = {
+      const profileUpdates: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
       if (phone !== undefined) profileUpdates.phone = phone || null;
@@ -287,15 +288,15 @@ Deno.serve(async (req) => {
             justification: justification || "Edição de membro de equipe",
           },
         });
-      } catch (auditErr: any) {
-        console.warn("Aviso: Falha ao registrar log de auditoria:", auditErr.message);
+      } catch (auditErr) {
+        console.warn("Aviso: Falha ao registrar log de auditoria:", (auditErr as Error).message);
       }
 
       return new Response(
         JSON.stringify({ success: true, message: "Membro atualizado com sucesso." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-    } catch (stepError: any) {
+    } catch (stepError) {
       // Rollback Compensatório (Item 4)
       const rollbackErrors: string[] = [];
       console.error(`Erro na etapa ${stepCompleted + 1} de admin-update-user. Executando rollback compensatório.`);
@@ -315,7 +316,7 @@ Deno.serve(async (req) => {
               console.error("Falha ao consultar member_stores no rollback:", getCurStoreErr.message);
             }
 
-            const currentStoreSet = new Set((currentStores || []).map((s: any) => s.store_id));
+            const currentStoreSet = new Set((currentStores || []).map((s: { store_id: string }) => s.store_id));
             const missingStoreIds = snapshotBefore.storeIds.filter((sid) => !currentStoreSet.has(sid));
 
             if (missingStoreIds.length > 0) {
@@ -365,7 +366,7 @@ Deno.serve(async (req) => {
               }
 
               const extraStores = (storesAfterProf || [])
-                .map((s: any) => s.store_id)
+                .map((s: { store_id: string }) => s.store_id)
                 .filter((sid: string) => !snapshotBefore.storeIds.includes(sid));
 
               if (extraStores.length > 0) {
@@ -397,9 +398,9 @@ Deno.serve(async (req) => {
               `[ROLLBACK_GUARD] Limpeza de member_stores abortada porque a restauração de profiles falhou. Preservando memberships atuais para evitar órfão.`
             );
           }
-        } catch (rbStoreProfErr: any) {
-          rollbackErrors.push(`Exceção ao reverter member_stores e profiles no rollback compensatório: ${rbStoreProfErr.message}`);
-          console.error("Exceção ao reverter member_stores e profiles no rollback compensatório:", rbStoreProfErr.message);
+        } catch (rbStoreProfErr) {
+          rollbackErrors.push(`Exceção ao reverter member_stores e profiles no rollback compensatório: ${(rbStoreProfErr as Error).message}`);
+          console.error("Exceção ao reverter member_stores e profiles no rollback compensatório:", (rbStoreProfErr as Error).message);
         }
       }
 
@@ -425,9 +426,9 @@ Deno.serve(async (req) => {
               console.error("Falha ao deletar user_roles no rollback:", rbRoleDelErr.message);
             }
           }
-        } catch (rbRoleErr: any) {
-          rollbackErrors.push(`Exceção ao reverter user_roles no rollback compensatório: ${rbRoleErr.message}`);
-          console.error("Exceção ao reverter user_roles no rollback compensatório:", rbRoleErr.message);
+        } catch (rbRoleErr) {
+          rollbackErrors.push(`Exceção ao reverter user_roles no rollback compensatório: ${(rbRoleErr as Error).message}`);
+          console.error("Exceção ao reverter user_roles no rollback compensatório:", (rbRoleErr as Error).message);
         }
       }
 
@@ -435,7 +436,7 @@ Deno.serve(async (req) => {
         console.error(`[CRITICAL_ROLLBACK_FAILURE] Falhas no rollback compensatório de admin-update-user (${rollbackErrors.length}):`, rollbackErrors);
         return new Response(
           JSON.stringify({
-            error: stepError.message || "Falha na atualização do usuário.",
+            error: (stepError as Error).message || "Falha na atualização do usuário.",
             critical_rollback_failure: true,
           }),
           {
@@ -447,9 +448,9 @@ Deno.serve(async (req) => {
 
       throw stepError;
     }
-  } catch (error: any) {
+  } catch (error) {
     return new Response(
-      JSON.stringify({ error: error.message || "Erro desconhecido ao atualizar usuário." }),
+      JSON.stringify({ error: (error as Error).message || "Erro desconhecido ao atualizar usuário." }),
       {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

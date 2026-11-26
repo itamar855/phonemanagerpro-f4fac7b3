@@ -315,7 +315,7 @@ const ACK_FILLER = new Set(["amigo", "amiga", "mano", "moco", "moca", "irmao", "
 export function isAcknowledgement(text: string | null | undefined): boolean {
   const raw = (text ?? "").trim();
   if (!raw || raw.includes("?")) return false;
-  const noEmoji = raw.replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u200d\ufe0f]/gu, " ").trim();
+  const noEmoji = raw.replace(/\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}]|\u200d|\ufe0f/gu, " ").trim();
   if (!noEmoji) return true; // só emoji (👍🙏)
   const words = fold(noEmoji).replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean)
     .map((w) => (/^(k{2,}|(ha){2,}|(he){2,}|rs+)$/.test(w) ? "kk" : w.replace(/^o?k+$/, "ok")));
