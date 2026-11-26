@@ -1,7 +1,7 @@
 // Única porta do simulador de troca para o Supabase.
 // As tabelas tradein_* não estão no types.ts gerado; o cast fica concentrado aqui.
 import { supabase } from "@/integrations/supabase/client";
-import type { AnswerLine, EvalStatus, TradeEvaluation, TradeModel, TradeRule, TradeSettings } from "../lib/types";
+import type { AnswerLine, EvalStatus, TradeEvaluation, TradeModel, TradeModelRule, TradeRule, TradeSettings } from "../lib/types";
 import type { PriceRow } from "../lib/priceList";
 import type { TradeShare } from "../lib/share";
 
@@ -83,6 +83,32 @@ export async function updateRule(id: string, patch: Partial<Pick<TradeRule, "lab
 export async function deleteRule(id: string): Promise<void> {
   const { error } = await db.from("tradein_rules").delete().eq("id", id);
   throwIf(error);
+}
+
+export async function fetchModelRules(storeId: string): Promise<TradeModelRule[]> {
+  const { data, error } = await db
+    .from("tradein_model_rules")
+    .select("model_id, rule_id, store_id, kind, amount")
+    .eq("store_id", storeId);
+  throwIf(error);
+  return (data ?? []).map((r: TradeModelRule) => ({ ...r, amount: num(r.amount) }));
+}
+
+/** Grava os valores de um aparelho: o que veio em `set` fica, as opções em `clear` voltam ao padrão da loja. */
+export async function saveModelRules(
+  modelId: string,
+  set: { rule_id: string; kind: "pct" | "fixed"; amount: number }[],
+  clear: string[],
+): Promise<void> {
+  if (set.length) {
+    const { error } = await db.from("tradein_model_rules")
+      .upsert(set.map((r) => ({ ...r, model_id: modelId })), { onConflict: "model_id,rule_id" });
+    throwIf(error);
+  }
+  if (clear.length) {
+    const { error } = await db.from("tradein_model_rules").delete().eq("model_id", modelId).in("rule_id", clear);
+    throwIf(error);
+  }
 }
 
 export interface NewEvaluation {

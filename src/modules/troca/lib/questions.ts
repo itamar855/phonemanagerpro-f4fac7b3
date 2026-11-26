@@ -24,7 +24,7 @@ export const QUESTIONS: Question[] = [
     hint: "iPhone: Ajustes › Bateria › Saúde da Bateria." },
   { key: "carcaca", title: "E a carcaça (laterais e traseira)?", short: "Carcaça", multi: false,
     hint: "Procure amassados nas quinas e trincas no vidro de trás." },
-  { key: "biometria", title: "Face ID ou digital funciona?", short: "Face ID / biometria", multi: false,
+  { key: "biometria", title: "A biometria funciona (Face ID ou digital)?", short: "Biometria (Face ID / digital)", multi: false,
     hint: "Peça para o cliente desbloquear com o rosto ou o dedo." },
   { key: "pecas", title: "Alguma peça já foi trocada?", short: "Peças trocadas", multi: true, noneLabel: "Nenhuma peça trocada",
     hint: "iPhone: Ajustes › Geral › Sobre mostra \"peça desconhecida\" ou \"histórico de peças\"." },

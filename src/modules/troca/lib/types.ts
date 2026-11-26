@@ -32,6 +32,15 @@ export interface TradeRule {
   active: boolean;
 }
 
+/** Valor próprio de um aparelho (modelo + capacidade) para uma opção de desconto da loja. */
+export interface TradeModelRule {
+  model_id: string;
+  rule_id: string;
+  store_id: string;
+  kind: "pct" | "fixed";
+  amount: number;
+}
+
 /** Desconto escolhido, como fica salvo na avaliação (foto do momento). */
 export interface AnswerLine {
   question: QuestionKey;

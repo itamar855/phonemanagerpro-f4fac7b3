@@ -16,18 +16,19 @@ import { EmptyState } from "../components/EmptyState";
 import { ShareLinkPanel } from "../components/ShareLinkPanel";
 import { ValueTracker } from "../components/ValueTracker";
 import { useTrocaContext } from "../hooks/context";
-import { useInvalidateTroca, useModels, useRules, useSettings } from "../hooks/useTroca";
+import { useInvalidateTroca, useModelRules, useModels, useRules, useSettings } from "../hooks/useTroca";
 import { computeOffer, formatBRL, toAnswerLine } from "../lib/calc";
 import { buildHandoff, deviceName } from "../lib/handoff";
 import { QUESTION_BY_KEY } from "../lib/questions";
-import type { EvalStatus, QuestionKey, TradeEvaluation, TradeModel, TradeRule } from "../lib/types";
-import { activeQuestions, brandsOf, chosenRules, modelNames, variantsOf } from "../lib/wizard";
+import type { EvalStatus, QuestionKey, TradeEvaluation, TradeModel, TradeModelRule, TradeRule } from "../lib/types";
+import { activeQuestions, brandsOf, chosenRules, modelNames, rulesForModel, variantsOf } from "../lib/wizard";
 
 type Step = { kind: "customer" } | { kind: "device" } | { kind: "storage" } | { kind: "question"; index: number } | { kind: "result" };
 
 const card = "glass rounded-2xl border border-border/50 bg-card/70";
 const NO_MODELS: TradeModel[] = [];
 const NO_RULES: TradeRule[] = [];
+const NO_OVERRIDES: TradeModelRule[] = [];
 const DEFAULT_SETTINGS = { negotiation_pct: 10, round_to: 10 };
 const EMPTY_CUSTOMER = { name: "", phone: "", email: "", imei: "", notes: "" };
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -74,6 +75,7 @@ export default function SimuladorPage() {
   const models = useModels(storeId);
   const rules = useRules(storeId);
   const settings = useSettings(storeId);
+  const modelRules = useModelRules(storeId);
 
   const [steps, setSteps] = useState<Step[]>([{ kind: "customer" }]);
   const [brand, setBrand] = useState<string | null>(null);
@@ -88,11 +90,14 @@ export default function SimuladorPage() {
   const [acceptOpen, setAcceptOpen] = useState(false);
 
   const allModels = models.data ?? NO_MODELS;
-  const allRules = rules.data ?? NO_RULES;
+  const storeRules = rules.data ?? NO_RULES;
+  const overrides = modelRules.data ?? NO_OVERRIDES;
   const brands = useMemo(() => brandsOf(allModels), [allModels]);
   const currentBrand = brand && brands.includes(brand) ? brand : brands[0] ?? null;
   const names = useMemo(() => modelNames(allModels, currentBrand, search), [allModels, currentBrand, search]);
   const variants = picked ? variantsOf(allModels, picked.brand, picked.model) : [];
+  // descontos com o valor próprio do aparelho escolhido (modelo + capacidade)
+  const allRules = useMemo(() => rulesForModel(storeRules, overrides, variant?.id), [storeRules, overrides, variant?.id]);
   const questions = useMemo(() => activeQuestions(allRules), [allRules]);
   const offerSettings = settings.data ?? DEFAULT_SETTINGS;
   const base = variant?.base_price ?? 0;
@@ -192,7 +197,7 @@ export default function SimuladorPage() {
   };
 
   // ---------- estados de carregamento / tabela vazia ----------
-  if (models.isLoading || rules.isLoading || settings.isLoading) {
+  if (models.isLoading || rules.isLoading || settings.isLoading || modelRules.isLoading) {
     return (
       <div className="mx-auto max-w-xl space-y-3 p-4">
         {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}

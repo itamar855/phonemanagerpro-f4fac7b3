@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ClipboardPaste, Copy, Plus, Search, Smartphone, Trash2 } from "lucide-react";
+import { ClipboardPaste, Copy, Plus, Search, SlidersHorizontal, Smartphone, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,9 @@ import {
   deleteModel, deleteRule, fetchModels, insertModels, insertRule, saveSettings, updateModel, updateRule,
 } from "../api/db";
 import { EmptyState } from "../components/EmptyState";
+import { ModelDiscountsSheet } from "../components/ModelDiscountsSheet";
 import { useTrocaContext } from "../hooks/context";
-import { useInvalidateTroca, useModels, useRules, useSettings, useTrocaStore } from "../hooks/useTroca";
+import { useInvalidateTroca, useModelRules, useModels, useRules, useSettings, useTrocaStore } from "../hooks/useTroca";
 import { formatBRL } from "../lib/calc";
 import { iphoneTemplate, parseMoney, parsePriceList, planUpsert, type PriceRow } from "../lib/priceList";
 import { QUESTIONS } from "../lib/questions";
@@ -25,8 +26,9 @@ import { storageSize } from "../lib/wizard";
 const card = "glass rounded-2xl border border-border/50 bg-card/70 p-4";
 
 /** Campo que salva ao sair (ou Enter); volta ao valor salvo se der erro. */
-function CommitInput({ value, onCommit, className, label, inputMode, money }: {
+function CommitInput({ value, onCommit, className, label, inputMode, money, placeholder }: {
   value: string;
+  placeholder?: string;
   onCommit: (v: string) => Promise<void>;
   className?: string;
   label: string;
@@ -41,7 +43,7 @@ function CommitInput({ value, onCommit, className, label, inputMode, money }: {
     try { await onCommit(text.trim()); } catch (e) { toast.error((e as Error).message); setText(value); }
   };
   return (
-    <Input aria-label={label} value={text} inputMode={inputMode} onChange={(e) => setText(e.target.value)}
+    <Input aria-label={label} value={text} inputMode={inputMode} placeholder={placeholder} onChange={(e) => setText(e.target.value)}
       onBlur={commit} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
       className={cn("h-10", className)} />
   );
@@ -241,8 +243,16 @@ function ModelsCard() {
   const { stores } = useTrocaStore();
   const invalidate = useInvalidateTroca();
   const { data: models = [], isLoading } = useModels(storeId);
+  const { data: rules = [] } = useRules(storeId);
+  const { data: overrides = [] } = useModelRules(storeId);
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<"add" | "paste" | "copy" | null>(null);
+  const [discountsOf, setDiscountsOf] = useState<string | null>(null);
+  const ownCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of overrides) m.set(o.model_id, (m.get(o.model_id) ?? 0) + 1);
+    return m;
+  }, [overrides]);
 
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -272,7 +282,14 @@ function ModelsCard() {
           <Button size="sm" variant="outline" onClick={() => setDialog("copy")}><Copy className="mr-1.5 h-4 w-4" /> Copiar de outra loja</Button>
         )}
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">Quanto a loja paga num aparelho perfeito. Os descontos saem deste valor.</p>
+      {models.some((m) => !m.base_price) && (
+        <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          {models.filter((m) => !m.base_price).length} aparelhos sem preço: só aparecem no simulador depois que você puser o valor.
+        </p>
+      )}
+      <p className="mt-1 text-sm text-muted-foreground">
+        Quanto a loja paga num aparelho perfeito. Em <strong>Descontos</strong> você põe em R$ o valor de cada peça neste aparelho.
+      </p>
 
       {models.length > 8 && (
         <div className="relative mt-3">
@@ -297,10 +314,17 @@ function ModelsCard() {
                   <span className="w-16 shrink-0 text-sm tabular-nums">{m.storage || "—"}</span>
                   <div className="relative flex-1 sm:max-w-[160px]">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
-                    <CommitInput label={`Valor de ${m.model} ${m.storage}`} value={String(m.base_price)} inputMode="decimal" money className="pl-8 tabular-nums"
+                    <CommitInput label={`Valor de ${m.model} ${m.storage}`} value={m.base_price ? String(m.base_price) : ""} placeholder="sem preço"
+                      inputMode="decimal" money className={cn("pl-8 tabular-nums", !m.base_price && "border-amber-500/60")}
                       onCommit={async (v) => { await updateModel(m.id, { base_price: parseMoney(v)! }); invalidate("models"); }} />
                   </div>
-                  <Switch checked={m.active} aria-label={m.active ? "Ativo no simulador" : "Escondido do simulador"} className="ml-auto"
+                  <Button variant={ownCount.get(m.id) ? "secondary" : "ghost"} size="sm" className="ml-auto h-10 shrink-0 px-2.5"
+                    aria-label={`Descontos do ${m.model} ${m.storage}`} onClick={() => setDiscountsOf(m.id)}>
+                    <SlidersHorizontal className="h-4 w-4 sm:mr-1.5" />
+                    <span className="hidden sm:inline">Descontos</span>
+                    {!!ownCount.get(m.id) && <span className="ml-1 rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">{ownCount.get(m.id)}</span>}
+                  </Button>
+                  <Switch checked={m.active} aria-label={m.active ? "Ativo no simulador" : "Escondido do simulador"}
                     onCheckedChange={async (v) => { try { await updateModel(m.id, { active: v }); invalidate("models"); } catch (e) { toast.error((e as Error).message); } }} />
                   <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-muted-foreground hover:text-destructive" aria-label="Tirar da tabela" onClick={() => remove(m)}>
                     <Trash2 className="h-4 w-4" />
@@ -315,6 +339,8 @@ function ModelsCard() {
       <AddModelDialog open={dialog === "add"} onOpenChange={(v) => setDialog(v ? "add" : null)} existing={models} />
       <PasteDialog open={dialog === "paste"} onOpenChange={(v) => setDialog(v ? "paste" : null)} existing={models} />
       {stores.length > 1 && <CopyDialog open={dialog === "copy"} onOpenChange={(v) => setDialog(v ? "copy" : null)} existing={models} />}
+      <ModelDiscountsSheet model={models.find((m) => m.id === discountsOf) ?? null} models={models} rules={rules} overrides={overrides}
+        onClose={() => setDiscountsOf(null)} onSaved={() => invalidate("modelRules")} />
     </section>
   );
 }
@@ -375,7 +401,8 @@ function RulesCard() {
     <section className={card} aria-labelledby="t-rules">
       <h2 id="t-rules" className="font-semibold">Descontos por estado</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Cada resposta do vendedor desconta uma % do preço base ou um valor fixo. "Não compra" encerra a avaliação.
+        Padrão da loja: cada resposta desconta uma % do preço base ou um valor fixo. "Não compra" encerra a avaliação.
+        Para peças que mudam de preço por aparelho (tela, bateria, câmera), ponha o valor em R$ em Modelos › Descontos.
       </p>
       {isLoading && <Skeleton className="mt-3 h-40 w-full rounded-xl" />}
       <div className="mt-3 space-y-3">
