@@ -146,7 +146,7 @@ const Transacoes = () => {
     const rawAccounts = accountsRes.data ?? [];
     // Deduplicate PF accounts by bank_name
     const seenPfNames = new Set<string>();
-    const dedupedAccounts = rawAccounts.filter((a: any) => {
+    const dedupedAccounts = rawAccounts.filter((a) => {
       if (a.owner_type === "PF") {
         const key = (a.bank_name || "").toLowerCase().trim();
         if (seenPfNames.has(key)) return false;
@@ -214,11 +214,11 @@ const Transacoes = () => {
         created_by: user.id,
         expected_settlement_date: new Date().toISOString(),
         reconciled: false,
-      } as any).select().single();
+      }).select().single();
       
       if (error) { toast.error(error.message); }
       else {
-        logAction("CREATE_RECORD", "transactions", (newTxRes as any).id, null, payload, activeStoreId);
+        logAction("CREATE_RECORD", "transactions", newTxRes.id, null, payload, activeStoreId);
         toast.success("Transação registrada!");
         setDialogOpen(false);
         setReceiptFile(null);
@@ -299,7 +299,7 @@ const Transacoes = () => {
 
       const { error } = await supabase
         .from("transactions")
-        .update({ reconciled: true, receipt_url: finalUrL } as any)
+        .update({ reconciled: true, receipt_url: finalUrL })
         .eq("id", reconcilingTx.id);
 
       if (error) { toast.error(error.message); }
@@ -313,7 +313,7 @@ const Transacoes = () => {
         setReceiptFile(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao conciliar: " + err.message);
     } finally {
       setLoading(false);

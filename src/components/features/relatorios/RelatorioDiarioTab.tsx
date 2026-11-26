@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Download, TrendingUp, Trophy } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
+import type { DiarioData, PdfCol, PdfKpi } from "./reportTypes";
+import type { Store } from "@/types/db";
 
 interface RelatorioDiarioTabProps {
   diarioDay: string;
@@ -14,16 +16,16 @@ interface RelatorioDiarioTabProps {
   userRole: string;
   storeId: string;
   setStoreId: (id: string) => void;
-  stores: any[];
+  stores: Store[];
   diarioLoading: boolean;
-  diarioData: any;
+  diarioData: DiarioData | null;
   currentStoreName: string;
   formatCurrency: (v: number) => string;
   pdfHeader: (doc: jsPDF, titulo: string, subtitulo: string, periodo: string) => number;
-  pdfKpiRow: (doc: jsPDF, y: number, kpis: any[]) => number;
-  pdfTableHead: (doc: jsPDF, y: number, cols: any[]) => number;
-  pdfCheckPage: (doc: jsPDF, y: number, pg: any) => number;
-  pdfTableRow: (doc: jsPDF, y: number, cols: any[], vals: string[], even: boolean) => number;
+  pdfKpiRow: (doc: jsPDF, y: number, kpis: PdfKpi[]) => number;
+  pdfTableHead: (doc: jsPDF, y: number, cols: PdfCol[]) => number;
+  pdfCheckPage: (doc: jsPDF, y: number, pg: { n: number }) => number;
+  pdfTableRow: (doc: jsPDF, y: number, cols: { w: number }[], vals: string[], even: boolean) => number;
   pdfFooter: (doc: jsPDF, pg: number) => void;
   PDF_GREEN: [number, number, number];
   PDF_RED: [number, number, number];
@@ -179,14 +181,14 @@ export const RelatorioDiarioTab: React.FC<RelatorioDiarioTabProps> = ({
               <CardHeader className="pb-2"><CardTitle className="font-display text-sm">Resumo do Caixa</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {[
-                  { label: "Entradas Confirmadas", value: diarioData.entradasCaixa, color: "text-primary" },
-                  { label: "Saidas / Sangrias", value: diarioData.saidasCaixa, color: "text-destructive" },
+                  { label: "Entradas Confirmadas", value: diarioData.entradasCaixa, isCount: false, color: "text-primary" },
+                  { label: "Saidas / Sangrias", value: diarioData.saidasCaixa, isCount: false, color: "text-destructive" },
                   { label: "Caixas Abertos", value: diarioData.caixasAbertos, isCount: true, color: "text-yellow-500" },
                   { label: "Caixas Fechados", value: diarioData.caixasFechados, isCount: true, color: "text-primary" },
                 ].map(c => (
                   <div key={c.label} className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
                     <p className="text-sm">{c.label}</p>
-                    <p className={"font-bold text-sm " + c.color}>{(c as any).isCount ? c.value : formatCurrency(c.value as number)}</p>
+                    <p className={"font-bold text-sm " + c.color}>{c.isCount ? c.value : formatCurrency(c.value)}</p>
                   </div>
                 ))}
               </CardContent>
@@ -198,7 +200,7 @@ export const RelatorioDiarioTab: React.FC<RelatorioDiarioTabProps> = ({
               <CardContent className="space-y-2">
                 {diarioData.topSellers.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-4">Sem vendas neste dia.</p>
-                ) : diarioData.topSellers.map((s: any, i: number) => (
+                ) : diarioData.topSellers.map((s, i: number) => (
                   <div key={i} className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-muted-foreground w-5">{i + 1}º</span>

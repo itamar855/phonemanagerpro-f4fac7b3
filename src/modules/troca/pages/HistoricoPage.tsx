@@ -69,7 +69,7 @@ export default function HistoricoPage() {
   const openNews = !!open && hasNews(open.share);
   useEffect(() => {
     if (!openId || !openNews) return;
-    markShareSeen(openId).then(() => invalidate("evaluations")).catch(() => undefined);
+    markShareSeen(openId).then(() => invalidate("evaluations")).catch((): void => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId, openNews]);
 

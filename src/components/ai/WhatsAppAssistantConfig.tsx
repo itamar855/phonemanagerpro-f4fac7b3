@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -113,8 +114,8 @@ const WhatsAppAssistantConfig = () => {
       localStorage.setItem("whatsapp_assistant_config", JSON.stringify(config));
       
       // Attempt to save in Supabase db table as well
-      await supabase
-        .from("app_settings" as any)
+      await untypedDb
+        .from("app_settings")
         .upsert({
           key: "whatsapp_assistant_config",
           value: JSON.stringify(config),
@@ -580,7 +581,7 @@ const WhatsAppAssistantConfig = () => {
                     ? "border-primary/50 bg-primary/5"
                     : "border-border/50 hover:border-primary/20"
                 }`}
-                onClick={() => setConfig({ ...config, defaultStoreMode: opt.id as any })}
+                onClick={() => setConfig({ ...config, defaultStoreMode: opt.id as WhatsAppConfig["defaultStoreMode"] })}
               >
                 <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${config.defaultStoreMode === opt.id ? "border-primary" : "border-muted-foreground"}`}>
                   {config.defaultStoreMode === opt.id && <div className="h-2 w-2 rounded-full bg-primary" />}

@@ -16,7 +16,7 @@ function getServiceRoleKey(): string {
       if (typeof key === "string" && key.startsWith("sb_secret_")) {
         return key;
       }
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
   }
   const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (legacy) return legacy;
@@ -79,8 +79,8 @@ Deno.serve(async (req) => {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-    } catch (e: any) {
-      return new Response(JSON.stringify({ error: e.message }), {
+    } catch (e) {
+      return new Response(JSON.stringify({ error: (e as Error).message }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -277,8 +277,8 @@ Deno.serve(async (req) => {
             }
           }
         }
-      } catch (err: any) {
-        console.error("Error transcribing audio:", err.message);
+      } catch (err) {
+        console.error("Error transcribing audio:", (err as Error).message);
       }
     }
 
@@ -356,7 +356,7 @@ Deno.serve(async (req) => {
     }
 
     // Fetch ALL bank accounts for admin (across all stores) or user's active store
-    let bankAccounts: any[] = [];
+    let bankAccounts: { id: string; bank_name: string; owner_type: string; store_id: string }[] = [];
     if (isAdmin) {
       const { data } = await supabase.from("store_bank_accounts").select("id, bank_name, owner_type, store_id");
       bankAccounts = data || [];
@@ -441,18 +441,18 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
               console.log("Parsed report request parameters:", JSON.stringify(parsed));
             }
           }
-        } catch (err: any) {
-          console.error("Failed to parse report request with LLM, falling back to manual parsing:", err.message);
+        } catch (err) {
+          console.error("Failed to parse report request with LLM, falling back to manual parsing:", (err as Error).message);
         }
       }
 
       // If dates are null/missing in parsed response, fall back to last 30 days
-      let startDate = parsed.startDate ? new Date(parsed.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      let endDate = parsed.endDate ? new Date(parsed.endDate) : new Date();
-      let dateLabel = parsed.dateLabel || "Últimos 30 dias";
+      const startDate = parsed.startDate ? new Date(parsed.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const endDate = parsed.endDate ? new Date(parsed.endDate) : new Date();
+      const dateLabel = parsed.dateLabel || "Últimos 30 dias";
 
       // Query database for all transactions in the time range
-      let dbQuery = supabase
+      const dbQuery = supabase
         .from("transactions")
         .select("type, amount, description, category, created_at, source_account_id, destination_account_id, store_id")
         .gte("created_at", startDate.toISOString())
@@ -606,8 +606,8 @@ Retorne APENAS um objeto JSON válido. Não inclua markdown, explicações ou ta
           }
         }
 
-      } catch (err: any) {
-        console.error("Error computing bank balances for report:", err.message);
+      } catch (err) {
+        console.error("Error computing bank balances for report:", (err as Error).message);
       }
 
       const reportMessage = `📊 *Resumo Financeiro - ${dateLabel}${typeLabel}${acctLabel}*
@@ -783,8 +783,8 @@ Retorne APENAS o JSON (sem markdown, sem explicação):
             }
           }
         }
-      } catch (imgErr: any) {
-        console.warn("Could not process image attachment:", imgErr.message);
+      } catch (imgErr) {
+        console.warn("Could not process image attachment:", (imgErr as Error).message);
       }
     }
 
@@ -859,12 +859,12 @@ Retorne APENAS o JSON (sem markdown, sem explicação):
     const isCash = !parsedTransaction.source_account_id && !parsedTransaction.destination_account_id;
     if (isCash && (parsedTransaction.type === "expense_pj" || parsedTransaction.type === "income")) {
       const { data: register } = await supabase
-        .from("cash_registers" as any).select("id")
+        .from("cash_registers").select("id")
         .eq("store_id", txStoreId).eq("status", "open").maybeSingle();
 
       if (register) {
-        await supabase.from("cash_entries" as any).insert({
-          cash_register_id: (register as any).id,
+        await supabase.from("cash_entries").insert({
+          cash_register_id: register.id,
           store_id: txStoreId,
           type: parsedTransaction.type === "income" ? "entrada" : "saida",
           amount: parsedTransaction.amount,
@@ -872,7 +872,7 @@ Retorne APENAS o JSON (sem markdown, sem explicação):
           payment_method: "dinheiro",
           confirmed: false,
           created_by: userId,
-        } as any);
+        });
       }
     }
 
@@ -919,9 +919,9 @@ Lançamento registrado no sistema! 🚀`;
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

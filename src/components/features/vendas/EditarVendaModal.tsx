@@ -10,20 +10,20 @@ import {
   Pencil, UserPlus, Banknote, CreditCard, QrCode,
   Smartphone, Shield, CalendarDays
 } from "lucide-react";
-import { Sale, Customer } from "./types";
+import type { Sale, Customer, CustomerForm, EditSaleForm } from "./types";
 
 interface EditarVendaModalProps {
   editSale: Sale | null;
   setEditSale: (sale: Sale | null) => void;
   handleSaveEdit: (e: React.FormEvent) => Promise<void>;
-  editForm: any;
-  setEditForm: React.Dispatch<React.SetStateAction<any>>;
+  editForm: EditSaleForm;
+  setEditForm: React.Dispatch<React.SetStateAction<EditSaleForm>>;
   editSaleCustomerId: string;
   setEditSaleCustomerId: (id: string) => void;
   showEditNewCustomerForm: boolean;
   setShowEditNewCustomerForm: (v: boolean | ((prev: boolean) => boolean)) => void;
-  editNewCustomerForm: any;
-  setEditNewCustomerForm: React.Dispatch<React.SetStateAction<any>>;
+  editNewCustomerForm: CustomerForm;
+  setEditNewCustomerForm: React.Dispatch<React.SetStateAction<CustomerForm>>;
   handleCreateCustomerForEdit: () => Promise<void>;
   customers: Customer[];
   userRole?: string;
@@ -79,7 +79,7 @@ export const EditarVendaModal: React.FC<EditarVendaModalProps> = ({
                   setEditSaleCustomerId(v);
                   if (v !== "manual") {
                     const c = customers.find((x) => x.id === v);
-                    if (c) setEditForm((prev: any) => ({ ...prev, customer_name: c.name }));
+                    if (c) setEditForm((prev) => ({ ...prev, customer_name: c.name }));
                   }
                 }}
               >
@@ -102,7 +102,7 @@ export const EditarVendaModal: React.FC<EditarVendaModalProps> = ({
                   <Label className="text-xs">Nome *</Label>
                   <Input
                     value={editNewCustomerForm.name}
-                    onChange={(e) => setEditNewCustomerForm((f: any) => ({ ...f, name: e.target.value }))}
+                    onChange={(e) => setEditNewCustomerForm((f) => ({ ...f, name: e.target.value }))}
                     placeholder="Nome completo"
                     className="h-9"
                   />
@@ -112,7 +112,7 @@ export const EditarVendaModal: React.FC<EditarVendaModalProps> = ({
                     <Label className="text-xs">Telefone</Label>
                     <Input
                       value={editNewCustomerForm.phone}
-                      onChange={(e) => setEditNewCustomerForm((f: any) => ({ ...f, phone: e.target.value }))}
+                      onChange={(e) => setEditNewCustomerForm((f) => ({ ...f, phone: e.target.value }))}
                       placeholder="(87) 99999-9999"
                       className="h-9"
                     />
@@ -121,7 +121,7 @@ export const EditarVendaModal: React.FC<EditarVendaModalProps> = ({
                     <Label className="text-xs">CPF</Label>
                     <Input
                       value={editNewCustomerForm.cpf}
-                      onChange={(e) => setEditNewCustomerForm((f: any) => ({ ...f, cpf: e.target.value }))}
+                      onChange={(e) => setEditNewCustomerForm((f) => ({ ...f, cpf: e.target.value }))}
                       placeholder="000.000.000-00"
                       className="h-9"
                     />
@@ -131,7 +131,7 @@ export const EditarVendaModal: React.FC<EditarVendaModalProps> = ({
                   <Label className="text-xs">Endereço</Label>
                   <Input
                     value={editNewCustomerForm.address}
-                    onChange={(e) => setEditNewCustomerForm((f: any) => ({ ...f, address: e.target.value }))}
+                    onChange={(e) => setEditNewCustomerForm((f) => ({ ...f, address: e.target.value }))}
                     placeholder="Rua, número, bairro..."
                     className="h-9"
                   />

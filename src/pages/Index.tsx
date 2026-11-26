@@ -36,6 +36,8 @@ import {
   type TechGoalConfig,
   type TechRankingItem,
 } from "@/utils/technicianMetrics";
+import type { ProductRepairItem, ServiceOrder, ServiceOrderItem, Store as StoreRow } from "@/types/db";
+import type { TechQueueOrder } from "@/components/features/tecnico/TechDashboard";
 
 const COLORS = ["hsl(152, 60%, 45%)", "hsl(38, 92%, 50%)", "hsl(0, 62%, 50%)", "hsl(220, 25%, 50%)", "hsl(280, 50%, 50%)"];
 
@@ -97,7 +99,8 @@ const Dashboard = () => {
   const [categoryBreakdown, setCategoryBreakdown] = useState<{ name: string; value: number }[]>([]);
   const [lowStockStores, setLowStockStores] = useState<{ name: string; count: number }[]>([]);
   const [lowStockAcc, setLowStockAcc] = useState<{ name: string; qty: number; min: number }[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
+  // o painel às vezes busca só id e nome das lojas
+  const [stores, setStores] = useState<(Pick<StoreRow, "id" | "name"> & Partial<StoreRow>)[]>([]);
 
   const navigate = useNavigate();
   const [techProductivity, setTechProductivity] = useState<TechProductivityResult>({
@@ -117,7 +120,7 @@ const Dashboard = () => {
     try {
       const saved = localStorage.getItem("cellmanager_tech_goals");
       if (saved) return JSON.parse(saved);
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
     return { targetOrders: 40, targetCommission: 2500 };
   });
   const [techShopRanking, setTechShopRanking] = useState<{
@@ -125,13 +128,13 @@ const Dashboard = () => {
     myRank: number;
     totalTechs: number;
   }>({ items: [], myRank: 1, totalTechs: 1 });
-  const [techQueue, setTechQueue] = useState<any[]>([]);
+  const [techQueue, setTechQueue] = useState<TechQueueOrder[]>([]);
 
   const handleUpdateTechGoals = (newGoals: TechGoalConfig) => {
     setTechGoals(newGoals);
     try {
       localStorage.setItem("cellmanager_tech_goals", JSON.stringify(newGoals));
-    } catch {}
+    } catch { /* falha ignorada de propósito */ }
   };
 
   const fetchTechnicianData = async () => {
@@ -161,25 +164,25 @@ const Dashboard = () => {
     }
 
     const [ordersRes, roleRes, shopOrdersRes, profilesRes, storesRes, settledIds] = await Promise.all([
-      Promise.resolve(q.order("created_at", { ascending: false })).catch(err => ({ data: [], error: err })),
-      Promise.resolve(supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle()).catch(err => ({ data: null, error: err })),
-      Promise.resolve(shopOrdersQuery).catch(err => ({ data: [], error: err })),
-      Promise.resolve(supabase.from("profiles").select("user_id, display_name")).catch(err => ({ data: [], error: err })),
-      Promise.resolve(supabase.from("stores").select("id, name")).catch(err => ({ data: [], error: err })),
+      Promise.resolve(q.order("created_at", { ascending: false })).catch(err => ({ data: [] as never[], error: err })),
+      Promise.resolve(supabase.from("user_roles").select("commission_services_percent, commission_on_services").eq("user_id", user.id).maybeSingle()).catch(err => ({ data: null as never, error: err })),
+      Promise.resolve(shopOrdersQuery).catch(err => ({ data: [] as never[], error: err })),
+      Promise.resolve(supabase.from("profiles").select("user_id, display_name")).catch(err => ({ data: [] as never[], error: err })),
+      Promise.resolve(supabase.from("stores").select("id, name")).catch(err => ({ data: [] as never[], error: err })),
       fetchSettledItemIds().catch(() => ({ settledSaleIds: new Set<string>(), settledOsIds: new Set<string>() })),
     ]);
 
-    if (storesRes.data && (storesRes.data as any[]).length > 0) {
-      setStores(storesRes.data as any[]);
+    if (storesRes.data && storesRes.data.length > 0) {
+      setStores(storesRes.data);
     }
 
-    const allMyOrders = (ordersRes.data ?? []) as any[];
+    const allMyOrders = (ordersRes.data ?? []);
     const roleData = roleRes.data;
-    const shopDelivered = (shopOrdersRes.data ?? []) as any[];
-    const profiles = (profilesRes.data ?? []) as any[];
+    const shopDelivered = (shopOrdersRes.data ?? []);
+    const profiles = (profilesRes.data ?? []);
 
     const profileMap = new Map<string, string>();
-    profiles.forEach((p: any) => {
+    profiles.forEach((p) => {
       if (p.user_id && p.display_name) {
         profileMap.set(p.user_id, p.display_name);
       }
@@ -190,11 +193,11 @@ const Dashboard = () => {
       ...shopDelivered.map((o) => o.id),
     ]));
 
-    let parts: any[] = [];
+    let parts: Pick<ServiceOrderItem, "service_order_id" | "unit_cost" | "quantity">[] = [];
     if (relevantIds.length > 0) {
       try {
         const { data: partsData } = await supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, unit_cost, quantity")
           .in("service_order_id", relevantIds);
         parts = partsData ?? [];
@@ -264,13 +267,13 @@ const Dashboard = () => {
             : supabase.from("service_orders").select("id, status, store_id, created_at, delivered_at, final_price, estimated_price").eq("store_id", effectiveStoreId).or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`))
         : Promise.resolve({ data: [] }),
       can("estoque") 
-        ? (!isFiltered ? supabase.from("accessories" as any).select("*") : supabase.from("accessories" as any).select("*").eq("store_id", effectiveStoreId))
+        ? (!isFiltered ? supabase.from("accessories").select("*") : supabase.from("accessories").select("*").eq("store_id", effectiveStoreId))
         : Promise.resolve({ data: [] }),
       // Leads = contatos novos do CRM no período (sem equipe/fornecedor/pessoal)
       can("leads")
         ? (!isFiltered
-            ? supabase.from("crm_contacts" as any).select("id, created_at").eq("ignored", false).gte("created_at", start).lte("created_at", end)
-            : supabase.from("crm_contacts" as any).select("id, created_at").eq("ignored", false).eq("store_id", effectiveStoreId).gte("created_at", start).lte("created_at", end))
+            ? supabase.from("crm_contacts").select("id, created_at").eq("ignored", false).gte("created_at", start).lte("created_at", end)
+            : supabase.from("crm_contacts").select("id, created_at").eq("ignored", false).eq("store_id", effectiveStoreId).gte("created_at", start).lte("created_at", end))
         : Promise.resolve({ data: [] }),
     ];
 
@@ -282,25 +285,25 @@ const Dashboard = () => {
     const transactions = transactionsRes.data ?? [];
     const sales = salesRes.data ?? [];
     const serviceOrders = osRes.data ?? [];
-    const accessories = (accRes.data ?? []) as any[];
+    const accessories = (accRes.data ?? []);
     const leads = leadsRes.data ?? [];
 
     // Fetch service order items for the service orders in the period
-    let serviceOrderItems: any[] = [];
+    let serviceOrderItems: Pick<ServiceOrderItem, "service_order_id" | "unit_cost" | "quantity">[] = [];
     if (can("os") && serviceOrders.length > 0) {
-      const osIds = serviceOrders.map((o: any) => o.id);
+      const osIds = serviceOrders.map((o) => o.id);
       const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("service_order_id, unit_cost, quantity")
         .in("service_order_id", osIds);
       serviceOrderItems = itemsData ?? [];
     }
 
     // Fetch product repairs and repair items for internal store devices during the period
-    let productRepairItems: any[] = [];
+    let productRepairItems: Pick<ProductRepairItem, "repair_id" | "unit_cost" | "quantity">[] = [];
     if (can("estoque")) {
       const repairQuery = supabase
-        .from("product_repairs" as any)
+        .from("product_repairs")
         .select("id, status, created_at")
         .gte("created_at", start)
         .lte("created_at", end);
@@ -313,67 +316,67 @@ const Dashboard = () => {
       const productRepairs = repairsData ?? [];
       
       if (productRepairs.length > 0) {
-        const repairIds = productRepairs.map((r: any) => r.id);
+        const repairIds = productRepairs.map((r) => r.id);
         const { data: itemsData } = await supabase
-          .from("product_repair_items" as any)
+          .from("product_repair_items")
           .select("repair_id, unit_cost, quantity")
           .in("repair_id", repairIds);
         productRepairItems = itemsData ?? [];
       }
     }
 
-    const inStock = products.filter((p: any) => p.status === "in_stock");
-    const totalInvested = inStock.reduce((sum: number, p: any) => sum + Number(p.cost_price), 0);
-    const totalInvestedAcc = accessories.reduce((sum: number, a: any) => sum + Number(a.cost_price) * a.quantity, 0);
+    const inStock = products.filter((p) => p.status === "in_stock");
+    const totalInvested = inStock.reduce((sum: number, p) => sum + Number(p.cost_price), 0);
+    const totalInvestedAcc = accessories.reduce((sum: number, a) => sum + Number(a.cost_price) * a.quantity, 0);
 
-    const totalSalesRevenue = sales.reduce((sum: number, s: any) => sum + Number(s.sale_price), 0);
-    const totalProfit = sales.reduce((sum: number, s: any) => {
-      const product = products.find((p: any) => p.id === s.product_id);
+    const totalSalesRevenue = sales.reduce((sum: number, s) => sum + Number(s.sale_price), 0);
+    const totalProfit = sales.reduce((sum: number, s) => {
+      const product = products.find((p) => p.id === s.product_id);
       return sum + (Number(s.sale_price) - Number(product?.cost_price || 0));
     }, 0);
 
-    const expensesPJ = transactions.filter((t: any) => t.type === "expense_pj").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-    const expensesPF = transactions.filter((t: any) => t.type === "expense_pf" || t.type === "pro_labore").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-    const openOS = serviceOrders.filter((o: any) => !["delivered", "cancelled"].includes(o.status)).length;
+    const expensesPJ = transactions.filter((t) => t.type === "expense_pj").reduce((sum: number, t) => sum + Number(t.amount), 0);
+    const expensesPF = transactions.filter((t) => t.type === "expense_pf" || t.type === "pro_labore").reduce((sum: number, t) => sum + Number(t.amount), 0);
+    const openOS = serviceOrders.filter((o) => !["delivered", "cancelled"].includes(o.status)).length;
 
     // Calcular faturamento e custos consolidados
-    const receitaAparelhos = sales.reduce((sum: number, s: any) => sum + Number(s.sale_price), 0);
-    const accSales = transactions.filter((t: any) => t.type === "income" && t.category === "acessorio");
-    const receitaAcessorios = accSales.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    const receitaAparelhos = sales.reduce((sum: number, s) => sum + Number(s.sale_price), 0);
+    const accSales = transactions.filter((t) => t.type === "income" && t.category === "acessorio");
+    const receitaAcessorios = accSales.reduce((sum: number, t) => sum + Number(t.amount), 0);
     
     // Receita de serviços concluídos (status entregue)
-    const osDelivered = serviceOrders.filter((o: any) => o.status === "delivered");
-    const receitaOS = osDelivered.reduce((sum: number, o: any) => sum + Number(o.final_price || o.estimated_price || 0), 0);
+    const osDelivered = serviceOrders.filter((o) => o.status === "delivered");
+    const receitaOS = osDelivered.reduce((sum: number, o) => sum + Number(o.final_price || o.estimated_price || 0), 0);
 
     const faturamentoBruto = receitaAparelhos + receitaAcessorios + receitaOS;
 
     // Custos de aparelhos vendidos
-    const cmvAparelhos = sales.reduce((sum: number, s: any) => {
-      const product = products.find((p: any) => p.id === s.product_id);
+    const cmvAparelhos = sales.reduce((sum: number, s) => {
+      const product = products.find((p) => p.id === s.product_id);
       return sum + Number(product?.cost_price || 0);
     }, 0);
     // Custos de acessórios vendidos (DRE)
-    const cmvAcessorios = transactions.filter((t: any) => t.type === "expense_pj" && t.category === "acessorio").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    const cmvAcessorios = transactions.filter((t) => t.type === "expense_pj" && t.category === "acessorio").reduce((sum: number, t) => sum + Number(t.amount), 0);
     
     // Custo de peças de serviços (OS não canceladas)
-    const activeOSIds = new Set(serviceOrders.filter((o: any) => o.status !== "cancelled").map((o: any) => o.id));
+    const activeOSIds = new Set(serviceOrders.filter((o) => o.status !== "cancelled").map((o) => o.id));
     const custoPecasOS = serviceOrderItems
-      .filter((item: any) => activeOSIds.has(item.service_order_id))
-      .reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
+      .filter((item) => activeOSIds.has(item.service_order_id))
+      .reduce((sum: number, item) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
 
     // Custo de peças usadas em reparos internos de aparelhos da loja
-    const custoPecasReparos = productRepairItems.reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
+    const custoPecasReparos = productRepairItems.reduce((sum: number, item) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
 
     // Lucro de serviços = receita das OS entregues - custo das peças nessas OS
-    const deliveredOSIds = new Set(osDelivered.map((o: any) => o.id));
+    const deliveredOSIds = new Set(osDelivered.map((o) => o.id));
     const custoPecasDelivered = serviceOrderItems
-      .filter((item: any) => deliveredOSIds.has(item.service_order_id))
-      .reduce((sum: number, item: any) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
+      .filter((item) => deliveredOSIds.has(item.service_order_id))
+      .reduce((sum: number, item) => sum + (Number(item.unit_cost) * Number(item.quantity || 1)), 0);
     const lucroServicos = receitaOS - custoPecasDelivered;
 
     // Despesas PJ adicionais (que não sejam compra de acessório já contabilizado no CMV e nem peça de reparo já em custoPecasOS / custoPecasReparos)
-    const despesasPJAdicionais = transactions.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio" && t.category !== "reparo").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-    const despesasPFTotal = transactions.filter((t: any) => t.type === "expense_pf" || t.type === "pro_labore").reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+    const despesasPJAdicionais = transactions.filter((t) => t.type === "expense_pj" && t.category !== "acessorio" && t.category !== "reparo").reduce((sum: number, t) => sum + Number(t.amount), 0);
+    const despesasPFTotal = transactions.filter((t) => t.type === "expense_pf" || t.type === "pro_labore").reduce((sum: number, t) => sum + Number(t.amount), 0);
 
     // Consideramos custo de peças internos como redução do faturamento líquido também (já que foi gasto em peças de reparos internos)
     const faturamentoLiquido = faturamentoBruto - cmvAparelhos - cmvAcessorios - custoPecasOS - custoPecasReparos - despesasPJAdicionais - despesasPFTotal;
@@ -381,9 +384,9 @@ const Dashboard = () => {
     setStats({
       totalStock: inStock.length, totalInvested, totalInvestedAcc,
       totalSalesRevenue, totalProfit, expensesPJ, expensesPF,
-      storeCount: stores.filter((s: any) => s.status === "active").length,
+      storeCount: stores.filter((s) => s.status === "active").length,
       openOS, salesCount: sales.length,
-      totalAccessories: accessories.reduce((sum: number, a: any) => sum + a.quantity, 0),
+      totalAccessories: accessories.reduce((sum: number, a) => sum + a.quantity, 0),
       totalLeads: leads.length,
       faturamentoBruto,
       faturamentoLiquido,
@@ -396,19 +399,19 @@ const Dashboard = () => {
     });
 
     if (isAdmin) {
-      const storeMap = new Map(stores.map((s: any) => [s.id, s.name]));
+      const storeMap = new Map(stores.map((s) => [s.id, s.name]));
       const allProductsRes = await supabase.from("products").select("*").eq("status", "in_stock");
-      const allAccRes = await supabase.from("accessories" as any).select("*");
-      const allProducts = (allProductsRes.data ?? []).filter((p: any) => p.status === "in_stock");
-      const allAcc = (allAccRes.data ?? []) as any[];
+      const allAccRes = await supabase.from("accessories").select("*");
+      const allProducts = (allProductsRes.data ?? []).filter((p) => p.status === "in_stock");
+      const allAcc = (allAccRes.data ?? []);
       const storeProducts: Record<string, { aparelhos: number; acessorios: number; investido: number }> = {};
-      allProducts.forEach((p: any) => {
+      allProducts.forEach((p) => {
         const name = storeMap.get(p.store_id) || "Sem loja";
         if (!storeProducts[name]) storeProducts[name] = { aparelhos: 0, acessorios: 0, investido: 0 };
         storeProducts[name].aparelhos++;
         storeProducts[name].investido += Number(p.cost_price);
       });
-      allAcc.forEach((a: any) => {
+      allAcc.forEach((a) => {
         const name = storeMap.get(a.store_id) || "Sem loja";
         if (!storeProducts[name]) storeProducts[name] = { aparelhos: 0, acessorios: 0, investido: 0 };
         storeProducts[name].acessorios += a.quantity;
@@ -419,31 +422,31 @@ const Dashboard = () => {
 
     if (can("estoque")) {
       const catMap: Record<string, number> = {};
-      accessories.forEach((a: any) => { catMap[a.category] = (catMap[a.category] || 0) + a.quantity; });
+      accessories.forEach((a) => { catMap[a.category] = (catMap[a.category] || 0) + a.quantity; });
       setCategoryBreakdown(Object.entries(catMap).map(([name, value]) => ({ name, value })));
 
       const storeStockCounts: Record<string, number> = {};
-      inStock.forEach((p: any) => { storeStockCounts[p.store_id] = (storeStockCounts[p.store_id] || 0) + 1; });
+      inStock.forEach((p) => { storeStockCounts[p.store_id] = (storeStockCounts[p.store_id] || 0) + 1; });
       setLowStockStores(stores
-        .filter((s: any) => !isFiltered ? (storeStockCounts[s.id] || 0) <= 3 : s.id === effectiveStoreId && (storeStockCounts[s.id] || 0) <= 3)
-        .map((s: any) => ({ name: s.name, count: storeStockCounts[s.id] || 0 })));
-      setLowStockAcc(accessories.filter((a: any) => a.quantity <= a.min_quantity).map((a: any) => ({ name: a.name, qty: a.quantity, min: a.min_quantity })));
+        .filter((s) => !isFiltered ? (storeStockCounts[s.id] || 0) <= 3 : s.id === effectiveStoreId && (storeStockCounts[s.id] || 0) <= 3)
+        .map((s) => ({ name: s.name, count: storeStockCounts[s.id] || 0 })));
+      setLowStockAcc(accessories.filter((a) => a.quantity <= a.min_quantity).map((a) => ({ name: a.name, qty: a.quantity, min: a.min_quantity })));
     }
 
     if (can("vendas")) {
       const last30 = new Date();
       last30.setDate(last30.getDate() - 30);
       const dailyMap: Record<string, number> = {};
-      sales.filter((s: any) => new Date(s.created_at) >= last30).forEach((s: any) => {
+      sales.filter((s) => new Date(s.created_at) >= last30).forEach((s) => {
         const day = new Date(s.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
         dailyMap[day] = (dailyMap[day] || 0) + Number(s.sale_price);
       });
       setDailySales(Object.entries(dailyMap).map(([date, total]) => ({ date, total })));
 
-      const totalCash = sales.reduce((s: number, sale: any) => s + Number(sale.payment_cash), 0);
-      const totalCard = sales.reduce((s: number, sale: any) => s + Number(sale.payment_card), 0);
-      const totalPix = sales.reduce((s: number, sale: any) => s + Number(sale.payment_pix), 0);
-      const totalTradeIn = sales.filter((s: any) => s.has_trade_in).reduce((s: number, sale: any) => s + Number(sale.trade_in_value || 0), 0);
+      const totalCash = sales.reduce((s: number, sale) => s + Number(sale.payment_cash), 0);
+      const totalCard = sales.reduce((s: number, sale) => s + Number(sale.payment_card), 0);
+      const totalPix = sales.reduce((s: number, sale) => s + Number(sale.payment_pix), 0);
+      const totalTradeIn = sales.filter((s) => s.has_trade_in).reduce((s: number, sale) => s + Number(sale.trade_in_value || 0), 0);
       setPaymentBreakdown([
         { name: "Dinheiro", value: totalCash },
         { name: "Cartão", value: totalCard },

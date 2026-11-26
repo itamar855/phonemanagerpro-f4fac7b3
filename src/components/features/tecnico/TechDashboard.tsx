@@ -59,6 +59,10 @@ import type {
   TechGoalConfig,
   TechRankingItem,
 } from "@/utils/technicianMetrics";
+import type { ServiceOrder } from "@/types/db";
+
+/** Colunas da OS que a fila do técnico busca (ver fetchTechData no Index). */
+export type TechQueueOrder = Pick<ServiceOrder, "id" | "order_number" | "customer_name" | "customer_phone" | "device_brand" | "device_model" | "requested_service" | "reported_defect" | "status" | "estimated_completion" | "created_at" | "delivered_at" | "final_price" | "estimated_price" | "store_id" | "technician_id">;
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -71,7 +75,7 @@ export interface TechDashboardProps {
   goalsConfig: TechGoalConfig;
   onUpdateGoals: (newGoals: TechGoalConfig) => void;
   shopRanking: { items: TechRankingItem[]; myRank: number; totalTechs: number };
-  activeQueue: any[];
+  activeQueue: TechQueueOrder[];
   onNavigateToOS: (osId?: string) => void;
   periodLabel: string;
 }
@@ -663,7 +667,7 @@ export const TechDashboard: React.FC<TechDashboardProps> = ({
                       borderRadius: "8px",
                       fontSize: "12px",
                     }}
-                    formatter={(val: any, name: string) => [
+                    formatter={(val, name: string) => [
                       name === "commission" ? formatCurrency(Number(val)) : `${val} OS`,
                       name === "commission" ? "Comissão" : "Reparos Entregues",
                     ]}

@@ -15,24 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { AccessoryForm } from "./types";
 
 interface AccessoryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  editAcc: any | null;
-  accForm: {
-    name: string;
-    category: string;
-    brand: string;
-    quantity: string;
-    min_quantity: string;
-    cost_price: string;
-    sale_price: string;
-    store_id: string;
-    description: string;
-    justification: string;
-  };
-  setAccForm: React.Dispatch<React.SetStateAction<any>>;
+  editAcc: { id: string } | null;
+  accForm: AccessoryForm;
+  setAccForm: React.Dispatch<React.SetStateAction<AccessoryForm>>;
   activeStoreId: string;
   storeMap: Map<string, string>;
   onSubmit: (e: React.FormEvent) => void | Promise<void>;
@@ -64,7 +54,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
               <Label className="text-xs">Nome</Label>
               <Input
                 value={accForm.name}
-                onChange={(e) => setAccForm((f: any) => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setAccForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Carregador 20W"
                 required
                 className="h-10"
@@ -74,7 +64,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
               <Label className="text-xs">Categoria</Label>
               <Select
                 value={accForm.category}
-                onValueChange={(v) => setAccForm((f: any) => ({ ...f, category: v }))}
+                onValueChange={(v) => setAccForm((f) => ({ ...f, category: v }))}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -97,7 +87,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
               <Label className="text-xs">Marca</Label>
               <Input
                 value={accForm.brand}
-                onChange={(e) => setAccForm((f: any) => ({ ...f, brand: e.target.value }))}
+                onChange={(e) => setAccForm((f) => ({ ...f, brand: e.target.value }))}
                 placeholder="Apple, Samsung..."
                 className="h-10"
               />
@@ -107,7 +97,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
               <Input
                 value={accForm.description}
                 onChange={(e) =>
-                  setAccForm((f: any) => ({ ...f, description: e.target.value }))
+                  setAccForm((f) => ({ ...f, description: e.target.value }))
                 }
                 placeholder="USB-C 1m..."
                 className="h-10"
@@ -122,7 +112,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
                 min="0"
                 value={accForm.quantity}
                 onChange={(e) =>
-                  setAccForm((f: any) => ({ ...f, quantity: e.target.value }))
+                  setAccForm((f) => ({ ...f, quantity: e.target.value }))
                 }
                 required
                 className="h-10"
@@ -135,7 +125,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
                 min="0"
                 value={accForm.min_quantity}
                 onChange={(e) =>
-                  setAccForm((f: any) => ({ ...f, min_quantity: e.target.value }))
+                  setAccForm((f) => ({ ...f, min_quantity: e.target.value }))
                 }
                 required
                 className="h-10"
@@ -150,7 +140,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
                 step="0.01"
                 value={accForm.cost_price}
                 onChange={(e) =>
-                  setAccForm((f: any) => ({ ...f, cost_price: e.target.value }))
+                  setAccForm((f) => ({ ...f, cost_price: e.target.value }))
                 }
                 placeholder="25.00"
                 required
@@ -164,7 +154,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
                 step="0.01"
                 value={accForm.sale_price}
                 onChange={(e) =>
-                  setAccForm((f: any) => ({ ...f, sale_price: e.target.value }))
+                  setAccForm((f) => ({ ...f, sale_price: e.target.value }))
                 }
                 placeholder="50.00"
                 className="h-10"
@@ -177,7 +167,7 @@ export const AccessoryModal: React.FC<AccessoryModalProps> = ({
               <Input
                 value={accForm.justification}
                 onChange={(e) =>
-                  setAccForm((f: any) => ({ ...f, justification: e.target.value }))
+                  setAccForm((f) => ({ ...f, justification: e.target.value }))
                 }
                 placeholder="Ex: Correção de preço, ajuste de estoque..."
                 required

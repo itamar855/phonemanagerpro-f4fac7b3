@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { createPendingCashEntry } from "@/lib/services/salesService";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
+import type { User } from "@supabase/supabase-js";
+import type { PdvPaymentForm, Store } from "@/components/features/vendas/types";
 
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };
@@ -12,15 +14,15 @@ const formatCurrency = (v: number) => new Intl.NumberFormat("pt-BR", { style: "c
 export const useCartManager = (
   accessories: Accessory[],
   activeStoreId: string | null,
-  user: any,
+  user: User | null,
   setLoading: (loading: boolean) => void,
   fetchData: () => void,
-  stores: any[]
+  stores: Store[]
 ) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [accSearch, setAccSearch] = useState("");
   const [pdvOpen, setPdvOpen] = useState(false);
-  const [pdvPayment, setPdvPayment] = useState({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: "" });
+  const [pdvPayment, setPdvPayment] = useState<PdvPaymentForm>({ cash: "", card: "", pix: "", customer: "", cpfCnpj: "", store_id: "" });
   
   const isPdvSubmitting = useRef(false);
 
@@ -65,10 +67,10 @@ export const useCartManager = (
       // 1. Validar e atualizar estoque de cada item no banco de dados
       for (const item of cart) {
         const { data: currentAcc, error: fetchErr } = await supabase
-          .from("accessories" as any)
+          .from("accessories")
           .select("quantity, name")
           .eq("id", item.acc.id)
-          .single() as any;
+          .single();
 
         if (fetchErr || !currentAcc) {
           throw new Error(`Acessório ${item.acc.name} não encontrado no estoque.`);
@@ -81,7 +83,7 @@ export const useCartManager = (
 
         const newQty = Math.max(0, currentQty - item.qty);
         const { error: accError } = await supabase
-          .from("accessories" as any)
+          .from("accessories")
           .update({ quantity: newQty })
           .eq("id", item.acc.id);
         
@@ -106,7 +108,7 @@ export const useCartManager = (
       ) => {
         try {
           await createPendingCashEntry(storeToUse, user.id, amount, description, method, undefined, txId);
-        } catch (cashErr: any) {
+        } catch (cashErr) {
           if (txId) {
             await supabase.from("transactions").delete().eq("id", txId);
           }
@@ -163,7 +165,7 @@ export const useCartManager = (
       if (gerarNotinha && txIdForNote) {
         try {
           const storeMap = new Map(stores.map(s => [s.id, s]));
-          const store = storeMap.get(storeToUse) as any;
+          const store = storeMap.get(storeToUse);
           const numeroNota = `PDV-${txIdForNote.slice(0, 8).toUpperCase()}`;
           const data: NotaFiscalData = {
             numeroNota,
@@ -197,7 +199,7 @@ export const useCartManager = (
       }
 
       toast.success("Venda rápida registrada!"); setPdvOpen(false); resetPdv(); fetchData();
-    } catch (err: any) { 
+    } catch (err) { 
       toast.error(err.message || "Erro"); 
     } finally {
       isPdvSubmitting.current = false;

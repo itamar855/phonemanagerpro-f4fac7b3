@@ -51,12 +51,13 @@ Deno.serve(async (req) => {
   }
 
   let createdNewAuthUserId: string | null = null;
-  let supabaseAdmin: any = null;
+  // criado logo no começo do try; nos rollbacks o código já confere se ele existe
+  let supabaseAdmin!: ReturnType<typeof createClient>;
   let userId: string | null = null;
 
   let existingSnapshot: {
-    roleData: any;
-    profileData: any;
+    roleData: Record<string, unknown> | null;
+    profileData: Record<string, unknown> | null;
   } | null = null;
 
   let createdStoreMembership = false;
@@ -106,7 +107,7 @@ Deno.serve(async (req) => {
 
     const callerRole = callerRoleRes.data?.role || "";
     const callerPermissions = callerRoleRes.data?.permissions || {};
-    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: any) => s.store_id);
+    const callerStoreIds: string[] = (callerStoresRes.data || []).map((s: { store_id: string }) => s.store_id);
 
     // 3. Validação de autoridade geral
     const authCheck = validateCallerAuthority(callerRole, callerPermissions);
@@ -158,7 +159,7 @@ Deno.serve(async (req) => {
     // 6. Verificar se usuário já existe em auth.users
     const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
     const existing = existingUsers?.users?.find(
-      (u: any) => u.email?.toLowerCase() === email.trim().toLowerCase()
+      (u: { email?: string }) => u.email?.toLowerCase() === email.trim().toLowerCase()
     );
 
     if (existing) {
@@ -277,7 +278,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ success: true, userId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error: any) {
+  } catch (error) {
     const rollbackErrors: string[] = [];
 
     // Cleanup compensatório:
@@ -290,9 +291,9 @@ Deno.serve(async (req) => {
           rollbackErrors.push(`Falha ao deletar auth user recém-criado: ${deleteUserErr.message}`);
           console.error("Falha no cleanup compensatório de create-user (novo usuário):", deleteUserErr.message);
         }
-      } catch (cleanupErr: any) {
-        rollbackErrors.push(`Exceção ao deletar auth user recém-criado: ${cleanupErr.message}`);
-        console.error("Falha no cleanup compensatório de create-user (novo usuário):", cleanupErr.message);
+      } catch (cleanupErr) {
+        rollbackErrors.push(`Exceção ao deletar auth user recém-criado: ${(cleanupErr as Error).message}`);
+        console.error("Falha no cleanup compensatório de create-user (novo usuário):", (cleanupErr as Error).message);
       }
     } else if (existingSnapshot && supabaseAdmin && userId) {
       // Cenário B: Usuário pré-existente -> reverter cirurgicamente apenas as mutações feitas nesta requisição
@@ -325,9 +326,9 @@ Deno.serve(async (req) => {
               profileRollbackSafeForMembershipCleanup = true;
             }
           }
-        } catch (e: any) {
-          rollbackErrors.push(`Exceção ao reverter profile no rollback: ${e.message}`);
-          console.error("Exceção ao reverter profile no rollback:", e.message);
+        } catch (e) {
+          rollbackErrors.push(`Exceção ao reverter profile no rollback: ${(e as Error).message}`);
+          console.error("Exceção ao reverter profile no rollback:", (e as Error).message);
         }
       }
 
@@ -351,9 +352,9 @@ Deno.serve(async (req) => {
               console.error("Falha ao restaurar user_roles no rollback:", insRoleErr.message);
             }
           }
-        } catch (e: any) {
-          rollbackErrors.push(`Exceção ao reverter user_roles no rollback: ${e.message}`);
-          console.error("Exceção ao reverter user_roles no rollback:", e.message);
+        } catch (e) {
+          rollbackErrors.push(`Exceção ao reverter user_roles no rollback: ${(e as Error).message}`);
+          console.error("Exceção ao reverter user_roles no rollback:", (e as Error).message);
         }
       }
 
@@ -370,9 +371,9 @@ Deno.serve(async (req) => {
             rollbackErrors.push(`Falha ao remover member_stores no rollback: ${delStoreErr.message}`);
             console.error("Falha ao remover vínculo de member_stores no rollback:", delStoreErr.message);
           }
-        } catch (e: any) {
-          rollbackErrors.push(`Exceção ao remover vínculo de member_stores: ${e.message}`);
-          console.error("Exceção ao remover vínculo de member_stores no rollback:", e.message);
+        } catch (e) {
+          rollbackErrors.push(`Exceção ao remover vínculo de member_stores: ${(e as Error).message}`);
+          console.error("Exceção ao remover vínculo de member_stores no rollback:", (e as Error).message);
         }
       } else if (createdStoreMembership && !profileRollbackSafeForMembershipCleanup) {
         console.warn(
@@ -385,7 +386,7 @@ Deno.serve(async (req) => {
       console.error(`[CRITICAL_ROLLBACK_FAILURE] Falhas no rollback compensatório de create-user (${rollbackErrors.length}):`, rollbackErrors);
       return new Response(
         JSON.stringify({
-          error: error.message || "Erro desconhecido ao criar usuário.",
+          error: (error as Error).message || "Erro desconhecido ao criar usuário.",
           critical_rollback_failure: true,
         }),
         {
@@ -395,7 +396,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    return new Response(JSON.stringify({ error: error.message || "Erro desconhecido ao criar usuário." }), {
+    return new Response(JSON.stringify({ error: (error as Error).message || "Erro desconhecido ao criar usuário." }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

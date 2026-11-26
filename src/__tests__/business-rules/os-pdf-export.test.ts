@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { saveAndOpenPdf } from "@/components/features/os/osPdf";
+import type { jsPDF } from "jspdf";
 
 describe("saveAndOpenPdf helper", () => {
   beforeEach(() => {
@@ -39,7 +40,7 @@ describe("saveAndOpenPdf helper", () => {
       return el;
     });
 
-    saveAndOpenPdf(mockDoc, "OS-71", true);
+    saveAndOpenPdf(mockDoc as unknown as jsPDF, "OS-71", true);
 
     expect(openSpy).toHaveBeenCalledWith("blob:http://localhost:8080/mock-uuid", "_blank");
     expect(capturedDownload).toBe("OS-71.pdf");
@@ -65,7 +66,7 @@ describe("saveAndOpenPdf helper", () => {
       return el;
     });
 
-    saveAndOpenPdf(mockDoc, "OS-Cupom-71.pdf", false);
+    saveAndOpenPdf(mockDoc as unknown as jsPDF, "OS-Cupom-71.pdf", false);
 
     expect(capturedDownload).toBe("OS-Cupom-71.pdf");
   });

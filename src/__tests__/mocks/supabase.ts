@@ -3,7 +3,11 @@ import { vi } from 'vitest';
 // ─── Chainable Query Builder Mock ────────────────────────────────────────────
 // Simulates Supabase's fluent API: supabase.from("table").select("*").eq("col", val)...
 
-type MockRow = Record<string, any>;
+// Dublê de teste: as linhas e os payloads podem ter qualquer formato, e os testes
+// fazem conta direto com os campos. Este é o único `any` do mock.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MockValue = any;
+type MockRow = Record<string, MockValue>;
 
 export interface MockQueryResult {
   data: MockRow[] | MockRow | null;
@@ -13,8 +17,8 @@ export interface MockQueryResult {
 export class MockQueryBuilder {
   private _table: string;
   private _operation: string = '';
-  private _filters: Array<{ method: string; col: string; val: any }> = [];
-  private _payload: any = null;
+  private _filters: Array<{ method: string; col: string; val: MockValue }> = [];
+  private _payload: MockValue = null;
   private _result: MockQueryResult = { data: [], error: null };
   private _singleResult = false;
 
@@ -22,8 +26,8 @@ export class MockQueryBuilder {
   static history: Array<{
     table: string;
     operation: string;
-    filters: Array<{ method: string; col: string; val: any }>;
-    payload: any;
+    filters: Array<{ method: string; col: string; val: MockValue }>;
+    payload: MockValue;
   }> = [];
 
   constructor(table: string) {
@@ -70,14 +74,14 @@ export class MockQueryBuilder {
     return this;
   }
 
-  insert(payload: any) {
+  insert(payload: MockValue) {
     this._operation = 'insert';
     this._payload = payload;
     this._record();
     return this;
   }
 
-  update(payload: any) {
+  update(payload: MockValue) {
     this._operation = 'update';
     this._payload = payload;
     return this;
@@ -88,7 +92,7 @@ export class MockQueryBuilder {
     return this;
   }
 
-  upsert(payload: any) {
+  upsert(payload: MockValue) {
     this._operation = 'upsert';
     this._payload = payload;
     this._record();
@@ -96,17 +100,17 @@ export class MockQueryBuilder {
   }
 
   // ─── Filters ─────────────────────────────
-  eq(col: string, val: any) {
+  eq(col: string, val: MockValue) {
     this._filters.push({ method: 'eq', col, val });
     return this;
   }
 
-  neq(col: string, val: any) {
+  neq(col: string, val: MockValue) {
     this._filters.push({ method: 'neq', col, val });
     return this;
   }
 
-  in(col: string, vals: any[]) {
+  in(col: string, vals: MockValue[]) {
     this._filters.push({ method: 'in', col, val: vals });
     return this;
   }
@@ -116,27 +120,27 @@ export class MockQueryBuilder {
     return this;
   }
 
-  gte(col: string, val: any) {
+  gte(col: string, val: MockValue) {
     this._filters.push({ method: 'gte', col, val });
     return this;
   }
 
-  lte(col: string, val: any) {
+  lte(col: string, val: MockValue) {
     this._filters.push({ method: 'lte', col, val });
     return this;
   }
 
-  gt(col: string, val: any) {
+  gt(col: string, val: MockValue) {
     this._filters.push({ method: 'gt', col, val });
     return this;
   }
 
-  lt(col: string, val: any) {
+  lt(col: string, val: MockValue) {
     this._filters.push({ method: 'lt', col, val });
     return this;
   }
 
-  is(col: string, val: any) {
+  is(col: string, val: MockValue) {
     this._filters.push({ method: 'is', col, val });
     return this;
   }
@@ -169,7 +173,7 @@ export class MockQueryBuilder {
   }
 
   // Terminal — returns the result as a resolved promise (for await)
-  then(resolve: (value: MockQueryResult) => any, reject?: (reason: any) => any) {
+  then(resolve: (value: MockQueryResult) => unknown, reject?: (reason: unknown) => unknown) {
     this._record();
     return Promise.resolve(this._result).then(resolve, reject);
   }
@@ -187,9 +191,9 @@ export class MockQueryBuilder {
 // ─── Mock Supabase Client Factory ────────────────────────────────────────────
 
 // Store per-table mock data configuration
-const tableMocks: Map<string, { data: any; error: any }> = new Map();
+const tableMocks: Map<string, { data: MockValue; error: MockValue }> = new Map();
 
-export function setTableMock(table: string, data: any, error: any = null) {
+export function setTableMock(table: string, data: MockValue, error: MockValue = null) {
   tableMocks.set(table, { data, error });
 }
 

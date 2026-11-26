@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,8 @@ interface Product {
   model: string;
   cost_price: number;
   sale_price: number | null;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
 }
 
 interface ServiceOrderItem {
@@ -35,6 +38,7 @@ interface ServiceOrderItem {
     name: string;
     brand: string;
     model: string;
+    parts_payment_voucher?: string | null;
   };
 }
 
@@ -92,7 +96,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
     try {
       setLoading(true);
       const { data: itemsData, error: itemsError } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select(`*, products (name, brand, model, parts_payment_voucher)`)
         .eq("service_order_id", orderId);
 
@@ -102,7 +106,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       if (!readonly && storeId) {
         const { data: productsData, error: productsError } = await (supabase
           .from("products")
-          .select("id, name, brand, model, cost_price, sale_price, supplier_id, supplier_name") as any)
+          .select("id, name, brand, model, cost_price, sale_price, supplier_id, supplier_name"))
           .eq("store_id", storeId)
           .eq("status", "in_stock")
           .in("product_type", ["peca", "acessorio", "outro"]);
@@ -113,11 +117,11 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       // Fetch suppliers
       const { data: suppData } = await (supabase
-        .from("suppliers" as any)
+        .from("suppliers")
         .select("id, name")
-        .order("name") as any);
+        .order("name"));
       setSuppliers(suppData || []);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error fetching parts:", error);
       toast.error("Erro ao carregar peças da OS");
     } finally {
@@ -160,11 +164,11 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       if (prodError) throw new Error("Erro ao baixar produto do estoque.");
 
-      const resolvedSupplierId = (product as any).supplier_id || null;
-      const supplierName = (product as any).supplier_name || null;
+      const resolvedSupplierId = product.supplier_id || null;
+      const supplierName = product.supplier_name || null;
 
       const { error: itemError } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .insert({
           service_order_id: orderId,
           product_id: selectedProductId,
@@ -184,7 +188,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       setSelectedProductId("");
       setStockSupplierId("");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao adicionar peça.");
     } finally {
       setAdding(false);
@@ -238,7 +242,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       const supplierName = resolvedSupplierId ? (suppliers.find(s => s.id === resolvedSupplierId)?.name || null) : null;
 
       // 2. Inserção atômica via RPC: produto + service_order_items na mesma transação
-      const { error: rpcError } = await (supabase.rpc as any)(
+      const { error: rpcError } = await supabase.rpc(
         "add_service_order_custom_part",
         {
           p_service_order_id: orderId,
@@ -273,7 +277,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       // 4. Automatic cash out and transaction entry
       let { data: register } = await supabase
-        .from("cash_registers" as any)
+        .from("cash_registers")
         .select("id")
         .eq("store_id", storeId)
         .eq("status", "open")
@@ -282,7 +286,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       if (!register) {
         const { data: fallbackRegister } = await supabase
-          .from("cash_registers" as any)
+          .from("cash_registers")
           .select("id")
           .eq("store_id", storeId)
           .eq("status", "open")
@@ -299,12 +303,12 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
         .maybeSingle();
       
       const osPrefix = currentOrder?.order_number ? `OS #${currentOrder.order_number}` : "OS";
-      const registerId = register ? (register as any).id : null;
+      const registerId = register ? register.id : null;
       const desc = `Compra de Peça Avulsa (${osPrefix}): ${newPart.name.trim()}${supplierName ? ` [Fornecedor: ${supplierName}]` : ""}`;
       const hasReceipt = !!receiptUrl;
 
       if (registerId) {
-        await supabase.from("cash_entries" as any).insert({
+        await supabase.from("cash_entries").insert({
           cash_register_id: registerId,
           store_id: storeId,
           type: "saida",
@@ -316,9 +320,13 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
           supplier_order_receipt_url: orderReceiptUrl || null,
           created_by: user.id,
           reference_id: orderId,
-        } as any);
+        });
       }
 
+      // ATENÇÃO: net_earnings, payment_method e reference_id não existem em transactions
+      // no banco de produção, então este lançamento volta com erro hoje (e o erro não é
+      // conferido). Mantido igual: ligar agora pode contar a peça duas vezes no DRE, que
+      // já soma o custo pelas peças da OS. Decisão do dono.
       await supabase.from("transactions").insert({
         type: "expense_pj",
         amount: costPrice,
@@ -332,13 +340,13 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
         created_by: user.id,
         receipt_url: receiptUrl || null,
         reference_id: orderId,
-      } as any);
+      } as unknown as TablesInsert<"transactions">);
 
       toast.success("Peça cadastrada no estoque, vinculada à OS e lançada no caixa!");
       setNewPart({ name: "", brand: "", model: "", cost_price: "", sale_price: "", supplier_id: "", receipt: null, orderReceipt: null });
       setAddMode("stock");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao cadastrar peça.");
     } finally {
       setAdding(false);
@@ -350,7 +358,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
       const itemToRemove = items.find(i => i.id === itemId);
 
       const { error: itemError } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .delete()
         .eq("id", itemId);
 
@@ -369,7 +377,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
         if (prodName) {
           const descSearch = `Compra de Peça Avulsa (%): ${prodName.trim()}%`;
           await supabase
-            .from("cash_entries" as any)
+            .from("cash_entries")
             .delete()
             .eq("store_id", storeId)
             .like("description", descSearch)
@@ -386,7 +394,7 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
 
       toast.success("Peça removida e retornada ao estoque.");
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || "Erro ao remover peça.");
     }
   };
@@ -628,26 +636,26 @@ export function OsParts({ orderId, storeId, readonly = false, onChargeTotalChang
               <div className="flex-1 min-w-0">
                 <p className="font-medium">{item.products?.name} {item.products?.brand}</p>
                 <p className="text-[10px] text-muted-foreground">Custo: {formatMonetary(item.unit_cost)} · Cobrado: {formatMonetary(item.unit_price)}</p>
-                {(item as any).supplier_name && (
-                  <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 Fornecedor: {(item as any).supplier_name}</p>
+                {item.supplier_name && (
+                  <p className="text-[10px] text-blue-500 font-medium mt-0.5">🏭 Fornecedor: {item.supplier_name}</p>
                 )}
-                {((item as any).receipt_url || (item as any).products?.parts_payment_voucher) && (
+                {(item.receipt_url || item.products?.parts_payment_voucher) && (
                   <a
-                    href={(item as any).receipt_url || (item as any).products?.parts_payment_voucher}
+                    href={item.receipt_url || item.products?.parts_payment_voucher}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => openComprovante((item as any).receipt_url || (item as any).products?.parts_payment_voucher, e)}
+                    onClick={(e) => openComprovante(item.receipt_url || item.products?.parts_payment_voucher, e)}
                     className="text-[10px] text-primary underline flex items-center gap-0.5 mt-0.5 cursor-pointer"
                   >
                     <CreditCard className="h-2.5 w-2.5" /> Comprovante de Pagamento
                   </a>
                 )}
-                {(item as any).supplier_order_receipt_url && (
+                {item.supplier_order_receipt_url && (
                   <a
-                    href={(item as any).supplier_order_receipt_url}
+                    href={item.supplier_order_receipt_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={(e) => openComprovante((item as any).supplier_order_receipt_url, e)}
+                    onClick={(e) => openComprovante(item.supplier_order_receipt_url, e)}
                     className="text-[10px] text-blue-500 underline flex items-center gap-0.5 mt-0.5 cursor-pointer"
                   >
                     <ShoppingCart className="h-2.5 w-2.5" /> Comprovante do Pedido

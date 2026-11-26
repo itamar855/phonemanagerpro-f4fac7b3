@@ -386,7 +386,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         if (roleError) {
           throw new Error(`Falha ao atribuir cargo do usuário: ${roleError.message}`);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (roleTouched) {
           await mockRestoreDeleteRoles();
           if (existingSnapshot.roleData) {
@@ -405,7 +405,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
     it("create-user: se usuário pré-existente não possuía profile antes da operação (profileData === null), o rollback compensatório deleta o profile criado", async () => {
       const existingSnapshot = {
         roleData: { user_id: "user-123", role: "vendedor", permissions: {} },
-        profileData: null,
+        profileData: null as Record<string, unknown> | null,
       };
 
       let modifiedProfile = false;
@@ -415,7 +415,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       try {
         modifiedProfile = true;
         throw new Error("Simulated Auth Update Failure");
-      } catch (err: any) {
+      } catch (err) {
         if (modifiedProfile) {
           if (existingSnapshot.profileData) {
             await mockUpsertProfile(existingSnapshot.profileData);
@@ -473,7 +473,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
 
         // Passo 4: Falha sintética posterior (ex.: falha de auditoria ou indisponibilidade de downstream)
         throw new Error("Synthetic audit failure after profile update");
-      } catch (_stepError: any) {
+      } catch (_stepError) {
         // Execução do rollback compensatório na ordem estrita de integridade
         if (storesTouched || profileTouched) {
           // 1.1 Garantir/reinserir memberships antigas necessárias sem apagar primeiro as memberships atuais
@@ -537,8 +537,8 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         profileData: {
           user_id: targetUserId,
           display_name: "Sem Loja",
-          phone: null,
-          store_id: null,
+          phone: null as string | null,
+          store_id: null as string | null,
         },
         storeIds: [] as string[],
       };
@@ -562,7 +562,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         profileTouched = true;
 
         throw new Error("Synthetic audit failure");
-      } catch (_stepError: any) {
+      } catch (_stepError) {
         if (storesTouched || profileTouched) {
           // Zero memberships: restaura profile.store_id = null primeiro
           if (snapshotBefore.profileData) {
@@ -608,7 +608,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       let dbMemberStores = [
         { user_id: targetUserId, store_id: newStoreId },
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "New Name",
         phone: "1188888888",
@@ -663,17 +663,17 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         profileData: {
           user_id: targetUserId,
           display_name: "Original Name",
-          phone: null,
-          store_id: null,
+          phone: null as string | null,
+          store_id: null as string | null,
         },
         storeIds: [] as string[],
       };
 
       let dbMemberStores = [{ user_id: targetUserId, store_id: newStoreId }];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "Original Name",
-        phone: null,
+        phone: null as string | null,
         store_id: newStoreId,
       };
 
@@ -724,7 +724,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         { user_id: targetUserId, store_id: initialStoreId },
         { user_id: targetUserId, store_id: newStoreId }, // membership B criada
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "New Name",
         phone: "1199999999",
@@ -769,16 +769,16 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
 
       const existingSnapshot = {
         roleData: { user_id: targetUserId, role: "vendedor" as AppRole, permissions: {} },
-        profileData: null,
+        profileData: null as Record<string, unknown> | null,
       };
 
       let dbMemberStores = [
         { user_id: targetUserId, store_id: newStoreId }, // membership criada
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "New Profile",
-        phone: null,
+        phone: null as string | null,
         store_id: newStoreId, // profile recém criado
       };
 
@@ -834,7 +834,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
         { user_id: targetUserId, store_id: initialStoreId },
         { user_id: targetUserId, store_id: newStoreId }, // membership criada no passo 7
       ];
-      let dbProfile = {
+      const dbProfile = {
         user_id: targetUserId,
         display_name: "Original Name",
         phone: "1199999999",
@@ -847,7 +847,7 @@ describe("Auditoria e Validação das Regras Reais de Produção (auth-rules.ts)
       const rollbackErrors: string[] = [];
 
       // Inicializa com !modifiedProfile = true porque profile nunca foi alterado nesta execução
-      let profileRollbackSafeForMembershipCleanup = !modifiedProfile;
+      const profileRollbackSafeForMembershipCleanup = !modifiedProfile;
 
       // 1. modifiedProfile é false, então o bloco do profile é ignorado
       if (modifiedProfile) {

@@ -50,13 +50,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchUserData = async (userId: string) => {
     const [roleRes, storesRes, profileRes] = await Promise.all([
       supabase.from("user_roles").select("role, permissions").eq("user_id", userId).maybeSingle(),
-      supabase.from("member_stores" as any).select("store_id").eq("user_id", userId),
+      supabase.from("member_stores").select("store_id").eq("user_id", userId),
       supabase.from("profiles").select("display_name").eq("user_id", userId).maybeSingle(),
     ]);
     
     if (roleRes.data) {
-      setUserRole((roleRes.data as any).role);
-      setUserPermissions((roleRes.data as any).permissions as Record<string, boolean>);
+      setUserRole(roleRes.data.role);
+      setUserPermissions(roleRes.data.permissions as Record<string, boolean>);
     } else {
       setUserRole(null);
       setUserPermissions(null);
@@ -68,10 +68,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserDisplayName(null);
     }
 
-    const assignedStoreIds = storesRes.data ? (storesRes.data as any[]).map(s => s.store_id) : [];
+    const assignedStoreIds = storesRes.data ? storesRes.data.map(s => s.store_id) : [];
     setUserStoreIds(assignedStoreIds);
 
-    const isAll = (roleRes.data as any)?.role === 'admin';
+    const isAll = roleRes.data?.role === 'admin';
     const currentActive = localStorage.getItem("cellmanager-active-store-id");
 
     if (!isAll && assignedStoreIds.length > 0) {

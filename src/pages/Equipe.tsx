@@ -105,14 +105,14 @@ const Equipe = () => {
       supabase.from("profiles").select("*"),
       supabase.from("user_roles").select("*"),
       supabase.from("stores").select("*"),
-      supabase.from("member_stores" as any).select("*"),
+      supabase.from("member_stores").select("*"),
     ]);
 
     const profiles = profilesRes.data ?? [];
     const roles = rolesRes.data ?? [];
     const ms = memberStoresRes.data ?? [];
     
-    const roleMap = new Map((roles as any[]).map((r) => [r.user_id, { 
+    const roleMap = new Map(roles.map((r) => [r.user_id, { 
       role: r.role, 
       permissions: r.permissions,
       commission_sales_percent: r.commission_sales_percent,
@@ -121,23 +121,23 @@ const Equipe = () => {
       commission_on_services: r.commission_on_services
     }]));
     const storeMapGroup = new Map<string, string[]>();
-    (ms as any[]).forEach(item => {
+    ms.forEach(item => {
       if (!storeMapGroup.has(item.user_id)) storeMapGroup.set(item.user_id, []);
       storeMapGroup.get(item.user_id)?.push(item.store_id);
     });
 
     setMembers(
-      profiles.map((p: any) => {
+      profiles.map((p) => {
         const roleData = roleMap.get(p.user_id);
         return {
           ...p,
-          role: (roleData as any)?.role ?? null,
-          permissions: ((roleData as any)?.permissions as Permissions) ?? null,
+          role: roleData?.role ?? null,
+          permissions: (roleData?.permissions as Permissions) ?? null,
           assignedStoreIds: storeMapGroup.get(p.user_id) || [],
-          commission_sales_percent: (roleData as any)?.commission_sales_percent ?? 0,
-          commission_services_percent: (roleData as any)?.commission_services_percent ?? 0,
-          commission_on_sales: (roleData as any)?.commission_on_sales ?? true,
-          commission_on_services: (roleData as any)?.commission_on_services ?? true,
+          commission_sales_percent: roleData?.commission_sales_percent ?? 0,
+          commission_services_percent: roleData?.commission_services_percent ?? 0,
+          commission_on_sales: roleData?.commission_on_sales ?? true,
+          commission_on_services: roleData?.commission_on_services ?? true,
         };
       })
     );
@@ -161,7 +161,7 @@ const Equipe = () => {
     }
     setSelectedMember(member);
     setNewRole(member.role || "vendedor");
-    setEditPhone((member as any).phone || "");
+    setEditPhone(member.phone || "");
     setEditStoreIds(member.assignedStoreIds || []);
     setPermissions(member.permissions || defaultPermissions(member.role || "vendedor"));
     setEditSalesCommission(String(member.commission_sales_percent ?? 10));
@@ -190,13 +190,13 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao alterar senha do membro");
       } else {
         toast.success(response.data?.message || "Senha atualizada com sucesso!");
         setNewMemberPassword("");
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao alterar senha do membro");
     }
     setMemberPasswordLoading(false);
@@ -231,14 +231,14 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao atualizar membro da equipe");
       } else {
         toast.success(response.data?.message || "Membro e unidades atualizados!");
         setSelectedMember(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao atualizar membro da equipe");
     } finally {
       setLoading(false);
@@ -266,15 +266,15 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao remover membro");
       } else {
-        logAction("DELETE_RECORD" as any, "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
+        logAction("DELETE_RECORD", "profiles", memberToDelete.user_id, null, { reason, name: memberToDelete.display_name });
         toast.success(response.data?.message || "Membro removido com sucesso!");
         setMemberToDelete(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao remover membro");
     }
     setLoading(false);
@@ -301,7 +301,7 @@ const Equipe = () => {
         try {
           const body = await response.error.context?.json();
           if (body?.error) errorMsg = body.error;
-        } catch (_) {}
+        } catch { /* falha ignorada de propósito */ }
         toast.error(errorMsg || "Erro ao criar usuário");
       } else {
         toast.success("Usuário cadastrado com sucesso!");
@@ -309,7 +309,7 @@ const Equipe = () => {
         setCreateForm({ email: "", password: "", display_name: "", phone: "", role: "vendedor", store_id: "" });
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao criar usuário");
     }
     setLoading(false);
@@ -348,9 +348,9 @@ const Equipe = () => {
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{member.display_name || "Sem nome"}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {(member as any).phone && (
+                        {member.phone && (
                           <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                            <Phone className="h-2.5 w-2.5" /> {(member as any).phone}
+                            <Phone className="h-2.5 w-2.5" /> {member.phone}
                           </span>
                         )}
                         {member.assignedStoreIds && member.assignedStoreIds.length > 0 && (

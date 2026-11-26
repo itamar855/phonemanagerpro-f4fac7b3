@@ -20,9 +20,7 @@ jobs:
         run: npm ci
       - name: Type Check
         run: npm run typecheck
-      # Erros antigos de lint (~1.265, quase todos `any`) ficam congelados em
-      # eslint-suppressions.json: só falha se aparecer erro novo. Quem limpar um
-      # arquivo roda `npm run lint:prune` para baixar a contagem.
+      # Lint sem supressões: o código está limpo, qualquer erro novo falha.
       - name: Lint
         if: ${{ !cancelled() }}
         run: npm run lint

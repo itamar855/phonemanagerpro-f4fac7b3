@@ -3,11 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, exportCaixaPDF, exportCSV } from "./relatorioPdf";
 import { Filters, ExportBtns } from "./types";
+import type { CaixaRow, CaixaStats, FilterProps } from "./reportTypes";
 
 export interface CaixaTabProps {
-  filterProps: any;
-  caixaData: any[];
-  caixaStats: any;
+  filterProps: FilterProps;
+  caixaData: CaixaRow[];
+  caixaStats: CaixaStats;
   currentPeriodLabel: string;
   currentStoreName: string;
 }
@@ -67,7 +68,7 @@ export const CaixaTab: React.FC<CaixaTabProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {caixaData.map((r: any, i: number) => (
+                  {caixaData.map((r, i: number) => (
                     <tr key={i} className="border-b border-border/30 hover:bg-muted/30">
                       <td className="py-2 px-2 whitespace-nowrap">{r.data}</td>
                       <td className="py-2 px-2">{r.loja}</td>

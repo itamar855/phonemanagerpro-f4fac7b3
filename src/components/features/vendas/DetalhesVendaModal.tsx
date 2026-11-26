@@ -10,13 +10,15 @@ import {
 import { emitInvoice } from "@/lib/services/fiscalService";
 import { toast } from "sonner";
 
+import type { Product, Sale, Store as StoreRow } from "./types";
+
 interface DetalhesVendaModalProps {
-  selectedViewSale: any | null;
-  setSelectedViewSale: (sale: any | null) => void;
-  productMap: Map<string, any>;
-  storeMap: Map<string, any>;
-  profileMap: Map<string, any>;
-  handleGerarNota: (sale: any, whats: boolean) => void;
+  selectedViewSale: Sale | null;
+  setSelectedViewSale: (sale: Sale | null) => void;
+  productMap: Map<string, Product>;
+  storeMap: Map<string, StoreRow>;
+  profileMap: Map<string, string>;
+  handleGerarNota: (sale: Sale, whats: boolean) => void;
   notaLoading: string | null;
 }
 
@@ -35,7 +37,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
   const navigate = useNavigate();
   const [emitindoFiscal, setEmitindoFiscal] = useState(false);
 
-  const handleEmitirFiscal = async (sale: any, product: any) => {
+  const handleEmitirFiscal = async (sale: Sale, product: Product | undefined) => {
     try {
       setEmitindoFiscal(true);
       const saleNet = Number(sale.sale_price) - (Number(sale.discount) || 0);
@@ -60,7 +62,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
       toast.success(`NFC-e nº ${inv.number} autorizada pela SEFAZ com sucesso!`);
       setSelectedViewSale(null);
       navigate("/notas-fiscais");
-    } catch (e: any) {
+    } catch (e) {
       toast.error("Erro ao emitir nota fiscal: " + e.message);
     } finally {
       setEmitindoFiscal(false);
@@ -70,8 +72,8 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
     <Dialog open={!!selectedViewSale} onOpenChange={open => { if (!open) setSelectedViewSale(null); }}>
       <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         {selectedViewSale && (() => {
-          const product = productMap.get(selectedViewSale.product_id) as any;
-          const store = storeMap.get(selectedViewSale.store_id) as any;
+          const product = productMap.get(selectedViewSale.product_id);
+          const store = storeMap.get(selectedViewSale.store_id);
           const sellerName = selectedViewSale.seller_id ? profileMap.get(selectedViewSale.seller_id) : null;
           const totalPaid = Number(selectedViewSale.payment_cash) + Number(selectedViewSale.payment_card) + Number(selectedViewSale.payment_pix) + (selectedViewSale.has_trade_in ? Number(selectedViewSale.trade_in_value) : 0);
           return (
@@ -92,7 +94,7 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
                       <p className="font-bold text-base">{product?.name || "—"}</p>
                       {product?.brand && <p className="text-xs text-muted-foreground">{product.brand}{product?.model ? ` · ${product.model}` : ""}</p>}
                       {product?.color && <p className="text-xs text-muted-foreground">Cor: {product.color}</p>}
-                      {product?.storage && <p className="text-xs text-muted-foreground">Armazenamento: {product.storage}</p>}
+                      {product?.capacity && <p className="text-xs text-muted-foreground">Armazenamento: {product.capacity}</p>}
                     </div>
                     {product?.imei && (
                       <div className="text-right">

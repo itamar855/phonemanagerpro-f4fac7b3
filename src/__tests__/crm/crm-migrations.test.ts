@@ -52,7 +52,7 @@ const val = async <T = any>(sql: string, params: any[] = []): Promise<T> => {
 };
 const one = async (sql: string, params: any[] = []) => (await db.query<any>(sql, params)).rows[0];
 const errorOf = async (sql: string, params: any[] = []) => {
-  try { await db.query(sql, params); return null; } catch (e: any) { return String(e.message); }
+  try { await db.query(sql, params); return null; } catch (e) { return String(e.message); }
 };
 const ingest = async (args: Record<string, unknown>) => {
   const keys = Object.keys(args);
@@ -471,9 +471,9 @@ describe("CRM — relatórios e vínculo com Vendas/OS", () => {
     const r = await asUser(U1, () => val<any>(`select crm_report($1, ${period})`, [A]));
     expect(r.totals).toMatchObject({ deals_created: 2, won: 2, lost: 0 });
     expect(Number(r.totals.won_value)).toBe(5200);
-    expect(r.funnel.map((f: any) => f.name)).toEqual(["Em atendimento", "Orçamento / negociação", "Ganho"]);
-    expect(r.funnel.map((f: any) => f.deals)).toEqual([2, 2, 2]);
-    expect(r.by_origin.find((o: any) => o.origin === "instagram")).toMatchObject({ created: 1, won: 1 });
+    expect(r.funnel.map((f: { name: string }) => f.name)).toEqual(["Em atendimento", "Orçamento / negociação", "Ganho"]);
+    expect(r.funnel.map((f: { deals: number }) => f.deals)).toEqual([2, 2, 2]);
+    expect(r.by_origin.find((o: { origin: string }) => o.origin === "instagram")).toMatchObject({ created: 1, won: 1 });
     expect(r.totals.conversations).toBeGreaterThan(0);
     expect(r.totals.answered).toBeGreaterThanOrEqual(1);
     expect(r.series).toHaveLength(8);
@@ -604,7 +604,7 @@ describe("CRM — o agente aprende", () => {
     expect(await val(`select status from crm_ai_examples where id = $1`, [pend])).toBe("approved");
     const s = await asUser(U1, () => val<any>(`select crm_ai_stats($1, 30)`, [A]));
     expect(s.library).toBeGreaterThanOrEqual(3);
-    expect(await asUser(U2, () => val<any>(`select crm_ai_stats(null, 30)`)).then((x: any) => x.library)).toBe(0);
+    expect(await asUser(U2, () => val<any>(`select crm_ai_stats(null, 30)`)).then((x) => x.library)).toBe(0);
   });
 });
 
@@ -652,7 +652,7 @@ describe("CRM — rastreamento de campanhas (Meta)", () => {
     await db.query(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "proposal"), deal]);
     await db.query(`update crm_deals set stage_id = $1 where id = $2`, [await stage(A, "sales", "won"), deal]);
     const ev = await events(c);
-    expect(ev.map((e: any) => e.event_name)).toEqual(["Lead", "QualifiedLead", "Purchase"]);
+    expect(ev.map((e) => e.event_name)).toEqual(["Lead", "QualifiedLead", "Purchase"]);
     expect(Number(ev[2].value)).toBe(450);
   });
 
@@ -663,7 +663,7 @@ describe("CRM — rastreamento de campanhas (Meta)", () => {
     await db.query(`update crm_tracking_settings set only_attributed = false where store_id = $1`, [A]);
 
     const rows = await asUser(U1, () => db.query<any>(`select * from crm_tracking_report($1, now() - interval '1 day', now() + interval '1 minute')`, [A]));
-    const tela = rows.rows.find((r: any) => r.campaign === "Tela A54");
+    const tela = rows.rows.find((r) => r.campaign === "Tela A54");
     expect(tela).toMatchObject({ source: "Link de rastreio", ad: "Video 1", contacts: 1, won: 1 });
     expect(Number(tela.revenue)).toBe(450);
     const b = await asUser(U2, () => db.query(`select * from crm_tracking_report(null, now() - interval '1 day', now() + interval '1 minute')`));
@@ -1386,7 +1386,7 @@ describe("CRM — rastreamento Meta (pixel + conta oficial)", () => {
       values ($1, $2, $3, $4, 'Película', 80, 'won', now() - interval '2 days') returning id`, [A, await salesPipe(), await stage(A, "sales", "won"), fresh]);
     const r = await val<any>(`select crm_meta_backfill($1, 30)`, [A]);
     expect(r.purchases).toBeGreaterThanOrEqual(1);
-    const ids = (await db.query<any>(`select event_id from crm_meta_events where contact_id in ($1, $2)`, [fresh, old])).rows.map((x: any) => x.event_id);
+    const ids = (await db.query<any>(`select event_id from crm_meta_events where contact_id in ($1, $2)`, [fresh, old])).rows.map((x) => x.event_id);
     expect(ids).toEqual(expect.arrayContaining([`lead:${fresh}`, `purchase:${deal}`]));
     expect(ids).not.toContain(`lead:${old}`);
     expect(await val<any>(`select crm_meta_backfill($1, 7)`, [A])).toMatchObject({ leads: 0, purchases: 0 }); // de novo não duplica
@@ -1404,12 +1404,12 @@ describe("CRM — rastreamento Meta (pixel + conta oficial)", () => {
       ($1, $2, '556', 'Carrossel', 'Público 25-45', 'iPhone Novembro', 40, 1000, 20, 3),
       ($3, $2, 'B-77', 'Outra loja', null, 'B', 10, 1, 1, 1)`, [A, today, B]);
     const rows = (await asUser(U1, () => db.query<any>(`select * from crm_ads_report($1, $2::date - 1, $2::date)`, [A, today]))).rows;
-    const v = rows.find((r: any) => r.ad_id === "555");
+    const v = rows.find((r) => r.ad_id === "555");
     expect(v).toMatchObject({ campaign_name: "iPhone Novembro", ad_name: "Vídeo iPhone", leads: 1, won: 1, conversations: 12 });
     expect(Number(v.spend)).toBe(120.5);
     expect(Number(v.revenue)).toBe(2500);
-    expect(rows.find((r: any) => r.ad_id === "556")).toMatchObject({ leads: 0, won: 0 }); // gastou e não trouxe ninguém
-    expect(rows.find((r: any) => r.ad_id === "B-77")).toBeUndefined(); // outra loja
+    expect(rows.find((r) => r.ad_id === "556")).toMatchObject({ leads: 0, won: 0 }); // gastou e não trouxe ninguém
+    expect(rows.find((r) => r.ad_id === "B-77")).toBeUndefined(); // outra loja
     expect((await asUser(U2, () => db.query(`select * from crm_ad_insights where store_id = $1`, [A]))).rows).toHaveLength(0);
     expect(await asUser(ADM, () => errorOf(`insert into crm_ad_insights (store_id, date, ad_id) values ($1, now()::date, 'x')`, [A]))).not.toBeNull();
   });

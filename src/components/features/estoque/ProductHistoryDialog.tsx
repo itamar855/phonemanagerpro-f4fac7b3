@@ -6,12 +6,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Tables } from "@/integrations/supabase/types";
+import type { ProductHistoryEntry } from "./types";
 
 interface ProductHistoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   historyProduct: Tables<"products"> | null;
-  productHistory: any[];
+  productHistory: ProductHistoryEntry[];
   formatCurrency: (value: number) => string;
 }
 

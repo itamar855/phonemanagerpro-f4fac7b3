@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, Search, Zap, FileText, Tag } from "lucide-react";
+import type { PdvPaymentForm, Store } from "./types";
 
 type Accessory = { id: string; store_id: string; name: string; category: string; brand: string | null; quantity: number; cost_price: number; sale_price: number | null };
 type CartItem = { acc: Accessory; qty: number; price: number };
@@ -21,9 +22,9 @@ interface PdvFormModalProps {
   cart: CartItem[];
   updateCartQty: (id: string, qty: number) => void;
   updateCartPrice: (id: string, price: number) => void;
-  pdvPayment: any;
-  setPdvPayment: (payment: any) => void;
-  stores: any[];
+  pdvPayment: PdvPaymentForm;
+  setPdvPayment: (payment: PdvPaymentForm) => void;
+  stores: Store[];
   handlePdvSubmit: (
     gerarNotinha: boolean,
     pdvCash: number,
@@ -214,10 +215,10 @@ export const PdvFormModal: React.FC<PdvFormModalProps> = ({
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  {[["cash","Dinheiro"], ["card","Cartão"], ["pix","PIX"]].map(([k, l]) => (
+                  {([["cash","Dinheiro"], ["card","Cartão"], ["pix","PIX"]] as const).map(([k, l]) => (
                     <div key={k} className="space-y-1">
                       <Label className="text-[10px]">{l}</Label>
-                      <Input type="number" step="0.01" value={(pdvPayment as any)[k]} onChange={e => setPdvPayment({ ...pdvPayment, [k]: e.target.value })} placeholder="0.00" className="h-9 text-xs" />
+                      <Input type="number" step="0.01" value={pdvPayment[k]} onChange={e => setPdvPayment({ ...pdvPayment, [k]: e.target.value })} placeholder="0.00" className="h-9 text-xs" />
                     </div>
                   ))}
                 </div>

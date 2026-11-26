@@ -21,7 +21,7 @@ describe('OS Billing — Business Rules', () => {
         amount: os.final_cost,
         description: `OS #${os.id.slice(0, 8)} - ${os.device_name}`,
         payment_method: os.payment_method,
-        receipt_url: null,
+        receipt_url: null as string | null,
         confirmed: false,
         created_by: TEST_USER_ID,
       };
@@ -75,8 +75,8 @@ describe('OS Billing — Business Rules', () => {
     });
 
     it('should warn user when no open register found', () => {
-      const register = null;
-      const registerId = register ? (register as any).id : null;
+      const register = null as { id: string } | null;
+      const registerId = register ? register.id : null;
 
       expect(registerId).toBeNull();
       // In the real code, this triggers toast.error("Nenhum caixa aberto na loja atual...")
@@ -153,7 +153,7 @@ describe('OS Billing — Business Rules', () => {
     });
 
     it('should leave cash entry pending (confirmed=false) if no payment voucher is attached', () => {
-      const deviceVoucher = null;
+      const deviceVoucher = null as string | null;
       const cashEntry = {
         amount: 1200,
         confirmed: !!deviceVoucher,

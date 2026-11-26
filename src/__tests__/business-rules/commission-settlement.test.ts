@@ -143,7 +143,7 @@ interface Transaction {
   metadata?: {
     source?: string;
     settlement_id?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 

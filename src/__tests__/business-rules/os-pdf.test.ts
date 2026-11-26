@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checklistCount, checklistRows, checklistSummary, cleanServiceRows, formatDay, hasChecklist, performedServices, recalcFinalPrice, serviceBreakdown } from "@/components/features/os/osPdfRules";
 import { generateOSPdf, generateThermalPdf } from "@/components/features/os/osPdf";
+import type { jsPDF } from "jspdf";
 
 describe("PDF da OS: checklist", () => {
   it("separa defeito, não testado e funcionando, na ordem da tela", () => {
@@ -83,7 +84,7 @@ describe("PDF da OS: serviço executado e valor cobrado", () => {
   });
 
   it("valor final na tela: serviços com valor somam com as peças e tiram o desconto", () => {
-    const prev = { final_price: "", discount_amount: "", services: [] };
+    const prev = { final_price: "", discount_amount: "", services: [] as { price: string }[] };
     expect(recalcFinalPrice(prev, { discount_amount: "50", services: [{ price: "500" }, { price: "200" }] }, 100)).toBe("750.00");
   });
 
@@ -108,13 +109,13 @@ describe("PDF da OS: gera o documento com as seções novas", () => {
     reported_defect: "Caiu na água", requested_service: "Outro",
     estimated_price: 740, final_price: 700, warranty_end_date: "2026-12-19T00:00:00+00:00",
     device_condition: "Tela trincada no canto",
-    services_performed: [{ description: "Limpeza da placa e troca do conector de carga", price: null }], discount_amount: 20,
+    services_performed: [{ description: "Limpeza da placa e troca do conector de carga", price: null as number | null }], discount_amount: 20,
     entry_checklist: { "Display / LCD": "defeito", "Wi-Fi": "na", "Botão Power": "ok" },
     exit_checklist: { "Display / LCD": "ok" },
     payment_pix: 700,
   };
-  const textOf = (doc: any) => {
-    const pages: string[] = doc.internal.pages.slice(1).map((p: string[]) => p.join("\n"));
+  const textOf = (doc: jsPDF) => {
+    const pages: string[] = (doc.internal as unknown as { pages: string[][] }).pages.slice(1).map((p) => p.join("\n"));
     return pages.join("\n");
   };
 

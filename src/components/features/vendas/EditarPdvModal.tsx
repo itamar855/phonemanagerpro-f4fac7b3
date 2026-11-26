@@ -5,9 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Zap, Banknote, CreditCard, QrCode, CalendarDays } from "lucide-react";
 
+import type { Transaction } from "./types";
+
 interface EditarPdvModalProps {
-  editPdvSale: any | null;
-  setEditPdvSale: (sale: any | null) => void;
+  editPdvSale: Transaction | null;
+  setEditPdvSale: (sale: Transaction | null) => void;
   handleSavePdvEdit: (e: React.FormEvent) => Promise<void>;
   editPdvForm: {
     description: string;

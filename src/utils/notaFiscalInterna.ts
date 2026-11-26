@@ -43,7 +43,7 @@ export interface NotaFiscalData {
   garantiaDays?: number;
 }
 
-export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<any> => {
+export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<jsPDF> => {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
   const M = 15; // Elegant wide margins
@@ -71,7 +71,7 @@ export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<any>
     y += 8;
   };
 
-  const drawField = (label: string, value: any, x: number, w: number, size = 9, bold = true) => {
+  const drawField = (label: string, value: string | number | null | undefined, x: number, w: number, size = 9, bold = true) => {
     doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(...COLORS.LIGHT_TEXT);
     doc.text(label.toUpperCase(), x + 4, y + 5);
     doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...COLORS.TEXT);
@@ -80,7 +80,7 @@ export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<any>
 
   // 1. PREMIUM HEADER
   if (data.lojaLogoUrl) {
-    try { doc.addImage(data.lojaLogoUrl, "PNG", M, y, 22, 22); } catch (_) {}
+    try { doc.addImage(data.lojaLogoUrl, "PNG", M, y, 22, 22); } catch { /* falha ignorada de propósito */ }
   }
   
   const tx = data.lojaLogoUrl ? 26 : 0;

@@ -27,7 +27,7 @@ const val = async <T = any>(sql: string, params: any[] = []): Promise<T> => {
   return r.rows[0] ? Object.values(r.rows[0])[0] : (undefined as T);
 };
 const errorOf = async (sql: string, params: any[] = []) => {
-  try { await db.query(sql, params); return null; } catch (e: any) { return String(e.message); }
+  try { await db.query(sql, params); return null; } catch (e) { return String(e.message); }
 };
 const asUser = async <T>(uid: string | null, fn: () => Promise<T>) => {
   await db.exec(uid
@@ -175,7 +175,7 @@ describe("tradein link: cliente refaz a avaliação", () => {
     expect(d.review.offer).toBe(1770);
     expect(d.review.blocked).toBe(false);
     expect(d.review.note).toBe("A bateria está 88%");
-    expect(d.review.answers.map((l: any) => l.question)).toEqual(["conta", "tela", "bateria", "carcaca", "biometria", "acessorios"]);
+    expect(d.review.answers.map((l: { question: string }) => l.question)).toEqual(["conta", "tela", "bateria", "carcaca", "biometria", "acessorios"]);
     expect(d.reviews_left).toBe(4);
     // a avaliação da loja não muda
     expect(await val(`select offer_max::int from tradein_evaluations where id = $1`, [E1])).toBe(1900);

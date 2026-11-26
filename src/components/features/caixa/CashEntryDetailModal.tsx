@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import {
   CashEntry, CashRegister, formatCurrency, getMistoLabel,
-  paymentLabels, statusConfig
+  paymentLabels, statusConfig, type OsItemWithProduct, type ServiceOrder
 } from "./types";
 import { openComprovante, parseReceiptUrls } from "@/lib/storageHelper";
 
@@ -19,8 +19,8 @@ interface CashEntryDetailModalProps {
   setEntryDetailDialog: (open: boolean) => void;
   selectedEntry: CashEntry | null;
   setSelectedEntry: (entry: CashEntry | null) => void;
-  linkedServiceOrder: any | null;
-  linkedOrderItems?: any[];
+  linkedServiceOrder: ServiceOrder | null;
+  linkedOrderItems?: OsItemWithProduct[];
   loadingLinkedOrder: boolean;
 
   confirmFile: File | null;
@@ -32,13 +32,13 @@ interface CashEntryDetailModalProps {
   handleConfirmEntry: (fromDetailModal: boolean) => Promise<void>;
   loading: boolean;
 
-  handleOpenFullOs: (order: any) => void;
+  handleOpenFullOs: (order: ServiceOrder) => void;
 
   // Visualização de OS
   osModalOpen: boolean;
   setOsModalOpen: (open: boolean) => void;
-  osModalOrder: any | null;
-  osModalItems: any[];
+  osModalOrder: ServiceOrder | null;
+  osModalItems: OsItemWithProduct[];
   loadingOsItems: boolean;
   storeList: { id: string; name: string }[];
   currentRegister: CashRegister | null;
@@ -279,7 +279,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                         <Package className="h-3 w-3 text-primary" /> Peças Utilizadas ({linkedOrderItems.length})
                       </span>
                       <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {linkedOrderItems.map((item: any) => {
+                        {linkedOrderItems.map((item) => {
                           const partReceipt = item.receipt_url || item.products?.parts_payment_voucher;
                           const orderReceipt = item.supplier_order_receipt_url;
                           return (
@@ -352,8 +352,8 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
               {/* Comprovantes existentes consolidados */}
               {(selectedEntry.receipt_url ||
                 linkedServiceOrder?.receipt_url ||
-                (selectedEntry as any).supplier_order_receipt_url ||
-                (linkedOrderItems && linkedOrderItems.some((it: any) => it.receipt_url || it.supplier_order_receipt_url || it.products?.parts_payment_voucher))) && (
+                selectedEntry.supplier_order_receipt_url ||
+                (linkedOrderItems && linkedOrderItems.some((it) => it.receipt_url || it.supplier_order_receipt_url || it.products?.parts_payment_voucher))) && (
                 <div className="space-y-2 pt-1 border-t border-border/40">
                   <p className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wide flex items-center gap-1">
                     <Receipt className="h-3 w-3 text-primary" /> Comprovantes Anexados
@@ -383,10 +383,10 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                     })()}
 
                     {/* Comprovante do Pedido ao Fornecedor do Lançamento */}
-                    {(selectedEntry as any).supplier_order_receipt_url && (
+                    {selectedEntry.supplier_order_receipt_url && (
                       <button
                         type="button"
-                        onClick={(e) => openComprovante((selectedEntry as any).supplier_order_receipt_url, e)}
+                        onClick={(e) => openComprovante(selectedEntry.supplier_order_receipt_url, e)}
                         className="w-full flex items-center justify-between text-xs text-blue-500 font-semibold bg-blue-500/10 border border-blue-500/30 px-3 py-2 rounded-lg hover:bg-blue-500/20 transition-all cursor-pointer text-left"
                       >
                         <span className="flex items-center gap-2">
@@ -398,7 +398,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                     )}
 
                     {/* Comprovantes de cada peça vinculada */}
-                    {linkedOrderItems && linkedOrderItems.map((item: any, idx: number) => {
+                    {linkedOrderItems && linkedOrderItems.map((item, idx: number) => {
                       const partReceipt = item.receipt_url || item.products?.parts_payment_voucher;
                       const orderReceipt = item.supplier_order_receipt_url;
                       if (!partReceipt && !orderReceipt) return null;
@@ -671,7 +671,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {osModalItems.map((item: any) => (
+                    {osModalItems.map((item) => (
                       <div
                         key={item.id}
                         className="p-2.5 rounded border border-border/60 bg-background/50 space-y-1.5"
@@ -682,7 +682,7 @@ export const CashEntryDetailModal: React.FC<CashEntryDetailModalProps> = ({
                             {item.products?.brand ? `(${item.products.brand})` : ""}
                           </span>
                           <span className="font-bold text-destructive">
-                            -{formatCurrency(Number(item.unit_cost || item.cost_price || 0))}
+                            -{formatCurrency(Number(item.unit_cost || 0))}
                           </span>
                         </div>
                         {item.supplier_name && (

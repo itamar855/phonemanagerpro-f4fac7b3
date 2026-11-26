@@ -13,13 +13,15 @@ import {
   type StoreAccessoryMetrics,
 } from "@/utils/rankingGamification";
 import { Trophy, Sparkles } from "lucide-react";
+import type { Profile, Store } from "@/types/db";
+import type { SellerStat } from "@/components/features/relatorios/reportTypes";
 
 const Ranking = () => {
   const { user, userRole, activeStoreId } = useAuth();
   const isAdmin = userRole === "admin";
 
-  const [stores, setStores] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [storeId, setStoreId] = useState<string>("all");
   const [rankPeriod, setRankPeriod] = useState<string>("month");
   const [rankSpecificDay, setRankSpecificDay] = useState<string>(
@@ -28,7 +30,7 @@ const Ranking = () => {
   const [rankCustomStart] = useState<string>("");
   const [rankCustomEnd] = useState<string>("");
 
-  const [ranking, setRanking] = useState<any[]>([]);
+  const [ranking, setRanking] = useState<SellerStat[]>([]);
   const [rankingPhones, setRankingPhones] = useState<RankSellerPhone[]>([]);
   const [rankingAccessories, setRankingAccessories] = useState<RankSellerAccessory[]>([]);
   const [rankingTechs, setRankingTechs] = useState<RankTechnician[]>([]);
@@ -53,7 +55,7 @@ const Ranking = () => {
 
   const currentStoreName =
     storeId !== "all"
-      ? ((storeMap.get(storeId) as any)?.name ?? "Todas as Lojas")
+      ? ((storeMap.get(storeId))?.name ?? "Todas as Lojas")
       : "Todas as Lojas";
   const currentRankPeriodLabel = getPeriodLabel(
     rankPeriod,
@@ -74,7 +76,7 @@ const Ranking = () => {
     const [salesRes, productsRes, rolesRes, accTxRes, osRes, partsRes, profsRes, storesRes] = await Promise.all([
       supabase
         .from("sales")
-        .select("*, products(*)")
+        .select("*, products!sales_product_id_fkey(*)")
         .gte("created_at", start)
         .lte("created_at", end),
       supabase.from("products").select("*"),
@@ -96,11 +98,11 @@ const Ranking = () => {
       supabase.from("stores").select("*"),
     ]);
 
-    const allSales = (salesRes.data ?? []) as any[];
-    const products = (productsRes.data ?? []) as any[];
-    const productMap = new Map(products.map((p: any) => [p.id, p]));
-    const roles = (rolesRes.data ?? []) as any[];
-    const allAccTx = (accTxRes.data ?? []) as any[];
+    const allSales = (salesRes.data ?? []);
+    const products = (productsRes.data ?? []);
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const roles = (rolesRes.data ?? []);
+    const allAccTx = (accTxRes.data ?? []);
     const activeProfiles = (profsRes.data && profsRes.data.length > 0) ? profsRes.data : profiles;
     const activeStores = (storesRes.data && storesRes.data.length > 0) ? storesRes.data : stores;
     if (profsRes.data && profsRes.data.length > 0) setProfiles(profsRes.data);
@@ -130,8 +132,8 @@ const Ranking = () => {
 
     // 3. Trilha Técnica de Bancada (Volume de OSs + Top 1 Extra)
     const { ranking: techRanking } = aggregateTechRanking({
-      serviceOrders: (osRes.data ?? []) as any[],
-      parts: (partsRes.data ?? []) as any[],
+      serviceOrders: (osRes.data ?? []),
+      parts: (partsRes.data ?? []),
       profiles: activeProfiles,
       stores: activeStores,
       userRoles: roles,
@@ -140,7 +142,7 @@ const Ranking = () => {
     setRankingTechs(techRanking);
 
     // 3. Formato compatível com o gráfico
-    const legacyStats: any[] = phoneRanking.map((p) => ({
+    const legacyStats: SellerStat[] = phoneRanking.map((p) => ({
       uid: p.uid,
       nome: p.nome,
       role: p.role,
@@ -148,7 +150,12 @@ const Ranking = () => {
       qtdVendas: p.qtdCelulares,
       lucro: p.totalLucro,
       comissoes: p.comissoesVendas,
+      comissoesPendentes: 0,
+      comissoesLiquidadas: 0,
+      comissoesVendas: p.comissoesVendas,
+      comissoesOS: 0,
       osEntregues: 0,
+      totalServicos: 0,
     }));
     setRanking(legacyStats);
   }, [

@@ -17,6 +17,11 @@ import { toast } from "sonner";
 import { gerarNotaFiscalInterna, type NotaFiscalData } from "@/utils/notaFiscalInterna";
 import { RelatorioDiarioTab } from "@/components/features/relatorios/RelatorioDiarioTab";
 import { calculateOSItemMetrics } from "@/utils/osCalculations";
+import type { CashEntry, Customer, Profile, SaleWithProduct, ServiceOrder, Store, UserRole } from "@/types/db";
+import type {
+  CaixaRow, CaixaStats, DiarioData, DreData, DreLine, FinanceiroRow, FinanceiroStats, LeadsData, MonthlyRow,
+  OsItemCost, OsStats, OsTechStat, ProductRankRow, SalesDetailRow, SellerStat, StoreBreakdownRow,
+} from "@/components/features/relatorios/reportTypes";
 import {
   fetchSettledItemIds,
   fetchSettlementsHistory,
@@ -66,8 +71,8 @@ const Relatorios = () => {
   const isAdmin = userRole === "admin";
   const canSettleCommissions = isAdmin || userPermissions?.gerenciar_financeiro === true;
   const [tab, setTab] = useState("dre");
-  const [stores, setStores] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [period, setPeriod] = useState("today");
   const [storeId, setStoreId] = useState("all");
   const [customStart, setCustomStart] = useState("");
@@ -79,42 +84,42 @@ const Relatorios = () => {
   const [rankCustomEnd] = useState("");
   const [notaLoading, setNotaLoading] = useState<string | null>(null);
 
-  const [dre, setDre] = useState<any>({});
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
-  const [storeBreakdown, setStoreBreakdown] = useState<any[]>([]);
-  const [salesDetail, setSalesDetail] = useState<any[]>([]);
-  const [rankingProducts, setRankingProducts] = useState<any[]>([]);
-  const [osData, setOsData] = useState<any[]>([]);
-  const [osStats, setOsStats] = useState<any>({});
+  const [dre, setDre] = useState<DreData>({});
+  const [monthlyData, setMonthlyData] = useState<MonthlyRow[]>([]);
+  const [storeBreakdown, setStoreBreakdown] = useState<StoreBreakdownRow[]>([]);
+  const [salesDetail, setSalesDetail] = useState<SalesDetailRow[]>([]);
+  const [rankingProducts, setRankingProducts] = useState<ProductRankRow[]>([]);
+  const [osData, setOsData] = useState<ServiceOrder[]>([]);
+  const [osStats, setOsStats] = useState<OsStats>({});
   const [osFilterTechId, setOsFilterTechId] = useState("all");
   const [osFilterStatus, setOsFilterStatus] = useState("all");
   const [osDateMode, setOsDateMode] = useState<"delivery" | "entry">("delivery");
   const [osSearch, setOsSearch] = useState("");
-  const [caixaData, setCaixaData] = useState<any[]>([]);
-  const [caixaStats, setCaixaStats] = useState<any>({});
-  const [ranking, setRanking] = useState<any[]>([]);
+  const [caixaData, setCaixaData] = useState<CaixaRow[]>([]);
+  const [caixaStats, setCaixaStats] = useState<CaixaStats>({});
+  const [ranking, setRanking] = useState<SellerStat[]>([]);
   const [rankingPhones, setRankingPhones] = useState<RankSellerPhone[]>([]);
   const [rankingAccessories, setRankingAccessories] = useState<RankSellerAccessory[]>([]);
   const [rankingTechs, setRankingTechs] = useState<RankTechnician[]>([]);
   const [storeAccessoryMetrics, setStoreAccessoryMetrics] = useState<Record<string, StoreAccessoryMetrics>>({});
-  const [comissoes, setComissoes] = useState<any[]>([]);
-  const [leadsData, setLeadsData] = useState<any>({ total: 0, bySource: [], conversion: 0 });
-  const [customerMap, setCustomerMap] = useState<Map<string, any>>(new Map());
-  const [financeiroData, setFinanceiroData] = useState<any[]>([]);
-  const [financeiroStats, setFinanceiroStats] = useState<any>({ totalEntradas: 0, totalSaidas: 0, saldoLiquido: 0 });
+  const [comissoes, setComissoes] = useState<SellerStat[]>([]);
+  const [leadsData, setLeadsData] = useState<LeadsData>({ total: 0, bySource: [], conversion: 0 });
+  const [customerMap, setCustomerMap] = useState<Map<string, Customer>>(new Map());
+  const [financeiroData, setFinanceiroData] = useState<FinanceiroRow[]>([]);
+  const [financeiroStats, setFinanceiroStats] = useState<FinanceiroStats>({ totalEntradas: 0, totalSaidas: 0, saldoLiquido: 0 });
 
   // ─ Liquidação de Comissões ──────────────────────────
   const [settledSaleIds, setSettledSaleIds] = useState<Set<string>>(new Set());
   const [settledOsIds, setSettledOsIds] = useState<Set<string>>(new Set());
   const [settlementsHistory, setSettlementsHistory] = useState<CommissionSettlement[]>([]);
-  const [rawSalesForPayout, setRawSalesForPayout] = useState<any[]>([]);
-  const [rawOsForPayout, setRawOsForPayout] = useState<any[]>([]);
-  const [osItemsForPayout, setOsItemsForPayout] = useState<any[]>([]);
-  const [roleMapForPayout, setRoleMapForPayout] = useState<Map<string, any>>(new Map());
+  const [rawSalesForPayout, setRawSalesForPayout] = useState<SaleWithProduct[]>([]);
+  const [rawOsForPayout, setRawOsForPayout] = useState<ServiceOrder[]>([]);
+  const [osItemsForPayout, setOsItemsForPayout] = useState<OsItemCost[]>([]);
+  const [roleMapForPayout, setRoleMapForPayout] = useState<Map<string, UserRole>>(new Map());
 
   // ─ Diário ───────────────────────────────────────
   const [diarioDay, setDiarioDay] = useState(new Date().toISOString().split("T")[0]);
-  const [diarioData, setDiarioData] = useState<any>(null);
+  const [diarioData, setDiarioData] = useState<DiarioData | null>(null);
   const [diarioLoading, setDiarioLoading] = useState(false);
 
   useEffect(() => {
@@ -129,7 +134,7 @@ const Relatorios = () => {
   const profileMap = useMemo(() => new Map(profiles.map(p => [p.user_id, p.display_name ?? p.user_id])), [profiles]);
   const storeMap = useMemo(() => new Map(stores.map(s => [s.id, s])), [stores]);
 
-  const currentStoreName = storeId !== "all" ? ((storeMap.get(storeId) as any)?.name ?? "Todas as Lojas") : "Todas as Lojas";
+  const currentStoreName = storeId !== "all" ? (storeMap.get(storeId)?.name ?? "Todas as Lojas") : "Todas as Lojas";
   const currentPeriodLabel = getPeriodLabel(period, customStart, customEnd, specificDay);
   const currentRankPeriodLabel = getPeriodLabel(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
 
@@ -151,73 +156,81 @@ const Relatorios = () => {
   const fetchDRE = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const q = (t: any) => effectiveStoreId && effectiveStoreId !== "all" ? t.eq("store_id", effectiveStoreId) : t;
+    const hasStore = !!effectiveStoreId && effectiveStoreId !== "all";
+    let salesQ = supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end);
+    let txQ = supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end);
+    let osQ = supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`);
+    if (hasStore) {
+      salesQ = salesQ.eq("store_id", effectiveStoreId);
+      txQ = txQ.eq("store_id", effectiveStoreId);
+      osQ = osQ.eq("store_id", effectiveStoreId);
+    }
     const [salesRes, productsRes, txRes, osRes] = await Promise.all([
-      q(supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end)),
+      salesQ,
       supabase.from("products").select("*"),
-      q(supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end)),
-      q(supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)),
+      txQ,
+      osQ,
     ]);
     const sales = salesRes.data ?? [];
     const products = productsRes.data ?? [];
     const tx = txRes.data ?? [];
     const os = osRes.data ?? [];
-    const productMap = new Map(products.map((p: any) => [p.id, p]));
+    const productMap = new Map(products.map((p) => [p.id, p]));
 
     // Fetch peças usadas nas OSs entregues no período
-    let osItems: any[] = [];
+    let osItems: OsItemCost[] = [];
     if (os.length > 0) {
       const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("service_order_id, unit_cost, quantity")
-        .in("service_order_id", os.map((o: any) => o.id));
+        .in("service_order_id", os.map((o) => o.id));
       osItems = itemsData ?? [];
     }
 
-    const receitaAparelhos = sales.reduce((s: number, x: any) => s + Number(x.sale_price), 0);
-    const receitaOS = os.reduce((s: number, x: any) => s + Number(x.final_price || x.estimated_price || 0), 0);
-    const accSales = tx.filter((t: any) => t.type === "income" && t.category === "acessorio");
-    const receitaAcessorios = accSales.reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const receitaAparelhos = sales.reduce((s: number, x) => s + Number(x.sale_price), 0);
+    const receitaOS = os.reduce((s: number, x) => s + Number(x.final_price || x.estimated_price || 0), 0);
+    const accSales = tx.filter((t) => t.type === "income" && t.category === "acessorio");
+    const receitaAcessorios = accSales.reduce((s: number, t) => s + Number(t.amount), 0);
 
-    const cmvAparelhos = sales.reduce((s: number, x: any) => s + Number((productMap.get(x.product_id) as any)?.cost_price || 0), 0);
-    const cmvAcessorios = tx.filter((t: any) => t.type === "expense_pj" && t.category === "acessorio").reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const cmvPecasOS = osItems.reduce((sum: number, item: any) => sum + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
+    const cmvAparelhos = sales.reduce((s: number, x) => s + Number(productMap.get(x.product_id)?.cost_price || 0), 0);
+    const cmvAcessorios = tx.filter((t) => t.type === "expense_pj" && t.category === "acessorio").reduce((s: number, t) => s + Number(t.amount), 0);
+    const cmvPecasOS = osItems.reduce((sum: number, item) => sum + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
 
     const totalReceita = receitaAparelhos + receitaAcessorios + receitaOS;
     const totalCmv = cmvAparelhos + cmvAcessorios + cmvPecasOS;
     // Exclui 'reparo' de despesas PJ para evitar duplicidade de dedução com cmvPecasOS
-    const despesasPJ = tx.filter((t: any) => t.type === "expense_pj" && t.category !== "acessorio" && t.category !== "reparo").reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const despesasPF = tx.filter((t: any) => t.type === "expense_pf").reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const proLabore = tx.filter((t: any) => t.type === "pro_labore").reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const despesasPJ = tx.filter((t) => t.type === "expense_pj" && t.category !== "acessorio" && t.category !== "reparo").reduce((s: number, t) => s + Number(t.amount), 0);
+    const despesasPF = tx.filter((t) => t.type === "expense_pf").reduce((s: number, t) => s + Number(t.amount), 0);
+    const proLabore = tx.filter((t) => t.type === "pro_labore").reduce((s: number, t) => s + Number(t.amount), 0);
     const lucroBruto = totalReceita - totalCmv;
     const totalDespesas = despesasPJ + despesasPF + proLabore;
     const lucroLiquido = lucroBruto - totalDespesas;
     setDre({ receitaAparelhos, receitaAcessorios, receitaOS, totalReceita, cmvAparelhos, cmvAcessorios, cmvPecasOS, totalCmv, lucroBruto, despesasPJ, despesasPF, proLabore, totalDespesas, lucroLiquido, qtdVendasAparelhos: sales.length, qtdVendasAcessorios: accSales.length, qtdOS: os.length });
 
     const now = new Date();
-    const mMap: Record<string, any> = {};
+    const mMap: Record<string, { receita: number; despesa: number }> = {};
     for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); mMap[MONTHS[d.getMonth()].substring(0, 3)] = { receita: 0, despesa: 0 }; }
-    sales.forEach((s: any) => { const k = MONTHS[new Date(s.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].receita += Number(s.sale_price); });
-    os.forEach((o: any) => { const k = MONTHS[new Date(o.delivered_at || o.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].receita += Number(o.final_price || o.estimated_price || 0); });
-    tx.forEach((t: any) => { if (t.type !== "sale" && t.type !== "income") { const k = MONTHS[new Date(t.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].despesa += Number(t.amount); } });
+    sales.forEach((s) => { const k = MONTHS[new Date(s.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].receita += Number(s.sale_price); });
+    os.forEach((o) => { const k = MONTHS[new Date(o.delivered_at || o.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].receita += Number(o.final_price || o.estimated_price || 0); });
+    tx.forEach((t) => { if (t.type !== "sale" && t.type !== "income") { const k = MONTHS[new Date(t.created_at).getMonth()].substring(0, 3); if (mMap[k]) mMap[k].despesa += Number(t.amount); } });
     setMonthlyData(Object.entries(mMap).map(([name, d]) => ({ name, receita: d.receita, despesa: d.despesa, lucro: d.receita - d.despesa })));
 
-    const sStats: Record<string, any> = {};
-    sales.forEach((s: any) => {
-      const name = (storeMap.get(s.store_id) as any)?.name || "Sem loja";
+    const sStats: Record<string, { vendas: number; lucro: number }> = {};
+    sales.forEach((s) => {
+      const name = storeMap.get(s.store_id)?.name || "Sem loja";
       if (!sStats[name]) sStats[name] = { vendas: 0, lucro: 0 };
       sStats[name].vendas += Number(s.sale_price);
-      sStats[name].lucro += Number(s.sale_price) - Number((productMap.get(s.product_id) as any)?.cost_price || 0);
+      sStats[name].lucro += Number(s.sale_price) - Number(productMap.get(s.product_id)?.cost_price || 0);
     });
-    os.forEach((o: any) => {
-      const name = (storeMap.get(o.store_id) as any)?.name || "Sem loja";
+    os.forEach((o) => {
+      const name = storeMap.get(o.store_id)?.name || "Sem loja";
       if (!sStats[name]) sStats[name] = { vendas: 0, lucro: 0 };
       const val = Number(o.final_price || o.estimated_price || 0);
       sStats[name].vendas += val;
-      const osCost = osItems.filter((i: any) => i.service_order_id === o.id).reduce((acc: number, i: any) => acc + (Number(i.unit_cost || 0) * Number(i.quantity || 1)), 0);
+      const osCost = osItems.filter((i) => i.service_order_id === o.id).reduce((acc: number, i) => acc + (Number(i.unit_cost || 0) * Number(i.quantity || 1)), 0);
       sStats[name].lucro += (val - osCost);
     });
-    setStoreBreakdown(Object.entries(sStats).map(([name, d]: any) => ({ name, ...d })));
+    setStoreBreakdown(Object.entries(sStats).map(([name, d]) => ({ name, ...d })));
   }, [period, storeId, customStart, customEnd, specificDay]);
 
   const fetchVendas = useCallback(async () => {
@@ -228,17 +241,17 @@ const Relatorios = () => {
       supabase.from("products").select("*"),
       supabase.from("customers").select("*"),
     ]);
-    const sales = (salesRes.data ?? []).filter((s: any) => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
-    const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p]));
-    const cMap = new Map((customersRes.data ?? []).map((c: any) => [c.id, c]));
+    const sales = (salesRes.data ?? []).filter((s) => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
+    const productMap = new Map((productsRes.data ?? []).map((p) => [p.id, p]));
+    const cMap = new Map((customersRes.data ?? []).map((c) => [c.id, c]));
     setCustomerMap(cMap);
-    const rows = sales.map((s: any) => {
-      const p: any = productMap.get(s.product_id);
+    const rows = sales.map((s) => {
+      const p = productMap.get(s.product_id);
       const lucro = Number(s.sale_price) - Number(p?.cost_price || 0);
-      return { _raw: s, _product: p, data: new Date(s.created_at).toLocaleDateString("pt-BR"), produto: p?.name ?? "—", marca: p?.brand ?? "—", loja: (storeMap.get(s.store_id) as any)?.name ?? "—", cliente: s.customer_name ?? "—", valor: Number(s.sale_price), custo: Number(p?.cost_price || 0), lucro, margem: Number(s.sale_price) > 0 ? (lucro / Number(s.sale_price)) * 100 : 0, dinheiro: Number(s.payment_cash), cartao: Number(s.payment_card), pix: Number(s.payment_pix), troca: s.has_trade_in ? "Sim ("+formatCurrency(Number(s.trade_in_value || 0))+")" : "Nao", comissao: formatCurrency(Number(s.commission_value || 0)) };
+      return { _raw: s, _product: p, data: new Date(s.created_at).toLocaleDateString("pt-BR"), produto: p?.name ?? "—", marca: p?.brand ?? "—", loja: storeMap.get(s.store_id)?.name ?? "—", cliente: s.customer_name ?? "—", valor: Number(s.sale_price), custo: Number(p?.cost_price || 0), lucro, margem: Number(s.sale_price) > 0 ? (lucro / Number(s.sale_price)) * 100 : 0, dinheiro: Number(s.payment_cash), cartao: Number(s.payment_card), pix: Number(s.payment_pix), troca: s.has_trade_in ? "Sim ("+formatCurrency(Number(s.trade_in_value || 0))+")" : "Nao", comissao: formatCurrency(Number(s.commission_value || 0)) };
     });
     setSalesDetail(rows);
-    const prodRank: Record<string, any> = {};
+    const prodRank: Record<string, ProductRankRow> = {};
     rows.forEach(r => { if (!prodRank[r.produto]) prodRank[r.produto] = { produto: r.produto, marca: r.marca, qtd: 0, total: 0, lucro: 0 }; prodRank[r.produto].qtd++; prodRank[r.produto].total += r.valor; prodRank[r.produto].lucro += r.lucro; });
     setRankingProducts(Object.values(prodRank).sort((a, b) => b.total - a.total).slice(0, 10));
   }, [period, storeId, customStart, customEnd, specificDay]);
@@ -253,22 +266,22 @@ const Relatorios = () => {
     const { data: allRaw } = await query
       .or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(created_at.gte.${start},created_at.lte.${end})`)
       .order("created_at", { ascending: false });
-    const all = ((allRaw ?? []) as any[]);
+    const all = (allRaw ?? []);
 
     // Fetch peças usadas para apurar custo real e margem da OS
-    let osItems: any[] = [];
+    let osItems: OsItemCost[] = [];
     if (all.length > 0) {
       const { data: itemsData } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("service_order_id, unit_cost, quantity")
-        .in("service_order_id", all.map((o: any) => o.id));
+        .in("service_order_id", all.map((o) => o.id));
       osItems = itemsData ?? [];
     }
 
     const { data: rolesData } = await supabase
       .from("user_roles")
       .select("user_id, role, commission_services_percent, commission_on_services");
-    const roleMap = new Map((rolesData ?? []).map((r: any) => [r.user_id, r]));
+    const roleMap = new Map((rolesData ?? []).map((r) => [r.user_id, r]));
 
     const startDate = new Date(start);
     const endDate = new Date(end);
@@ -292,12 +305,12 @@ const Relatorios = () => {
     );
 
     const custoPecasOS = osItems
-      .filter((item: any) => entreguesIds.has(item.service_order_id))
-      .reduce((s: number, item: any) => s + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
+      .filter((item) => entreguesIds.has(item.service_order_id))
+      .reduce((s: number, item) => s + (Number(item.unit_cost || 0) * Number(item.quantity || 1)), 0);
 
     const lucroBrutoOS = Math.max(0, totalReceitaOS - custoPecasOS);
 
-    const techStats: Record<string, any> = {};
+    const techStats: Record<string, OsTechStat> = {};
     all.forEach((o) => {
       const techId = o.technician_id;
       const name = techId ? (profileMap.get(techId) ?? "Técnico") : "Sem técnico";
@@ -317,7 +330,7 @@ const Relatorios = () => {
 
       if (entreguesIds.has(o.id)) {
         techStats[name].entregues++;
-        const osParts = osItems.filter((i: any) => i.service_order_id === o.id);
+        const osParts = osItems.filter((i) => i.service_order_id === o.id);
         const metrics = calculateOSItemMetrics(o, osParts, techId ? roleMap.get(techId) : null);
         techStats[name].receita += metrics.receitaOS;
         techStats[name].custoPecas += metrics.custoPecas;
@@ -344,7 +357,7 @@ const Relatorios = () => {
       custoPecas: custoPecasOS,
       lucroBruto: lucroBrutoOS,
       ticketMedio: entreguesNoPeriodo.length > 0 ? totalReceitaOS / entreguesNoPeriodo.length : 0,
-      byTech: Object.values(techStats).sort((a: any, b: any) => b.receita - a.receita),
+      byTech: Object.values(techStats).sort((a, b) => b.receita - a.receita),
       byService: Object.entries(serviceStats).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })),
     });
   }, [period, storeId, customStart, customEnd, specificDay, profileMap, userRole, activeStoreId]);
@@ -352,10 +365,10 @@ const Relatorios = () => {
   const fetchCaixa = useCallback(async () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const { data: registers } = await supabase.from("cash_registers" as any).select("*").gte("created_at", start).lte("created_at", end).order("created_at", { ascending: false });
-    const all = ((registers ?? []) as any[]).filter(r => effectiveStoreId === "all" || r.store_id === effectiveStoreId);
+    const { data: registers } = await supabase.from("cash_registers").select("*").gte("opened_at", start).lte("opened_at", end).order("opened_at", { ascending: false });
+    const all = (registers ?? []).filter(r => effectiveStoreId === "all" || r.store_id === effectiveStoreId);
     const closed = all.filter(r => r.status === "closed");
-    setCaixaData(all.map(r => ({ data: new Date(r.created_at).toLocaleDateString("pt-BR"), loja: (storeMap.get(r.store_id) as any)?.name ?? "—", status: r.status === "open" ? "Aberto" : "Fechado", abertura: Number(r.opening_amount || 0), fechamento: Number(r.closing_amount || 0), esperado: Number(r.expected_amount || 0), diferenca: Number(r.difference || 0), motivo: r.difference_reason ?? "" })));
+    setCaixaData(all.map(r => ({ data: new Date(r.opened_at).toLocaleDateString("pt-BR"), loja: storeMap.get(r.store_id)?.name ?? "—", status: r.status === "open" ? "Aberto" : "Fechado", abertura: Number(r.opening_amount || 0), fechamento: Number(r.closing_amount || 0), esperado: Number(r.expected_amount || 0), diferenca: Number(r.difference || 0), motivo: r.difference_reason ?? "" })));
     setCaixaStats({ total: all.length, abertos: all.filter(r => r.status === "open").length, fechados: closed.length, totalDiferenca: closed.reduce((s, r) => s + Number(r.difference || 0), 0), comDiferenca: closed.filter(r => Math.abs(Number(r.difference || 0)) > 5).length });
   }, [period, storeId, customStart, customEnd, specificDay]);
 
@@ -363,7 +376,7 @@ const Relatorios = () => {
     const { start, end } = getPeriodDates(rankPeriod, rankCustomStart, rankCustomEnd, rankSpecificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     const [salesRes, productsRes, osRes, rolesRes, settledIdsRes, historyRes, accTxRes, profsRes, storesRes] = await Promise.all([
-      supabase.from("sales").select("*, products(*)").gte("created_at", start).lte("created_at", end),
+      supabase.from("sales").select("*, products!sales_product_id_fkey(*)").gte("created_at", start).lte("created_at", end),
       supabase.from("products").select("*"),
       supabase.from("service_orders").select("*").eq("status", "delivered").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`),
       supabase.from("user_roles").select("*"),
@@ -373,13 +386,13 @@ const Relatorios = () => {
       supabase.from("profiles").select("*"),
       supabase.from("stores").select("*"),
     ]);
-    const allSales = ((salesRes.data ?? []) as any[]);
+    const allSales = (salesRes.data ?? []);
     const sales = allSales.filter(s => effectiveStoreId === "all" || s.store_id === effectiveStoreId);
-    const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p]));
-    const os = ((osRes.data ?? []) as any[]).filter(o => effectiveStoreId === "all" || o.store_id === effectiveStoreId);
-    const roles = (rolesRes.data ?? []) as any[];
-    const roleMap = new Map(roles.map((r: any) => [r.user_id, r]));
-    const allAccTx = (accTxRes.data ?? []) as any[];
+    const productMap = new Map((productsRes.data ?? []).map((p) => [p.id, p]));
+    const os = (osRes.data ?? []).filter(o => effectiveStoreId === "all" || o.store_id === effectiveStoreId);
+    const roles = (rolesRes.data ?? []);
+    const roleMap = new Map(roles.map((r) => [r.user_id, r]));
+    const allAccTx = (accTxRes.data ?? []);
     const activeProfiles = (profsRes.data && profsRes.data.length > 0) ? profsRes.data : profiles;
     const activeStores = (storesRes.data && storesRes.data.length > 0) ? storesRes.data : stores;
     if (profsRes.data && profsRes.data.length > 0) setProfiles(profsRes.data);
@@ -413,12 +426,12 @@ const Relatorios = () => {
     setStoreAccessoryMetrics(accMetrics);
 
     // Fetch peças usadas e status financeiro no Caixa para apurar margem líquida e elegibilidade das OSs
-    let osItems: any[] = [];
+    let osItems: OsItemCost[] = [];
     const pendingFinOsIds = new Set<string>();
     if (os.length > 0) {
-      const osIdsList = os.map((o: any) => o.id);
+      const osIdsList = os.map((o) => o.id);
       let cashEntriesQuery = supabase
-        .from("cash_entries" as any)
+        .from("cash_entries")
         .select("reference_id, description, confirmed, created_at, store_id")
         .eq("type", "entrada");
       if (effectiveStoreId && effectiveStoreId !== "all") {
@@ -427,7 +440,7 @@ const Relatorios = () => {
 
       const [itemsRes, entriesRes, reopenRes] = await Promise.all([
         supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, unit_cost, quantity")
           .in("service_order_id", osIdsList),
         cashEntriesQuery,
@@ -441,20 +454,20 @@ const Relatorios = () => {
       ]);
 
       osItems = itemsRes.data ?? [];
-      const osCashEntries = (entriesRes.data as any[]) ?? [];
+      const osCashEntries = (entriesRes.data ?? []);
       const lastReopenMap = new Map<string, string>();
-      ((reopenRes.data as any[]) ?? []).forEach((h: any) => {
+      ((reopenRes.data ?? [])).forEach((h) => {
         if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
           lastReopenMap.set(h.service_order_id, h.created_at);
         }
       });
 
-      os.forEach((o: any) => {
+      os.forEach((o) => {
         const expectedVal = Number(o.final_price || o.estimated_price || 0);
         if (expectedVal <= 0) return;
         const lastReopenAt = lastReopenMap.get(o.id) || null;
         const orderNum = Number(o.order_number);
-        const matching = osCashEntries.filter((e: any) => {
+        const matching = osCashEntries.filter((e) => {
           const desc = e.description || "";
           if (desc.startsWith("PDV:") || desc.startsWith("Venda:")) return false;
           if (lastReopenAt && e.created_at && e.created_at <= lastReopenAt) return false;
@@ -465,7 +478,7 @@ const Relatorios = () => {
         });
         const refDate = o.delivered_at || o.created_at || "";
         const isPostIntegration = refDate >= "2026-11-01";
-        if (matching.some((e: any) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
+        if (matching.some((e) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
           pendingFinOsIds.add(o.id);
         }
       });
@@ -487,7 +500,7 @@ const Relatorios = () => {
     });
     setRankingTechs(techRanking);
 
-    const stats: Record<string, any> = {};
+    const stats: Record<string, SellerStat> = {};
     const ensure = (uid: string) => {
       if (!stats[uid]) {
         const role = roleMap.get(uid)?.role || "vendedor";
@@ -510,11 +523,11 @@ const Relatorios = () => {
     };
     
     // CANONICAL_SALES_COMMISSION_OWNER = created_by
-    sales.forEach((s: any) => { 
+    sales.forEach((s) => { 
       ensure(s.created_by); 
       stats[s.created_by].totalVendas += Number(s.sale_price); 
       stats[s.created_by].qtdVendas++; 
-      const p: any = productMap.get(s.product_id); 
+      const p = productMap.get(s.product_id); 
       stats[s.created_by].lucro += Number(s.sale_price) - Number(p?.cost_price || 0); 
       const comm = Number(s.commission_value || 0);
       stats[s.created_by].comissoes += comm; 
@@ -527,7 +540,7 @@ const Relatorios = () => {
       }
     });
 
-    os.forEach((o: any) => { 
+    os.forEach((o) => { 
       // OS sem técnico NÃO gera comissão técnica para atendente (Salvaguarda 1 e 9)
       if (o.technician_id) {
         const uid = o.technician_id;
@@ -537,7 +550,7 @@ const Relatorios = () => {
         stats[uid].totalServicos += osTotal;
         stats[uid].totalVendas += osTotal;
 
-        const osParts = osItems.filter((item: any) => item.service_order_id === o.id);
+        const osParts = osItems.filter((item) => item.service_order_id === o.id);
         const userRoleData = roleMap.get(uid);
         const metrics = calculateOSItemMetrics(o, osParts, userRoleData);
 
@@ -564,7 +577,7 @@ const Relatorios = () => {
     const { start, end } = getPeriodDates(period, customStart, customEnd, specificDay);
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
     // Leads = contatos novos do CRM no período (sem equipe/fornecedor/pessoal); convertido = virou cliente
-    let q = supabase.from("crm_contacts" as any).select("id, origin_channel, customer_id")
+    let q = supabase.from("crm_contacts").select("id, origin_channel, customer_id")
       .eq("ignored", false).gte("created_at", start).lte("created_at", end);
     if (effectiveStoreId && effectiveStoreId !== "all") q = q.eq("store_id", effectiveStoreId);
     const { data: rows } = await q;
@@ -606,7 +619,7 @@ const Relatorios = () => {
     let totalEntradas = 0;
     let totalSaidas = 0;
     
-    const mapped = (txs ?? []).map((t: any) => {
+    const mapped = (txs ?? []).map((t) => {
       const amt = Number(t.amount) || 0;
       const isEntrada = ["income", "sale", "entrada"].includes(t.type);
       if (isEntrada) {
@@ -667,50 +680,55 @@ const Relatorios = () => {
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0).toISOString();
     const end   = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59).toISOString();
     const effectiveStoreId = isAdmin ? storeId : activeStoreId;
-    const q = (t: any) => effectiveStoreId && effectiveStoreId !== "all" ? t.eq("store_id", effectiveStoreId) : t;
+    const hasStore = !!effectiveStoreId && effectiveStoreId !== "all";
+    let salesQ = supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end);
+    let osQ = supabase.from("service_orders").select("*").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`);
+    let caixaQ = supabase.from("cash_registers").select("*").gte("opened_at", start).lte("opened_at", end);
+    let txQ = supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end);
+    if (hasStore) {
+      salesQ = salesQ.eq("store_id", effectiveStoreId);
+      osQ = osQ.eq("store_id", effectiveStoreId);
+      caixaQ = caixaQ.eq("store_id", effectiveStoreId);
+      txQ = txQ.eq("store_id", effectiveStoreId);
+    }
 
-    const [salesRes, osRes, caixaRes, txRes] = await Promise.all([
-      q(supabase.from("sales").select("*").gte("created_at", start).lte("created_at", end)),
-      q(supabase.from("service_orders").select("*").or(`and(delivered_at.gte.${start},delivered_at.lte.${end}),and(delivered_at.is.null,created_at.gte.${start},created_at.lte.${end})`)),
-      q(supabase.from("cash_registers" as any).select("*").gte("created_at", start).lte("created_at", end)),
-      q(supabase.from("transactions").select("*").gte("created_at", start).lte("created_at", end)),
-    ]);
+    const [salesRes, osRes, caixaRes, txRes] = await Promise.all([salesQ, osQ, caixaQ, txQ]);
 
     const sales = salesRes.data ?? [];
     const os = osRes.data ?? [];
-    const caixas = (caixaRes.data ?? []) as any[];
+    const caixas = (caixaRes.data ?? []);
     const txs = txRes.data ?? [];
 
-    const receitaVendas = sales.reduce((s: number, x: any) => s + Number(x.sale_price), 0);
-    const receitaOS = (os as any[]).filter((o: any) => o.status === "delivered").reduce((s: number, o: any) => s + Number(o.final_price || o.estimated_price || 0), 0);
-    const despesas = (txs as any[]).filter((t: any) => ["expense", "expense_pj", "expense_pf", "saida"].includes(t.type)).reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const receitaVendas = sales.reduce((s: number, x) => s + Number(x.sale_price), 0);
+    const receitaOS = os.filter((o) => o.status === "delivered").reduce((s: number, o) => s + Number(o.final_price || o.estimated_price || 0), 0);
+    const despesas = txs.filter((t) => ["expense", "expense_pj", "expense_pf", "saida"].includes(t.type)).reduce((s: number, t) => s + Number(t.amount), 0);
     const totalCaixa = caixas.filter(c => c.status === "closed").reduce((s, c) => s + Number(c.closing_amount || 0), 0);
 
     // Cash entries totals (confirmed only)
-    const cashIds = caixas.map((c: any) => c.id);
-    let cashEntries: any[] = [];
+    const cashIds = caixas.map((c) => c.id);
+    let cashEntries: CashEntry[] = [];
     if (cashIds.length > 0) {
-      const { data: ce } = await supabase.from("cash_entries" as any)
+      const { data: ce } = await supabase.from("cash_entries")
         .select("*")
         .in("cash_register_id", cashIds)
         .eq("confirmed", true);
       cashEntries = ce ?? [];
     }
-    const entradas = cashEntries.filter((e: any) => ["entrada"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
-    const saidas = cashEntries.filter((e: any) => ["saida", "sangria"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
+    const entradas = cashEntries.filter((e) => ["entrada"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
+    const saidas = cashEntries.filter((e) => ["saida", "sangria"].includes(e.type)).reduce((s, e) => s + Number(e.amount), 0);
 
     // Sales and OS by payment method
-    const osDelivered = (os as any[]).filter((o: any) => o.status === "delivered");
-    const totalDinheiro = sales.reduce((s: number, x: any) => s + Number(x.payment_cash || 0), 0)
-                        + osDelivered.reduce((s: number, x: any) => s + Number(x.payment_cash || 0), 0);
-    const totalCartao = sales.reduce((s: number, x: any) => s + Number(x.payment_card || 0), 0)
-                      + osDelivered.reduce((s: number, x: any) => s + Number(x.payment_card || 0), 0);
-    const totalPix = sales.reduce((s: number, x: any) => s + Number(x.payment_pix || 0), 0)
-                   + osDelivered.reduce((s: number, x: any) => s + Number(x.payment_pix || 0), 0);
+    const osDelivered = os.filter((o) => o.status === "delivered");
+    const totalDinheiro = sales.reduce((s: number, x) => s + Number(x.payment_cash || 0), 0)
+                        + osDelivered.reduce((s: number, x) => s + Number(x.payment_cash || 0), 0);
+    const totalCartao = sales.reduce((s: number, x) => s + Number(x.payment_card || 0), 0)
+                      + osDelivered.reduce((s: number, x) => s + Number(x.payment_card || 0), 0);
+    const totalPix = sales.reduce((s: number, x) => s + Number(x.payment_pix || 0), 0)
+                   + osDelivered.reduce((s: number, x) => s + Number(x.payment_pix || 0), 0);
 
     // Top sellers
     const sellerMap: Record<string, number> = {};
-    (sales as any[]).forEach((s: any) => {
+    sales.forEach((s) => {
       const uid = s.created_by;
       sellerMap[uid] = (sellerMap[uid] || 0) + Number(s.sale_price);
     });
@@ -724,7 +742,7 @@ const Relatorios = () => {
       qtdVendas: sales.length,
       receitaVendas,
       qtdOS: os.length,
-      osEntregues: (os as any[]).filter((o: any) => o.status === "delivered").length,
+      osEntregues: os.filter((o) => o.status === "delivered").length,
       receitaOS,
       receitaTotal: receitaVendas + receitaOS,
       despesas,
@@ -744,9 +762,9 @@ const Relatorios = () => {
   useEffect(() => { if (tab === "diario") fetchDiario(); }, [tab, fetchDiario]);
   useEffect(() => { if (tab === "diario") fetchDiario(); }, [diarioDay]);
 
-  const handleGerarNota = async (row: any, enviarWhatsApp = false) => {
+  const handleGerarNota = async (row: SalesDetailRow, enviarWhatsApp = false) => {
     const sale = row._raw; const product = row._product;
-    const store = storeMap.get(sale.store_id) as any;
+    const store = storeMap.get(sale.store_id);
     setNotaLoading(sale.id);
     try {
       const numeroNota = "VND-" + sale.id.slice(0, 8).toUpperCase();
@@ -787,7 +805,7 @@ const Relatorios = () => {
 
   const filterProps = { period, setPeriod, storeId, setStoreId, stores, customStart, setCustomStart, customEnd, setCustomEnd, specificDay, setSpecificDay, userRole };
 
-  const dreLines = [
+  const dreLines: DreLine[] = [
     { label: "Receita de Aparelhos", value: dre.receitaAparelhos ?? 0, sub: (dre.qtdVendasAparelhos ?? 0) + " vendas", type: "income" },
     { label: "Receita de Acessorios", value: dre.receitaAcessorios ?? 0, sub: (dre.qtdVendasAcessorios ?? 0) + " vendas", type: "income" },
     { label: "Receita de Servicos (OS)", value: dre.receitaOS ?? 0, sub: (dre.qtdOS ?? 0) + " entregues", type: "income" },

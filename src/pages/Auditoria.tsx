@@ -13,6 +13,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { AuditLog, Profile } from "@/types/db";
+
+/** Conteúdo gravado no log (justificativa, motivo e os valores alterados). */
+type LogPayload = { justification?: string; reason?: string; [key: string]: unknown };
+/** Log de auditoria; old_/new_ são nomes antigos que alguns registros ainda podem ter. */
+type AuditLogView = AuditLog & { old_values?: LogPayload; old_data?: LogPayload; new_values?: LogPayload; new_data?: LogPayload };
+/** O que foi gravado depois da ação (after_state hoje; new_data em registros antigos). */
+const afterOf = (log: AuditLogView): LogPayload | null =>
+  (log.after_state && typeof log.after_state === "object" && !Array.isArray(log.after_state)
+    ? (log.after_state as LogPayload)
+    : log.new_data) ?? null;
 
 const actionLabels: Record<string, string> = {
   CREATE_SALE: "Nova Venda",
@@ -38,16 +49,16 @@ const actionColors: Record<string, string> = {
 
 const Auditoria = () => {
   const { user, userRole, activeStoreId } = useAuth();
-  const [logs, setLogs] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AuditLogView[]>([]);
+  const [profiles, setProfiles] = useState<Pick<Profile, "user_id" | "display_name">[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+  const [selectedLog, setSelectedLog] = useState<AuditLogView | null>(null);
 
   const fetchLogs = async () => {
     setLoading(true);
     let query = supabase
-      .from("audit_logs" as any)
+      .from("audit_logs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);
@@ -138,9 +149,9 @@ const Auditoria = () => {
                             {log.entity_type ? `${log.entity_type.replace('_', ' ')}` : "Sistema"}
                           </span>
                         </div>
-                        {((log.new_data as any)?.justification || (log.new_data as any)?.reason) && (
+                        {(afterOf(log)?.justification || afterOf(log)?.reason) && (
                           <p className="text-[11px] bg-muted/40 p-1.5 rounded border border-border/50 text-foreground/80 italic font-medium max-w-md">
-                            "{(log.new_data as any)?.justification || (log.new_data as any)?.reason}"
+                            "{afterOf(log)?.justification || afterOf(log)?.reason}"
                           </p>
                         )}
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">

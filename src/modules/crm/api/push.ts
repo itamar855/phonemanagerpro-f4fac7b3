@@ -28,7 +28,7 @@ export async function enablePush(): Promise<PushSubscription> {
 export async function disablePush(): Promise<void> {
   const sub = await currentSubscription();
   if (!sub) return;
-  await invokeFn("crm-push", { action: "unsubscribe", endpoint: sub.endpoint }).catch(() => undefined);
+  await invokeFn("crm-push", { action: "unsubscribe", endpoint: sub.endpoint }).catch((): void => undefined);
   await sub.unsubscribe();
 }
 

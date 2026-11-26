@@ -92,7 +92,7 @@ export default function ConfiguracoesFiscais() {
 
       setCnpjSuccess(true);
       toast.success("Dados da empresa carregados diretamente da Receita Federal!", { id: "cnpj-search" });
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro ao consultar CNPJ.", { id: "cnpj-search" });
     } finally {
       setSearchingCnpj(false);
@@ -138,7 +138,7 @@ export default function ConfiguracoesFiscais() {
       });
 
       toast.success("Configurações fiscais salvas com sucesso!");
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao salvar configurações fiscais: " + err.message);
     } finally {
       setLoading(false);

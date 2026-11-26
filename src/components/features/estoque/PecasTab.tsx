@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Plus, Cpu, FileText, Upload, ArrowRightLeft, Trash2 } from "lucide-react";
+import type { PartForm, Product, SupplierOption } from "./types";
 
 interface PecasTabProps {
   partsSearch: string;
@@ -26,27 +27,17 @@ interface PecasTabProps {
   addPartOpen: boolean;
   setAddPartOpen: (open: boolean) => void;
   activeStoreId: string;
-  partForm: {
-    name: string;
-    brand: string;
-    model: string;
-    cost_price: string;
-    sale_price: string;
-    supplier_id: string;
-    launch_cash_out: boolean;
-    payment_method: string;
-    use_credit: boolean;
-  };
-  setPartForm: React.Dispatch<React.SetStateAction<any>>;
+  partForm: PartForm;
+  setPartForm: React.Dispatch<React.SetStateAction<PartForm>>;
   setPartVoucherFile: (f: File | null) => void;
-  suppliers: any[];
+  suppliers: SupplierOption[];
   supplierMap: Map<string, string>;
   storeMap: Map<string, string>;
-  filteredParts: any[];
+  filteredParts: Product[];
   formatCurrency: (value: number) => string;
   handleAddPart: (e: React.FormEvent) => void | Promise<void>;
   handleQuickUploadVoucher: (e: React.ChangeEvent<HTMLInputElement>, id: string) => void | Promise<void>;
-  handleReturnPart: (p: any) => void | Promise<void>;
+  handleReturnPart: (p: Product) => void | Promise<void>;
   onRequestDeletePart: (id: string) => void;
   loading: boolean;
 }
@@ -101,7 +92,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                   <Label className="text-xs">Nome da Peça *</Label>
                   <Input
                     value={partForm.name}
-                    onChange={(e) => setPartForm((f: any) => ({ ...f, name: e.target.value }))}
+                    onChange={(e) => setPartForm((f) => ({ ...f, name: e.target.value }))}
                     placeholder="Ex: Tela iPhone 13"
                     required
                     className="h-10"
@@ -111,7 +102,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                   <Label className="text-xs">Marca / Fabricante</Label>
                   <Input
                     value={partForm.brand}
-                    onChange={(e) => setPartForm((f: any) => ({ ...f, brand: e.target.value }))}
+                    onChange={(e) => setPartForm((f) => ({ ...f, brand: e.target.value }))}
                     placeholder="Apple, Samsung..."
                     className="h-10"
                   />
@@ -120,7 +111,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                   <Label className="text-xs">Modelo</Label>
                   <Input
                     value={partForm.model}
-                    onChange={(e) => setPartForm((f: any) => ({ ...f, model: e.target.value }))}
+                    onChange={(e) => setPartForm((f) => ({ ...f, model: e.target.value }))}
                     placeholder="iPhone 13 Pro"
                     className="h-10"
                   />
@@ -131,7 +122,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                     type="number"
                     step="0.01"
                     value={partForm.cost_price}
-                    onChange={(e) => setPartForm((f: any) => ({ ...f, cost_price: e.target.value }))}
+                    onChange={(e) => setPartForm((f) => ({ ...f, cost_price: e.target.value }))}
                     placeholder="0.00"
                     required
                     className="h-10"
@@ -143,7 +134,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                     type="number"
                     step="0.01"
                     value={partForm.sale_price}
-                    onChange={(e) => setPartForm((f: any) => ({ ...f, sale_price: e.target.value }))}
+                    onChange={(e) => setPartForm((f) => ({ ...f, sale_price: e.target.value }))}
                     placeholder="0.00 (auto)"
                     className="h-10"
                   />
@@ -154,7 +145,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                   <Select
                     value={partForm.supplier_id}
                     onValueChange={(v) =>
-                      setPartForm((f: any) => ({ ...f, supplier_id: v === "none" ? "" : v }))
+                      setPartForm((f) => ({ ...f, supplier_id: v === "none" ? "" : v }))
                     }
                   >
                     <SelectTrigger className="h-10">
@@ -193,7 +184,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                         type="checkbox"
                         checked={partForm.use_credit}
                         onChange={(e) =>
-                          setPartForm((f: any) => ({ ...f, use_credit: e.target.checked }))
+                          setPartForm((f) => ({ ...f, use_credit: e.target.checked }))
                         }
                         className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary cursor-pointer"
                       />
@@ -224,7 +215,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                     type="checkbox"
                     checked={partForm.launch_cash_out}
                     onChange={(e) =>
-                      setPartForm((f: any) => ({ ...f, launch_cash_out: e.target.checked }))
+                      setPartForm((f) => ({ ...f, launch_cash_out: e.target.checked }))
                     }
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary accent-primary cursor-pointer"
                   />
@@ -236,7 +227,7 @@ export const PecasTab: React.FC<PecasTabProps> = ({
                     <Select
                       value={partForm.payment_method}
                       onValueChange={(v) =>
-                        setPartForm((f: any) => ({ ...f, payment_method: v }))
+                        setPartForm((f) => ({ ...f, payment_method: v }))
                       }
                     >
                       <SelectTrigger className="h-10">
@@ -267,8 +258,8 @@ export const PecasTab: React.FC<PecasTabProps> = ({
         <div className="space-y-2">
           {filteredParts.map((p) => {
             const supplierName =
-              (p as any).supplier_name || (p as any).supplier_id
-                ? supplierMap.get((p as any).supplier_id)
+              p.supplier_name || p.supplier_id
+                ? supplierMap.get(p.supplier_id)
                 : null;
             const margin = p.sale_price ? Number(p.sale_price) - Number(p.cost_price) : null;
             return (

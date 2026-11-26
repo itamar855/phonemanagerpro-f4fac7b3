@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 
 // ============================================================
 // CellManagerPro — Debug Logger
@@ -118,7 +118,7 @@ function log(level: LogLevel, message: string, context?: Record<string, unknown>
 // ── Persistência no Supabase ────────────────────────────────
 async function persistLog(entry: LogEntry): Promise<void> {
   try {
-    await supabase.from("debug_logs" as any).insert({
+    await untypedDb.from("debug_logs").insert({
       level: entry.level,
       message: entry.message,
       context: {

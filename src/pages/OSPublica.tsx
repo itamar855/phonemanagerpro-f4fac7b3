@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { generateOSPdf, saveAndOpenPdf, type OsPdfItem } from "@/components/features/os/osPdf";
+import type { LucideIcon } from "lucide-react";
 
 interface PublicOrder {
   id?: string;
@@ -42,7 +43,7 @@ interface OrderPhoto {
   created_at: string;
 }
 
-const statusConfig: Record<string, { label: string; color: string; icon: any; iconColor: string; desc: string }> = {
+const statusConfig: Record<string, { label: string; color: string; icon: LucideIcon; iconColor: string; desc: string }> = {
   open:             { label: "Recebida pela loja", color: "bg-blue-500/10 border-blue-500/20 text-blue-500", iconColor: "text-blue-500 bg-blue-500/20", icon: Clock,        desc: "Aparelho deu entrada. Aguardando avaliação." },
   analyzing:        { label: "Em Análise",         color: "bg-yellow-500/10 border-yellow-500/20 text-yellow-500", iconColor: "text-yellow-500 bg-yellow-500/20", icon: AlertCircle,  desc: "Nossa equipe técnica está diagnosticando o problema." },
   waiting_part:     { label: "Aguardando Peça",    color: "bg-orange-500/10 border-orange-500/20 text-orange-500", iconColor: "text-orange-500 bg-orange-500/20", icon: Package,      desc: "Fornecedor acionado. Aguardando chegada da peça." },
@@ -71,19 +72,19 @@ export default function OSPublica() {
       try {
         // Tenta buscar dados completos (RPC nova)
         let orderData: PublicOrder | null = null;
-        const { data: fullData, error: fullErr } = await supabase.rpc("get_public_os_full_data" as any, {
+        const { data: fullData, error: fullErr } = await supabase.rpc("get_public_os_full_data", {
           p_order_id: id,
         });
 
-        if (!fullErr && fullData && (fullData as any[]).length > 0) {
-          orderData = (fullData as any[])[0] as PublicOrder;
+        if (!fullErr && fullData && fullData.length > 0) {
+          orderData = fullData[0] as PublicOrder;
         } else {
           // Fallback para RPC padrão
-          const { data: standardData, error: stdErr } = await supabase.rpc("get_public_service_order" as any, {
+          const { data: standardData, error: stdErr } = await supabase.rpc("get_public_service_order", {
             p_order_id: id,
           });
-          if (!stdErr && standardData && (standardData as any[]).length > 0) {
-            orderData = (standardData as any[])[0] as PublicOrder;
+          if (!stdErr && standardData && standardData.length > 0) {
+            orderData = standardData[0] as PublicOrder;
           }
         }
 
@@ -97,16 +98,16 @@ export default function OSPublica() {
 
         // Busca fotos anexadas à OS via RPC segura ou query
         try {
-          const { data: photosRpcData, error: photosRpcErr } = await supabase.rpc("get_public_service_order_photos" as any, {
+          const { data: photosRpcData, error: photosRpcErr } = await supabase.rpc("get_public_service_order_photos", {
             p_order_id: id,
           });
 
           if (!photosRpcErr && photosRpcData) {
-            setPhotos((photosRpcData as any[]) as OrderPhoto[]);
+            setPhotos(photosRpcData as OrderPhoto[]);
           } else {
             // Tentativa via tabela direta caso autenticado ou policy ativa
             const { data: directPhotos } = await supabase
-              .from("service_order_photos" as any)
+              .from("service_order_photos")
               .select("id, photo_url, stage, created_at")
               .eq("service_order_id", id)
               .order("created_at", { ascending: true });
@@ -156,14 +157,14 @@ export default function OSPublica() {
       };
 
       // Checklists, condição física, serviço executado e peças com o valor cobrado
-      const { data: extras } = await supabase.rpc("get_public_os_extras" as any, { p_order_id: order.id ?? id });
+      const { data: extras } = await supabase.rpc("get_public_os_extras", { p_order_id: order.id ?? id });
       const ex = (extras ?? {}) as { items?: OsPdfItem[] } & Record<string, unknown>;
       const { items = [], ...extraFields } = ex;
 
       const doc = await generateOSPdf({ ...orderObj, ...extraFields }, storeObj, "Técnico Especializado", window.location.href, items);
       saveAndOpenPdf(doc, `OS_${order.order_number}_${order.device_model || 'aparelho'}`, true);
       toast.success("Download da Ordem de Serviço concluído!");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao gerar PDF da OS:", err);
       toast.error("Erro ao gerar PDF: " + (err?.message || "Tente novamente"));
     } finally {

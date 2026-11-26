@@ -55,7 +55,7 @@ interface AbatementResult {
 function purchasePartWithCredit(supplier: Supplier, part: Product, useCredit: boolean): AbatementResult {
   let creditUsed = 0;
   let remainingAmount = part.cost_price;
-  let updatedSupplier = { ...supplier };
+  const updatedSupplier = { ...supplier };
 
   if (useCredit && part.supplier_id === supplier.id) {
     if (supplier.credit_balance > 0) {

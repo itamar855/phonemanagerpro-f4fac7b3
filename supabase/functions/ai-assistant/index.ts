@@ -99,7 +99,7 @@ Se a imagem não contiver informações legíveis de um aparelho ou for de algo 
     if (GEMINI_API_KEY) {
       const cleanBase64 = image ? String(image).replace(/^data:image\/[a-z]+;base64,/, "") : null;
 
-      const contentsParts: any[] = [
+      const contentsParts: Record<string, unknown>[] = [
         { text: userPrompt }
       ];
 
@@ -112,7 +112,7 @@ Se a imagem não contiver informações legíveis de um aparelho ou for de algo 
         });
       }
 
-      const geminiBody: any = {
+      const geminiBody: Record<string, unknown> = {
         system_instruction: {
           parts: [{ text: systemPrompt }]
         },

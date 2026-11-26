@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import type { Store, Transaction } from "@/types/db";
 const fmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 type AccountBalance = {
@@ -40,9 +41,9 @@ type AccountBalance = {
 export default function Contas() {
   const { user, activeStoreId, userRole } = useAuth();
   const [balances, setBalances] = useState<AccountBalance[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stores, setStores] = useState<Map<string, string>>(new Map());
-  const [rawStores, setRawStores] = useState<any[]>([]);
+  const [rawStores, setRawStores] = useState<Pick<Store, "id" | "name">[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("pj");
   const [periodFilter, setPeriodFilter] = useState<"day" | "week" | "month" | "year" | "all">("all");
@@ -84,12 +85,12 @@ export default function Contas() {
     // Filter accounts:
     // PJ accounts: loaded if they are linked to the active store OR if they are global (store_id is null)
     // PF accounts: loaded globally (all PF accounts)
-    const pjAccounts = allAccounts.filter((a: any) => a.owner_type !== "PF" && (!a.store_id || a.store_id === activeStoreId));
+    const pjAccounts = allAccounts.filter((a) => a.owner_type !== "PF" && (!a.store_id || a.store_id === activeStoreId));
     
     // Deduplicate PF accounts by bank_name (PF accounts are global/personal, only 1 per bank)
     const seenPfNames = new Set<string>();
     const pfAccounts = userRole === "admin"
-      ? allAccounts.filter((a: any) => a.owner_type === "PF").filter((a: any) => {
+      ? allAccounts.filter((a) => a.owner_type === "PF").filter((a) => {
           const key = (a.bank_name || "").toLowerCase().trim();
           if (seenPfNames.has(key)) return false;
           seenPfNames.add(key);
@@ -167,7 +168,7 @@ export default function Contas() {
       debit_settlement_days: parseInt(bankForm.debit_settlement_days) || 1,
       pix_fee_percent: parseFloat(bankForm.pix_fee_percent) || 0,
       pix_settlement_days: parseInt(bankForm.pix_settlement_days) || 0,
-    } as any);
+    });
 
     if (error) {
       toast.error(error.message);
@@ -212,15 +213,15 @@ export default function Contas() {
     return isSrc ? acc + Number(t.amount) : acc;
   }, 0);
   // Agrupamento por Categoria para PF
-  const pfCategories = pfTransactions
+  const pfCategories: Record<string, number> = pfTransactions
     .filter(t => pf.some(a => a.account_id === t.source_account_id)) // Apenas saídas
-    .reduce((acc: any, t) => {
+    .reduce((acc, t) => {
       const cat = t.category || "Outros";
       acc[cat] = (acc[cat] || 0) + Number(t.amount);
       return acc;
-    }, {});
+    }, {} as Record<string, number>);
   const sortedPfCategories = Object.entries(pfCategories)
-    .sort(([, a]: any, [, b]: any) => b - a)
+    .sort(([, a], [, b]) => b - a)
     .slice(0, 5);
   const AccountCard = ({ acc }: { acc: AccountBalance }) => (
     <Card className="border-primary/10 bg-card overflow-hidden shadow-sm hover:border-primary transition-all">
@@ -443,7 +444,7 @@ export default function Contas() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    {sortedPfCategories.length > 0 ? sortedPfCategories.map(([cat, val]: any) => {
+                    {sortedPfCategories.length > 0 ? sortedPfCategories.map(([cat, val]) => {
                       const perc = (val / (pfExpense || 1)) * 100;
                       return (
                         <div key={cat} className="space-y-1.5">

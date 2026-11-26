@@ -23,7 +23,8 @@ import {
   Phone, User, FileText, MessageCircle, Banknote, CreditCard, QrCode, DollarSign,
   Printer, ChevronRight, ChevronLeft, Camera, Upload, Receipt, Shield, Trash2, Store, Copy
 } from "lucide-react";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables, TablesUpdate } from "@/integrations/supabase/types";
+import { errorMessage, type ServiceOrder } from "@/types/db";
 import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { openComprovante, getSignedComprovanteUrl, parseReceiptUrls } from "@/lib/storageHelper";
 import { KanbanBoard } from "@/components/KanbanBoard";
@@ -32,7 +33,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { triggerWebhook } from "@/utils/webhookSender";
 import { logAction } from "@/utils/auditLogger";
 import { OSCard } from "@/components/features/os/OSCard";
-import { OSFormModal } from "@/components/features/os/OSFormModal";
+import { OSFormModal, type OsForm } from "@/components/features/os/OSFormModal";
 import { OSDetailModal } from "@/components/features/os/OSDetailModal";
 import { OSJustificationDialog } from "@/components/features/os/OSJustificationDialog";
 import { OSFinancialConfirmDialog } from "@/components/features/os/OSFinancialConfirmDialog";
@@ -59,7 +60,7 @@ const OrdensServico = () => {
   const [stores, setStores] = useState<Tables<"stores">[]>([]);
   const [profiles, setProfiles] = useState<Tables<"profiles">[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [detailOrder, setDetailOrder] = useState<any | null>(null);
+  const [detailOrder, setDetailOrder] = useState<ServiceOrder | null>(null);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterTechnicianId, setFilterTechnicianId] = useState<string>("all");
@@ -72,7 +73,7 @@ const OrdensServico = () => {
   const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
   const [justification, setJustification] = useState("");
   const [actionType, setActionType] = useState<"delete" | "status" | "transfer" | "update" | null>(null);
-  const [pendingUpdate, setPendingUpdate] = useState<any>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{ orderId: string; newStatus: string; oldStatus: string } | null>(null);
   const [justDialogOpened, setJustDialogOpened] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,8 +98,8 @@ const OrdensServico = () => {
   const [patternImageData, setPatternImageData] = useState<string>("");
   const [deviceOffAgreed, setDeviceOffAgreed] = useState(false);
 
-  const [form, setForm] = useState({
-    customer_id: null as string | null,
+  const [form, setForm] = useState<OsForm>({
+    customer_id: null,
     customer_name: "", customer_phone: "", customer_cpf: "",
     device_brand: "iPhone", device_model: "", device_imei: "", device_color: "",
     device_condition: "", device_password: "", device_accessories: "",
@@ -121,7 +122,7 @@ const OrdensServico = () => {
       .neq("new_status", "delivered")
       .order("created_at", { ascending: false })
       .limit(1);
-    return data && data.length > 0 ? (data[0] as any).created_at : null;
+    return data && data.length > 0 ? data[0].created_at : null;
   };
 
   const fetchData = async () => {
@@ -133,7 +134,7 @@ const OrdensServico = () => {
     }
     
     let cashQuery = supabase
-      .from("cash_entries" as any)
+      .from("cash_entries")
       .select("reference_id, description, confirmed, store_id, created_at")
       .eq("type", "entrada");
 
@@ -154,24 +155,24 @@ const OrdensServico = () => {
         .order("created_at", { ascending: false }),
     ]);
 
-    const loadedOrders = (ordersRes.data as any[]) ?? [];
+    const loadedOrders = ordersRes.data ?? [];
     setOrders(loadedOrders);
     setStores(storesRes.data ?? []);
     setProfiles(profilesRes.data ?? []);
 
     const lastReopenMap = new Map<string, string>();
     if (reopenRes.data) {
-      reopenRes.data.forEach((h: any) => {
+      reopenRes.data.forEach((h) => {
         if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
           lastReopenMap.set(h.service_order_id, h.created_at);
         }
       });
     }
 
-    const entries = (cashRes.data as any[]) ?? [];
+    const entries = cashRes.data ?? [];
     const idSet = new Set<string>();
 
-    loadedOrders.forEach((o: any) => {
+    loadedOrders.forEach((o) => {
       if (o.status !== "delivered") return;
       const expectedVal = Number(o.final_price || o.estimated_price || 0);
       if (expectedVal <= 0) return;
@@ -179,7 +180,7 @@ const OrdensServico = () => {
       const lastReopenAt = lastReopenMap.get(o.id) || null;
       const orderNum = Number(o.order_number);
 
-      const matchingEntries = entries.filter((entry: any) => {
+      const matchingEntries = entries.filter((entry) => {
         const desc = entry.description || "";
         if (desc.startsWith("PDV:") || desc.startsWith("Venda:")) return false;
         if (lastReopenAt && entry.created_at && entry.created_at <= lastReopenAt) return false;
@@ -195,7 +196,7 @@ const OrdensServico = () => {
       const refDate = o.delivered_at || o.created_at || "";
       const isPostIntegration = refDate >= "2026-11-01";
 
-      if (matchingEntries.some((e: any) => !e.confirmed) || (matchingEntries.length === 0 && isPostIntegration)) {
+      if (matchingEntries.some((e) => !e.confirmed) || (matchingEntries.length === 0 && isPostIntegration)) {
         idSet.add(o.id);
       }
     });
@@ -204,7 +205,7 @@ const OrdensServico = () => {
     setPendingFinancialOSNumbers(new Set());
   };
 
-  const isFinancialPending = (order: any) => {
+  const isFinancialPending = (order: ServiceOrder | null) => {
     if (!order || order.status !== "delivered") return false;
     return (
       pendingFinancialOSIds.has(order.id) ||
@@ -213,13 +214,13 @@ const OrdensServico = () => {
   };
 
   const [financialConfirmOpen, setFinancialConfirmOpen] = useState(false);
-  const [financialConfirmOrder, setFinancialConfirmOrder] = useState<any | null>(null);
+  const [financialConfirmOrder, setFinancialConfirmOrder] = useState<ServiceOrder | null>(null);
   const [financialMissingItems, setFinancialMissingItems] = useState<string[]>([]);
   const [financialConfirmLoading, setFinancialConfirmLoading] = useState(false);
 
   // Trava e Popup para Valor Final Obrigatório antes do Fechamento da OS
   const [finalPriceRequiredOpen, setFinalPriceRequiredOpen] = useState(false);
-  const [finalPriceRequiredOrder, setFinalPriceRequiredOrder] = useState<any | null>(null);
+  const [finalPriceRequiredOrder, setFinalPriceRequiredOrder] = useState<ServiceOrder | null>(null);
   const [finalPriceInputValue, setFinalPriceInputValue] = useState("");
   const [finalPriceSaving, setFinalPriceSaving] = useState(false);
   const [finalPricePendingStatus, setFinalPricePendingStatus] = useState<{ orderId: string; newStatus: string; oldStatus: string; reason?: string } | null>(null);
@@ -246,7 +247,7 @@ const OrdensServico = () => {
       setOrders(prev => prev.map(o => o.id === finalPriceRequiredOrder.id ? { ...o, final_price: priceNum } : o));
       if (detailOrder?.id === finalPriceRequiredOrder.id) {
         setDetailOrder(prev => prev ? { ...prev, final_price: priceNum } : null);
-        setUpdateForm((prev: any) => ({ ...prev, final_price: String(priceNum) }));
+        setUpdateForm((prev: typeof updateForm) => ({ ...prev, final_price: String(priceNum) }));
       }
 
       const pending = finalPricePendingStatus;
@@ -258,37 +259,37 @@ const OrdensServico = () => {
         isSubmitting.current = false;
         await updateStatus(pending.orderId, pending.newStatus, pending.oldStatus, pending.reason);
       }
-    } catch (err: any) {
-      toast.error("Erro ao salvar valor final: " + err.message);
+    } catch (err) {
+      toast.error("Erro ao salvar valor final: " + errorMessage(err));
     } finally {
       setFinalPriceSaving(false);
     }
   };
 
-  const executeFinancialConfirmation = async (order: any, isBypass = false) => {
+  const executeFinancialConfirmation = async (order: ServiceOrder | null, isBypass = false) => {
     if (!user || !order) return;
     setFinancialConfirmLoading(true);
     try {
       const lastReopenAt = await getLastReopenTimestamp(order.id);
       let existingQuery = supabase
-        .from("cash_entries" as any)
+        .from("cash_entries")
         .select("id")
         .eq("type", "entrada")
         .eq("reference_id", order.id);
       if (lastReopenAt) existingQuery = existingQuery.gt("created_at", lastReopenAt);
       const { data: existingByRef } = await existingQuery.limit(1);
 
-      let existingByDesc: any[] | null = null;
+      let existingByDesc: { id: string }[] | null = null;
       if (!existingByRef || existingByRef.length === 0) {
         let descQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("store_id", order.store_id)
           .like("description", `OS #${order.order_number} %`);
         if (lastReopenAt) descQ = descQ.gt("created_at", lastReopenAt);
         const resDesc = await descQ.limit(1);
-        existingByDesc = resDesc.data as any[];
+        existingByDesc = resDesc.data;
       }
 
       const hasActiveEntry = (existingByRef && existingByRef.length > 0) || (existingByDesc && existingByDesc.length > 0);
@@ -314,14 +315,14 @@ const OrdensServico = () => {
           if (other > 0) await createPendingCashEntry(order.store_id, user.id, other, desc, "outro", order.receipt_url || null, order.id, true);
         }
       } else {
-        const confirmPayload: any = { confirmed: true };
+        const confirmPayload: TablesUpdate<"cash_entries"> = { confirmed: true };
         if (order.receipt_url) confirmPayload.receipt_url = order.receipt_url;
 
-        let updRef = supabase.from("cash_entries" as any).update(confirmPayload).eq("type", "entrada").eq("reference_id", order.id);
+        let updRef = supabase.from("cash_entries").update(confirmPayload).eq("type", "entrada").eq("reference_id", order.id);
         if (lastReopenAt) updRef = updRef.gt("created_at", lastReopenAt);
         await updRef;
 
-        let updDesc = supabase.from("cash_entries" as any).update(confirmPayload).eq("type", "entrada").eq("store_id", order.store_id).like("description", `OS #${order.order_number} %`);
+        let updDesc = supabase.from("cash_entries").update(confirmPayload).eq("type", "entrada").eq("store_id", order.store_id).like("description", `OS #${order.order_number} %`);
         if (lastReopenAt) updDesc = updDesc.gt("created_at", lastReopenAt);
         await updDesc;
       }
@@ -356,14 +357,14 @@ const OrdensServico = () => {
       setFinancialConfirmOpen(false);
       setFinancialConfirmOrder(null);
       fetchData();
-    } catch (err: any) {
-      toast.error("Erro ao confirmar no financeiro: " + err.message);
+    } catch (err) {
+      toast.error("Erro ao confirmar no financeiro: " + errorMessage(err));
     } finally {
       setFinancialConfirmLoading(false);
     }
   };
 
-  const checkMissingReceipts = async (orderId: string, fallbackOrder?: any) => {
+  const checkMissingReceipts = async (orderId: string, fallbackOrder?: ServiceOrder | null) => {
     const { data: freshOrder } = await supabase
       .from("service_orders")
       .select("*")
@@ -390,12 +391,12 @@ const OrdensServico = () => {
     }
 
     const { data: parts } = await supabase
-      .from("service_order_items" as any)
+      .from("service_order_items")
       .select("id, unit_cost, receipt_url, supplier_name, products(name, brand, model, parts_payment_voucher)")
       .eq("service_order_id", orderId);
 
     if (parts && parts.length > 0) {
-      parts.forEach((p: any) => {
+      parts.forEach((p) => {
         const hasPartReceipt = p.receipt_url || p.products?.parts_payment_voucher;
         if (!hasPartReceipt) {
           const partName = p.products?.name || "Peça";
@@ -408,7 +409,7 @@ const OrdensServico = () => {
     return { targetOrder, missing };
   };
 
-  const handleConfirmFinancial = async (order: any) => {
+  const handleConfirmFinancial = async (order: ServiceOrder | null) => {
     if (!user || !order) return;
     try {
       const { targetOrder, missing } = await checkMissingReceipts(order.id, order);
@@ -424,8 +425,8 @@ const OrdensServico = () => {
         setFinancialMissingItems(missing);
         setFinancialConfirmOpen(true);
       }
-    } catch (err: any) {
-      toast.error("Erro ao verificar comprovantes: " + err.message);
+    } catch (err) {
+      toast.error("Erro ao verificar comprovantes: " + errorMessage(err));
     }
   };
 
@@ -539,23 +540,23 @@ const OrdensServico = () => {
       let resolvedCustomerId = form.customer_id || null;
 
       if (form.customer_name) {
-        let query = supabase.from("customers" as any).select("id").eq("name", form.customer_name);
+        let query = supabase.from("customers").select("id").eq("name", form.customer_name);
         if (form.customer_phone) query = query.eq("phone", form.customer_phone);
         if (form.customer_cpf) query = query.eq("cpf", form.customer_cpf);
         
-        const { data: extCust } = await (query as any).limit(1).maybeSingle();
+        const { data: extCust } = await query.limit(1).maybeSingle();
         
         if (extCust) {
-          resolvedCustomerId = (extCust as any).id;
+          resolvedCustomerId = extCust.id;
         } else if (!resolvedCustomerId) {
-          const { data: newCust } = await (supabase.from("customers" as any).insert({
+          const { data: newCust } = await supabase.from("customers").insert({
             name: form.customer_name,
             phone: form.customer_phone || null,
             cpf: form.customer_cpf || null,
             created_by: user.id,
             store_id: storeIdToUse,
-          }).select("id") as any).maybeSingle();
-          if (newCust) resolvedCustomerId = (newCust as any).id;
+          }).select("id").maybeSingle();
+          if (newCust) resolvedCustomerId = newCust.id;
         }
       }
 
@@ -585,7 +586,7 @@ const OrdensServico = () => {
         internal_notes: form.internal_notes || null,
         created_by: user.id,
         status: "open",
-      } as any).select().single();
+      }).select().single();
 
       if (error) { 
         toast.error("Erro ao criar OS: " + error.message); 
@@ -594,10 +595,10 @@ const OrdensServico = () => {
         setDialogOpen(false); 
         resetForm(); 
         fetchData(); 
-        logAction("CREATE_RECORD", "service_orders" as any, (data as any)?.id, null, form, storeIdToUse);
+        logAction("CREATE_RECORD", "service_orders", data?.id, null, form, storeIdToUse);
       }
-    } catch (err: any) {
-      toast.error("Erro inesperado: " + err.message);
+    } catch (err) {
+      toast.error("Erro inesperado: " + errorMessage(err));
     } finally {
       isSubmitting.current = false;
       setLoading(false);
@@ -613,7 +614,7 @@ const OrdensServico = () => {
     // o status, para que os botões de status rápido (ex: "Entregue") não percam o
     // método de pagamento escolhido pelo técnico ao reler a OS do banco a seguir.
     if (detailOrder?.id === orderId) {
-      const paymentUpdates: any = {};
+      const paymentUpdates: TablesUpdate<"service_orders"> = {};
       if (updateForm.payment_cash !== "") paymentUpdates.payment_cash = parseFloat(updateForm.payment_cash) || 0;
       if (updateForm.payment_card !== "") paymentUpdates.payment_card = parseFloat(updateForm.payment_card) || 0;
       if (updateForm.payment_pix !== "") paymentUpdates.payment_pix = parseFloat(updateForm.payment_pix) || 0;
@@ -635,7 +636,7 @@ const OrdensServico = () => {
       }
 
       const { data: settledRows } = await supabase
-        .from("commission_settlement_items" as any)
+        .from("commission_settlement_items")
         .select("id")
         .eq("service_order_id", orderId)
         .limit(1);
@@ -664,7 +665,7 @@ const OrdensServico = () => {
       const targetStoreId = targetOrder?.store_id || (activeStoreId !== "all" ? activeStoreId : null);
       if (currentFinalPrice > 0 && targetStoreId) {
         const { data: openRegs } = await supabase
-          .from("cash_registers" as any)
+          .from("cash_registers")
           .select("id")
           .eq("store_id", targetStoreId)
           .eq("status", "open")
@@ -698,7 +699,7 @@ const OrdensServico = () => {
     isSubmitting.current = true;
     const priorReopenAt = await getLastReopenTimestamp(orderId);
 
-    const updates: any = { status: newStatus };
+    const updates: TablesUpdate<"service_orders"> = { status: newStatus };
     if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
     if (isLeavingDelivered) updates.delivered_at = null;
     if (newStatus === "ready") updates.completed_at = new Date().toISOString();
@@ -722,37 +723,37 @@ const OrdensServico = () => {
     }
 
     const order = orders.find(o => o.id === orderId);
-    if (order && (order as any).store_id) {
-      triggerWebhook("os_status_changed", (order as any).store_id, {
+    if (order && order.store_id) {
+      triggerWebhook("os_status_changed", order.store_id, {
         order_id: orderId,
-        order_number: (order as any).order_number,
-        customer: (order as any).customer_name,
-        device: `${(order as any).device_brand} ${(order as any).device_model}`,
+        order_number: order.order_number,
+        customer: order.customer_name,
+        device: `${order.device_brand} ${order.device_model}`,
         old_status: oldStatus,
         new_status: newStatus,
       });
-      logAction("UPDATE_OS_STATUS", "service_orders", orderId, { status: oldStatus }, { status: newStatus, reason }, (order as any).store_id);
+      logAction("UPDATE_OS_STATUS", "service_orders", orderId, { status: oldStatus }, { status: newStatus, reason }, order.store_id);
     }
 
     await supabase.from("service_order_history").insert({
       service_order_id: orderId, old_status: oldStatus,
       new_status: newStatus, created_by: user.id, notes: reason || null,
-    } as any);
+    });
 
     // Estorno financeiro automático ao tirar uma OS do status "delivered"
     if (isLeavingDelivered) {
       const { data: freshReopened } = await supabase.from("service_orders").select("*").eq("id", orderId).maybeSingle();
-      const targetOs: any = freshReopened || order;
+      const targetOs = freshReopened || order;
       if (targetOs && targetOs.store_id) {
         let refEntriesQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id, cash_register_id, amount, payment_method")
           .eq("type", "entrada")
           .eq("reference_id", orderId);
         if (priorReopenAt) refEntriesQ = refEntriesQ.gt("created_at", priorReopenAt);
 
         let descEntriesQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id, cash_register_id, amount, payment_method")
           .eq("type", "entrada")
           .eq("store_id", targetOs.store_id)
@@ -761,9 +762,10 @@ const OrdensServico = () => {
         if (priorReopenAt) descEntriesQ = descEntriesQ.gt("created_at", priorReopenAt);
 
         const [refEntriesRes, descEntriesRes] = await Promise.all([refEntriesQ, descEntriesQ]);
-        const activeEntriesMap = new Map<string, any>();
-        ((refEntriesRes.data as any[]) || []).forEach((e) => activeEntriesMap.set(e.id, e));
-        ((descEntriesRes.data as any[]) || []).forEach((e) => activeEntriesMap.set(e.id, e));
+        type ActiveEntry = NonNullable<typeof refEntriesRes.data>[number];
+        const activeEntriesMap = new Map<string, ActiveEntry>();
+        (refEntriesRes.data || []).forEach((e) => activeEntriesMap.set(e.id, e));
+        (descEntriesRes.data || []).forEach((e) => activeEntriesMap.set(e.id, e));
         const activeEntries = Array.from(activeEntriesMap.values());
 
         let txQuery = supabase
@@ -778,9 +780,9 @@ const OrdensServico = () => {
         if (activeEntries.length > 0) {
           const regIds = Array.from(new Set(activeEntries.map((e) => e.cash_register_id).filter(Boolean)));
           const { data: regsData } = regIds.length > 0
-            ? await supabase.from("cash_registers" as any).select("id, status").in("id", regIds)
-            : { data: [] as any[] };
-          const regStatusMap = new Map<string, string>(((regsData as any[]) || []).map((r) => [r.id, r.status]));
+            ? await supabase.from("cash_registers").select("id, status").in("id", regIds)
+            : { data: [] as { id: string; status: string }[] };
+          const regStatusMap = new Map<string, string>((regsData || []).map((r) => [r.id, r.status]));
 
           const openEntryIds = activeEntries
             .filter((e) => regStatusMap.get(e.cash_register_id) === "open")
@@ -789,9 +791,9 @@ const OrdensServico = () => {
 
           // 1. Entradas em caixa AINDA ABERTO: remove na origem (mesmo turno)
           if (openEntryIds.length > 0) {
-            await supabase.from("cash_entries" as any).delete().in("id", openEntryIds);
+            await supabase.from("cash_entries").delete().in("id", openEntryIds);
             if (activeTxs && activeTxs.length > 0 && closedEntries.length === 0) {
-              await supabase.from("transactions").delete().in("id", activeTxs.map((t: any) => t.id));
+              await supabase.from("transactions").delete().in("id", activeTxs.map((t) => t.id));
             }
             toast.info(`Lançamento da OS #${targetOs.order_number} estornado do caixa aberto.`);
           }
@@ -819,15 +821,15 @@ const OrdensServico = () => {
 
             if (refundPhysical) {
               const { data: currentOpenRegs } = await supabase
-                .from("cash_registers" as any)
+                .from("cash_registers")
                 .select("id")
                 .eq("store_id", targetOs.store_id)
                 .eq("status", "open")
                 .limit(1);
 
               if (currentOpenRegs && currentOpenRegs.length > 0) {
-                await supabase.from("cash_entries" as any).insert({
-                  cash_register_id: (currentOpenRegs[0] as any).id,
+                await supabase.from("cash_entries").insert({
+                  cash_register_id: currentOpenRegs[0].id,
                   store_id: targetOs.store_id,
                   type: "saida",
                   amount: closedTotal,
@@ -835,7 +837,7 @@ const OrdensServico = () => {
                   description: estornoDesc,
                   confirmed: true,
                   created_by: user.id,
-                } as any);
+                });
                 toast.info(`Saída de estorno (${formatCurrency(closedTotal)}) registrada no caixa aberto atual.`);
               } else {
                 toast.warning("Estorno contábil registrado no DRE, mas não há caixa aberto agora para lançar saída física da gaveta.");
@@ -845,7 +847,7 @@ const OrdensServico = () => {
             }
           }
         } else if (activeTxs && activeTxs.length > 0) {
-          await supabase.from("transactions").delete().in("id", activeTxs.map((t: any) => t.id));
+          await supabase.from("transactions").delete().in("id", activeTxs.map((t) => t.id));
         }
       }
     }
@@ -853,11 +855,11 @@ const OrdensServico = () => {
     if (newStatus === "cancelled") {
       // Reverter peças vinculadas de volta para in_stock
       const { data: items } = await supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("product_id")
         .eq("service_order_id", orderId);
       if (items && items.length > 0) {
-        const prodIds = items.map((i: any) => i.product_id).filter(Boolean);
+        const prodIds = items.map((i) => i.product_id).filter(Boolean);
         if (prodIds.length > 0) {
           await supabase
             .from("products")
@@ -872,8 +874,8 @@ const OrdensServico = () => {
       // Busca dados mais recentes diretamente do banco e avalia comprovantes
       const { targetOrder: freshTarget, missing: deliveryMissing } = await checkMissingReceipts(orderId);
       const order = freshTarget || orders.find(o => o.id === orderId);
-      if (order && (order as any).store_id) {
-        const o = order as any;
+      if (order && order.store_id) {
+        const o = order;
         const serviceName = o.requested_service || [o.device_brand, o.device_model].filter(Boolean).join(" ") || "Serviço";
         const clientName = o.customer_name || "Cliente";
         const desc = `OS #${o.order_number} — ${serviceName} (${clientName})`;
@@ -884,24 +886,24 @@ const OrdensServico = () => {
 
         // Idempotência pós-reabertura: verifica separadamente entradas ativas no Caixa e receitas no DRE
         let existingCashQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("reference_id", o.id);
         if (lastReopenAt) existingCashQ = existingCashQ.gt("created_at", lastReopenAt);
         const { data: existingCashByRef } = await existingCashQ.limit(1);
 
-        let existingCashByDesc: any[] | null = null;
+        let existingCashByDesc: { id: string }[] | null = null;
         if (!existingCashByRef || existingCashByRef.length === 0) {
           let descCashQ = supabase
-            .from("cash_entries" as any)
+            .from("cash_entries")
             .select("id")
             .eq("type", "entrada")
             .eq("store_id", o.store_id)
             .like("description", `OS #${o.order_number} %`);
           if (lastReopenAt) descCashQ = descCashQ.gt("created_at", lastReopenAt);
           const resCashDesc = await descCashQ.limit(1);
-          existingCashByDesc = resCashDesc.data as any[];
+          existingCashByDesc = resCashDesc.data;
         }
         const hasActiveCashEntry = (existingCashByRef && existingCashByRef.length > 0) || (existingCashByDesc && existingCashByDesc.length > 0);
 
@@ -1065,7 +1067,7 @@ const OrdensServico = () => {
     setLoading(true);
 
     const isVendedor = userRole === "vendedor";
-    const updates: any = {};
+    const updates: TablesUpdate<"service_orders"> = {};
     if (updateForm.final_price) updates.final_price = parseFloat(updateForm.final_price);
 
     // Trava: uma OS já entregue nunca pode ficar com Valor Final zerado/negativo,
@@ -1149,24 +1151,24 @@ const OrdensServico = () => {
 
         const lastReopenAt = await getLastReopenTimestamp(detailOrder.id);
         let existingEntriesQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id, payment_method, amount, cash_register_id")
           .eq("type", "entrada")
           .eq("reference_id", detailOrder.id);
         if (lastReopenAt) existingEntriesQ = existingEntriesQ.gt("created_at", lastReopenAt);
         const { data: existingEntriesByRef } = await existingEntriesQ;
 
-        let existingEntriesByDesc: any[] | null = null;
+        let existingEntriesByDesc: typeof existingEntriesByRef = null;
         if (!existingEntriesByRef || existingEntriesByRef.length === 0) {
           let descQ = supabase
-            .from("cash_entries" as any)
+            .from("cash_entries")
             .select("id, payment_method, amount, cash_register_id")
             .eq("type", "entrada")
             .eq("store_id", detailOrder.store_id)
             .like("description", `OS #${detailOrder.order_number} %`);
           if (lastReopenAt) descQ = descQ.gt("created_at", lastReopenAt);
           const resDesc = await descQ;
-          existingEntriesByDesc = resDesc.data as any[];
+          existingEntriesByDesc = resDesc.data;
         }
         const hasExistingEntries = (existingEntriesByRef && existingEntriesByRef.length > 0) || (existingEntriesByDesc && existingEntriesByDesc.length > 0);
 
@@ -1196,7 +1198,7 @@ const OrdensServico = () => {
             }
           }
         } else {
-          const entryUpdatePayload: any = {};
+          const entryUpdatePayload: TablesUpdate<"cash_entries"> = {};
           if (finalReceiptUrl) entryUpdatePayload.receipt_url = finalReceiptUrl;
           if (canConfirmService) entryUpdatePayload.confirmed = true;
 
@@ -1206,7 +1208,7 @@ const OrdensServico = () => {
           // automaticamente o caso simples de um único lançamento/método; casos com
           // múltiplos lançamentos ou caixa já fechado exigem correção manual de um
           // administrador para não corromper um caixa já fechado/conferido.
-          const targetEntries: any[] = (existingEntriesByRef && existingEntriesByRef.length > 0)
+          const targetEntries = (existingEntriesByRef && existingEntriesByRef.length > 0)
             ? existingEntriesByRef
             : (existingEntriesByDesc || []);
 
@@ -1224,12 +1226,12 @@ const OrdensServico = () => {
 
               if (methodChanged || amountChanged) {
                 const { data: regData } = entry.cash_register_id
-                  ? await supabase.from("cash_registers" as any).select("status").eq("id", entry.cash_register_id).maybeSingle()
-                  : { data: null as any };
-                const registerOpen = (regData as any)?.status === "open";
+                  ? await supabase.from("cash_registers").select("status").eq("id", entry.cash_register_id).maybeSingle()
+                  : { data: null as { status: string } | null };
+                const registerOpen = regData?.status === "open";
 
                 if (registerOpen) {
-                  await supabase.from("cash_entries" as any).update({ payment_method: newMethod, amount: newAmount }).eq("id", entry.id);
+                  await supabase.from("cash_entries").update({ payment_method: newMethod, amount: newAmount }).eq("id", entry.id);
                   if (methodChanged) {
                     toast.success(`Lançamento do caixa corrigido de "${entry.payment_method}" para "${newMethod}".`);
                   }
@@ -1247,11 +1249,11 @@ const OrdensServico = () => {
           }
 
           if (Object.keys(entryUpdatePayload).length > 0) {
-            let updRef = supabase.from("cash_entries" as any).update(entryUpdatePayload).eq("type", "entrada").eq("reference_id", detailOrder.id);
+            let updRef = supabase.from("cash_entries").update(entryUpdatePayload).eq("type", "entrada").eq("reference_id", detailOrder.id);
             if (lastReopenAt) updRef = updRef.gt("created_at", lastReopenAt);
             await updRef;
 
-            let updDesc = supabase.from("cash_entries" as any).update(entryUpdatePayload).eq("type", "entrada").eq("store_id", detailOrder.store_id).like("description", `OS #${detailOrder.order_number} %`);
+            let updDesc = supabase.from("cash_entries").update(entryUpdatePayload).eq("type", "entrada").eq("store_id", detailOrder.store_id).like("description", `OS #${detailOrder.order_number} %`);
             if (lastReopenAt) updDesc = updDesc.gt("created_at", lastReopenAt);
             await updDesc;
           }
@@ -1282,7 +1284,7 @@ const OrdensServico = () => {
       const receiptUrl = detailOrder?.receipt_url;
 
       // 1. Invocar RPC atômica cancel_service_order
-      const { error } = await supabase.rpc("cancel_service_order" as any, {
+      const { error } = await supabase.rpc("cancel_service_order", {
         p_service_order_id: id,
         p_reason: reason,
       });
@@ -1310,14 +1312,14 @@ const OrdensServico = () => {
       setDetailOrder(null);
       fetchData();
       logAction("DELETE_RECORD", "service_orders", id, null, { reason }, activeStoreId);
-    } catch (err: any) {
-      toast.error("Erro ao excluir: " + err.message);
+    } catch (err) {
+      toast.error("Erro ao excluir: " + errorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggleWaiveCommission = async (order: any, reason?: string) => {
+  const handleToggleWaiveCommission = async (order: ServiceOrder | null, reason?: string) => {
     if (!user || !order) return;
     const isCurrentlyWaived = isOSCommissionWaived(order);
     const newWaived = !isCurrentlyWaived;
@@ -1333,7 +1335,7 @@ const OrdensServico = () => {
         newNotes = currentNotes.replace(/\[COMISSAO_ANULADA:.*?\]\n?/g, "").trim();
       }
 
-      const updates: any = { internal_notes: newNotes, updated_at: new Date().toISOString() };
+      const updates = { internal_notes: newNotes, updated_at: new Date().toISOString() };
 
       const { error } = await supabase
         .from("service_orders")
@@ -1348,7 +1350,7 @@ const OrdensServico = () => {
         new_status: order.status,
         created_by: user.id,
         notes: newWaived ? `Comissão do técnico anulada. Motivo: ${reason || "Não informado"}` : "Comissão do técnico reativada",
-      } as any);
+      });
 
       logAction("UPDATE_RECORD", "service_orders", order.id, null, {
         action: newWaived ? "WAIVE_COMMISSION" : "RESTORE_COMMISSION",
@@ -1359,11 +1361,11 @@ const OrdensServico = () => {
 
       toast.success(newWaived ? `Comissão da OS #${order.order_number} anulada!` : `Comissão da OS #${order.order_number} reativada!`);
       if (detailOrder?.id === order.id) {
-        setDetailOrder((prev: any) => ({ ...prev, ...updates }));
+        setDetailOrder((prev) => (prev ? { ...prev, ...updates } : prev));
       }
       fetchData();
-    } catch (err: any) {
-      toast.error("Erro ao alterar comissão: " + err.message);
+    } catch (err) {
+      toast.error("Erro ao alterar comissão: " + errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -1372,19 +1374,19 @@ const OrdensServico = () => {
   const handleMoveStore = async (newStoreId: string, reason: string) => {
     if (!detailOrder) return;
     setLoading(true);
-    const { error } = await supabase.from("service_orders").update({ store_id: newStoreId } as any).eq("id", detailOrder.id);
+    const { error } = await supabase.from("service_orders").update({ store_id: newStoreId }).eq("id", detailOrder.id);
     if (error) {
       toast.error("Erro ao mover OS: " + error.message);
     } else {
       toast.success("OS movida para a nova unidade!");
       setDetailOrder({ ...detailOrder, store_id: newStoreId });
       fetchData();
-      logAction("TRANSFER_STOCK" as any, "service_orders", detailOrder.id, { from: detailOrder.store_id }, { to: newStoreId, reason }, activeStoreId);
+      logAction("TRANSFER_STOCK", "service_orders", detailOrder.id, { from: detailOrder.store_id }, { to: newStoreId, reason }, activeStoreId);
     }
     setLoading(false);
   };
 
-  const handleExportPdf = async (order: any) => {
+  const handleExportPdf = async (order: ServiceOrder) => {
     setPdfLoading(true);
     try {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
@@ -1400,7 +1402,7 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
-  const handleExportThermal = async (order: any) => {
+  const handleExportThermal = async (order: ServiceOrder) => {
     setPdfLoading(true);
     try {
       const storeObj = stores.find(s => s.id === order.store_id) ?? { name: "Assistência Técnica" };
@@ -1414,7 +1416,7 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
-  const handleSendWhatsApp = async (order: any) => {
+  const handleSendWhatsApp = async (order: ServiceOrder) => {
     if (!order.customer_phone) { toast.error("Cliente sem telefone cadastrado!"); return; }
     setPdfLoading(true);
     try {
@@ -1447,7 +1449,7 @@ const OrdensServico = () => {
     setPdfLoading(false);
   };
 
-  const handleDuplicateOS = (order: any) => {
+  const handleDuplicateOS = (order: ServiceOrder | null) => {
     if (!order) return;
 
     const isPattern = typeof order.device_password === "string" && order.device_password.startsWith("Padrão: ");
@@ -1485,7 +1487,7 @@ const OrdensServico = () => {
       internal_notes: order.internal_notes 
         ? `[Duplicada da OS #${order.order_number}] ${order.internal_notes}` 
         : `[Duplicada da OS #${order.order_number}]`,
-      entry_checklist: order.entry_checklist || ({} as ChecklistData),
+      entry_checklist: (order.entry_checklist as ChecklistData) || ({} as ChecklistData),
       device_is_off: !!order.device_is_off,
     });
 
@@ -1500,7 +1502,7 @@ const OrdensServico = () => {
     toast.info(`Dados da OS #${order.order_number} duplicados no formulário. Revise os campos e confirme para gerar a nova OS/Orçamento.`);
   };
 
-  const filtered = orders.filter((o: any) => {
+  const filtered = orders.filter((o) => {
     // Filtro por Técnico / Minhas OS
     if (onlyMyOrders && user?.id) {
       if (o.technician_id !== user.id) return false;
@@ -1533,12 +1535,12 @@ const OrdensServico = () => {
     return match && (filterStatus === "all" || o.status === filterStatus);
   });
 
-  const statusCounts = orders.reduce((acc: any, o: any) => {
+  const statusCounts = orders.reduce((acc, o) => {
     acc[o.status] = (acc[o.status] || 0) + 1; return acc;
   }, {} as Record<string, number>);
 
   // Preenche updateForm quando abre o detail
-  const openDetail = (order: any) => {
+  const openDetail = (order: ServiceOrder) => {
     setDetailOrder(order);
     setReceiptFile(null);
     setReceiptFiles([]);
@@ -1612,7 +1614,7 @@ const OrdensServico = () => {
     });
   }, [openOsParam, orders]);
 
-  const totalPaid = (o: any) =>
+  const totalPaid = (o: ServiceOrder | null | undefined) =>
     (Number(o?.payment_cash) || 0) + (Number(o?.payment_card) || 0) +
     (Number(o?.payment_pix) || 0) + (Number(o?.payment_other) || 0);
 
@@ -1800,7 +1802,7 @@ const OrdensServico = () => {
       {/* List or Kanban */}
       {viewMode === "list" ? (
       <div className="space-y-2.5">
-        {filtered.length > 0 ? filtered.map((order: any) => (
+        {filtered.length > 0 ? filtered.map((order) => (
           <OSCard
             key={order.id}
             order={order}
@@ -1825,7 +1827,7 @@ const OrdensServico = () => {
       ) : (
         <KanbanBoard 
           orders={filtered} 
-          statusConfig={statusConfig as any} 
+          statusConfig={statusConfig} 
           allStatuses={allStatuses} 
           storeMap={storeMap} 
           profileMap={profileMap} 

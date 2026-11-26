@@ -1,9 +1,9 @@
-import { Clock, AlertCircle, Package, Wrench, CheckCircle2 } from "lucide-react";
+import { Clock, AlertCircle, Package, Wrench, CheckCircle2, type LucideIcon } from "lucide-react";
 
 export interface StatusConfigItem {
   label: string;
   color: string;
-  icon: any;
+  icon: LucideIcon;
 }
 
 export const OS_STATUS_CONFIG: Record<string, StatusConfigItem> = {

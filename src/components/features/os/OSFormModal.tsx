@@ -14,6 +14,8 @@ import { AndroidPatternLock } from "@/components/AndroidPatternLock";
 import { OsChecklist } from "@/components/OsChecklist";
 import { DeviceScreenScanner } from "@/components/features/ai/DeviceScreenScanner";
 import { supabase } from "@/integrations/supabase/client";
+import type { ChecklistData } from "@/components/OsChecklist";
+import type { Customer, Profile, Store } from "@/types/db";
 
 const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condições descritas nesta OS.
 2. A loja não se responsabiliza por dados contidos no aparelho. Recomenda-se backup prévio.
@@ -23,20 +25,48 @@ const TERMS_TEXT = `1. O cliente declara que o aparelho foi entregue nas condiç
 6. A loja não se responsabiliza por danos pré-existentes não descritos nesta OS.
 7. Serviços de diagnóstico podem ter custo mesmo que o reparo não seja efetuado.`;
 
+/** Cliente como a busca do formulário traz. */
+type CustomerHit = Pick<Customer, "id" | "name" | "phone" | "cpf" | "address" | "email">;
+
+/** Formulário de abertura de OS. */
+export type OsForm = {
+  customer_id: string | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_cpf: string;
+  device_brand: string;
+  device_model: string;
+  device_imei: string;
+  device_color: string;
+  device_condition: string;
+  device_password: string;
+  device_accessories: string;
+  reported_defect: string;
+  requested_service: string;
+  store_id: string;
+  estimated_price: string;
+  estimated_completion: string;
+  technician_id: string;
+  terms_accepted: boolean;
+  internal_notes: string;
+  entry_checklist: ChecklistData;
+  device_is_off: boolean;
+};
+
 interface OSFormModalProps {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   resetForm: () => void;
   handleSubmit: (e: React.FormEvent) => void;
-  form: any;
-  setForm: any;
+  form: OsForm;
+  setForm: React.Dispatch<React.SetStateAction<OsForm>>;
   passwordType: "text" | "pattern";
   setPasswordType: (type: "text" | "pattern") => void;
   setPatternImageData: (data: string) => void;
   handleDeviceOffChange: (checked: boolean) => void;
   activeStoreId: string | null;
-  stores: any[];
-  profiles: any[];
+  stores: Store[];
+  profiles: Profile[];
   signatureData: string;
   setSignatureData: (data: string) => void;
   deviceOffAgreed: boolean;
@@ -67,9 +97,9 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
   isSubmitting
 }) => {
   const [customerSearch, setCustomerSearch] = useState("");
-  const [customerResults, setCustomerResults] = useState<any[]>([]);
+  const [customerResults, setCustomerResults] = useState<CustomerHit[]>([]);
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerHit | null>(null);
 
   // Se o modal fechar ou resetar, limpa estado de busca
   useEffect(() => {
@@ -98,21 +128,21 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
       setIsSearchingCustomer(true);
       const term = customerSearch.trim();
       const { data } = await supabase
-        .from("customers" as any)
+        .from("customers")
         .select("id, name, phone, cpf, address, email")
         .or(`name.ilike.%${term}%,phone.ilike.%${term}%,cpf.ilike.%${term}%`)
         .limit(6);
 
-      setCustomerResults((data as any[]) ?? []);
+      setCustomerResults(data ?? []);
       setIsSearchingCustomer(false);
     }, 250);
 
     return () => clearTimeout(timer);
   }, [customerSearch]);
 
-  const handleSelectCustomer = (c: any) => {
+  const handleSelectCustomer = (c: CustomerHit) => {
     setSelectedCustomer(c);
-    setForm((prev: any) => ({
+    setForm((prev) => ({
       ...prev,
       customer_id: c.id,
       customer_name: c.name || prev.customer_name,
@@ -125,7 +155,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
 
   const handleClearCustomer = () => {
     setSelectedCustomer(null);
-    setForm((prev: any) => ({
+    setForm((prev) => ({
       ...prev,
       customer_id: null,
       customer_name: "",
@@ -233,15 +263,15 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Nome *</Label>
-                <Input value={form.customer_name} onChange={(e) => setForm((prev: any) => ({ ...prev, customer_name: e.target.value }))} placeholder="Nome completo" required className="h-10" />
+                <Input value={form.customer_name} onChange={(e) => setForm((prev) => ({ ...prev, customer_name: e.target.value }))} placeholder="Nome completo" required className="h-10" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Telefone</Label>
-                <Input value={form.customer_phone} onChange={(e) => setForm((prev: any) => ({ ...prev, customer_phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-10" />
+                <Input value={form.customer_phone} onChange={(e) => setForm((prev) => ({ ...prev, customer_phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-10" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">CPF</Label>
-                <Input value={form.customer_cpf} onChange={(e) => setForm((prev: any) => ({ ...prev, customer_cpf: e.target.value }))} placeholder="000.000.000-00" className="h-10" />
+                <Input value={form.customer_cpf} onChange={(e) => setForm((prev) => ({ ...prev, customer_cpf: e.target.value }))} placeholder="000.000.000-00" className="h-10" />
               </div>
             </div>
           </div>
@@ -254,7 +284,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
               </p>
               <DeviceScreenScanner
                 onScanComplete={(scanned) => {
-                  setForm((prev: any) => ({
+                  setForm((prev) => ({
                     ...prev,
                     device_brand: scanned.brand || prev.device_brand,
                     device_model: scanned.model || prev.device_model,
@@ -276,17 +306,17 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Modelo *</Label>
-                <Input value={form.device_model} onChange={(e) => setForm((prev: any) => ({ ...prev, device_model: e.target.value }))} placeholder="iPhone 13 Pro" required className="h-10" />
+                <Input value={form.device_model} onChange={(e) => setForm((prev) => ({ ...prev, device_model: e.target.value }))} placeholder="iPhone 13 Pro" required className="h-10" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">IMEI</Label>
-                <Input value={form.device_imei} onChange={(e) => setForm((prev: any) => ({ ...prev, device_imei: e.target.value }))} placeholder="352000000000000" className="h-10" />
+                <Input value={form.device_imei} onChange={(e) => setForm((prev) => ({ ...prev, device_imei: e.target.value }))} placeholder="352000000000000" className="h-10" />
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Cor</Label>
-                <Input value={form.device_color} onChange={(e) => setForm((prev: any) => ({ ...prev, device_color: e.target.value }))} placeholder="Preto" className="h-10" />
+                <Input value={form.device_color} onChange={(e) => setForm((prev) => ({ ...prev, device_color: e.target.value }))} placeholder="Preto" className="h-10" />
               </div>
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label className="text-xs">Senha / Padrão</Label>
@@ -307,7 +337,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
                   </button>
                 </div>
                 {passwordType === "text" ? (
-                  <Input value={form.device_password} onChange={(e) => setForm((prev: any) => ({ ...prev, device_password: e.target.value }))} placeholder="****" className="h-10" />
+                  <Input value={form.device_password} onChange={(e) => setForm((prev) => ({ ...prev, device_password: e.target.value }))} placeholder="****" className="h-10" />
                 ) : (
                   <AndroidPatternLock
                     size={210}
@@ -320,7 +350,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Acessórios</Label>
-                <Input value={form.device_accessories} onChange={(e) => setForm((prev: any) => ({ ...prev, device_accessories: e.target.value }))} placeholder="Carregador, capa" className="h-10" />
+                <Input value={form.device_accessories} onChange={(e) => setForm((prev) => ({ ...prev, device_accessories: e.target.value }))} placeholder="Carregador, capa" className="h-10" />
               </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/5 p-3 my-2">
@@ -340,7 +370,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Condição Física</Label>
-              <Textarea value={form.device_condition} onChange={(e) => setForm((prev: any) => ({ ...prev, device_condition: e.target.value }))} placeholder="Descreva avarias existentes" className="min-h-[60px]" />
+              <Textarea value={form.device_condition} onChange={(e) => setForm((prev) => ({ ...prev, device_condition: e.target.value }))} placeholder="Descreva avarias existentes" className="min-h-[60px]" />
             </div>
           </div>
 
@@ -351,14 +381,14 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
             </p>
             <div className="space-y-1.5">
               <Label className="text-xs">Defeito Relatado *</Label>
-              <Textarea value={form.reported_defect} onChange={(e) => setForm((prev: any) => ({ ...prev, reported_defect: e.target.value }))} placeholder="Descreva o problema relatado pelo cliente" required className="min-h-[60px]" />
+              <Textarea value={form.reported_defect} onChange={(e) => setForm((prev) => ({ ...prev, reported_defect: e.target.value }))} placeholder="Descreva o problema relatado pelo cliente" required className="min-h-[60px]" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Loja da OS</Label>
                 <Select 
                   value={form.store_id || (activeStoreId === "all" ? "" : activeStoreId)} 
-                  onValueChange={(v) => setForm((prev: any) => ({ ...prev, store_id: v }))}
+                  onValueChange={(v) => setForm((prev) => ({ ...prev, store_id: v }))}
                   disabled={activeStoreId !== "all"}
                 >
                   <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -369,12 +399,12 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Previsão de Entrega</Label>
-                <Input type="datetime-local" value={form.estimated_completion} onChange={(e) => setForm((prev: any) => ({ ...prev, estimated_completion: e.target.value }))} className="h-10" />
+                <Input type="datetime-local" value={form.estimated_completion} onChange={(e) => setForm((prev) => ({ ...prev, estimated_completion: e.target.value }))} className="h-10" />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Serviço Solicitado *</Label>
-              <Select value={form.requested_service} onValueChange={(v) => setForm((prev: any) => ({ ...prev, requested_service: v }))}>
+              <Select value={form.requested_service} onValueChange={(v) => setForm((prev) => ({ ...prev, requested_service: v }))}>
                 <SelectTrigger className="h-10"><SelectValue placeholder="Selecione o serviço" /></SelectTrigger>
                 <SelectContent>
                   {["Troca de Tela","Troca de Bateria","Reparo de Placa","Troca de Conector","Troca de Câmera","Desbloqueio","Formatação","Diagnóstico","Outro"].map((s) => (
@@ -386,11 +416,11 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Valor Estimado (R$)</Label>
-                <Input type="number" step="0.01" value={form.estimated_price} onChange={(e) => setForm((prev: any) => ({ ...prev, estimated_price: e.target.value }))} placeholder="150.00" className="h-10" />
+                <Input type="number" step="0.01" value={form.estimated_price} onChange={(e) => setForm((prev) => ({ ...prev, estimated_price: e.target.value }))} placeholder="150.00" className="h-10" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Técnico Responsável</Label>
-                <Select value={form.technician_id || "none"} onValueChange={(v) => setForm((prev: any) => ({ ...prev, technician_id: v }))}>
+                <Select value={form.technician_id || "none"} onValueChange={(v) => setForm((prev) => ({ ...prev, technician_id: v }))}>
                   <SelectTrigger className="h-10"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Nenhum (Sem técnico)</SelectItem>
@@ -405,7 +435,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
           <OsChecklist
             title="Checklist de Entrada"
             data={form.entry_checklist}
-            onChange={(d) => setForm((prev: any) => ({ ...prev, entry_checklist: d }))}
+            onChange={(d) => setForm((prev) => ({ ...prev, entry_checklist: d }))}
             deviceIsOff={form.device_is_off}
           />
 
@@ -416,7 +446,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
               <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">{TERMS_TEXT}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Switch checked={form.terms_accepted} onCheckedChange={(v) => setForm((prev: any) => ({ ...prev, terms_accepted: v }))} />
+              <Switch checked={form.terms_accepted} onCheckedChange={(v) => setForm((prev) => ({ ...prev, terms_accepted: v }))} />
               <Label className="text-xs">Cliente aceita os termos acima</Label>
             </div>
           </div>
@@ -444,7 +474,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
 
           <div className="space-y-1.5">
             <Label className="text-xs">Observações Internas</Label>
-            <Textarea value={form.internal_notes} onChange={(e) => setForm((prev: any) => ({ ...prev, internal_notes: e.target.value }))} placeholder="Notas internas (não aparecem para o cliente)..." className="min-h-[50px]" />
+            <Textarea value={form.internal_notes} onChange={(e) => setForm((prev) => ({ ...prev, internal_notes: e.target.value }))} placeholder="Notas internas (não aparecem para o cliente)..." className="min-h-[50px]" />
           </div>
 
           <div className="sticky bottom-0 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-3 sm:p-4 bg-background/95 backdrop-blur-sm border-t border-border z-10 shadow-lg">

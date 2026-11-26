@@ -1,6 +1,13 @@
 import { OS_STATUS_CONFIG as statusConfig } from "@/utils/osStatus";
 import { checklistCount, checklistRows, formatDay, serviceBreakdown, type CheckMark, type OsPdfItem } from "./osPdfRules";
 import { supabase } from "@/integrations/supabase/client";
+import type { jsPDF } from "jspdf";
+import type { ServiceOrder, Store } from "@/types/db";
+
+/** OS que vai para o PDF (os testes mandam só parte das colunas). */
+export type OsPdfOrder = Partial<ServiceOrder>;
+/** Dados da loja que aparecem no cabeçalho/rodapé. */
+export type OsPdfStore = Partial<Store> & { name: string };
 
 export type { OsPdfItem } from "./osPdfRules";
 
@@ -12,7 +19,7 @@ export const loadOsPdfItems = async (orderId: string): Promise<OsPdfItem[]> => {
     .eq("service_order_id", orderId)
     .order("created_at");
   if (error || !data) return [];
-  return (data as any[]).map((i) => ({
+  return data.map((i) => ({
     name: i.products?.name ?? "Peça",
     brand: i.products?.brand ?? null,
     model: i.products?.model ?? null,
@@ -41,7 +48,7 @@ export const paymentLabels: Record<string, string> = {
 };
 
 // ── Gera PDF via jsPDF (importado dinamicamente) ──────────────────────────
-export const generateOSPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
+export const generateOSPdf = async (order: OsPdfOrder, store: OsPdfStore, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
@@ -77,7 +84,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
       doc.circle(M + 8, 14, 9, "F");
       doc.addImage(store.logo_url, "PNG", M + 1.5, 7.5, 13, 13);
       tx = M + 22;
-    } catch (_) {}
+    } catch { /* falha ignorada de propósito */ }
   }
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...WHITE);
@@ -143,7 +150,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
   const sectionBox = (title: string, contentFn: () => void) => {
     ensureSpace(35);
     const startY = y;
-    const startPage = (doc as any).internal.getNumberOfPages();
+    const startPage = doc.getNumberOfPages();
     doc.setFillColor(...BLACK);
     doc.rect(M, y, CW, 7, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
@@ -152,7 +159,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
     contentFn();
     doc.setDrawColor(...LIGHT);
     doc.setLineWidth(0.35);
-    if ((doc as any).internal.getNumberOfPages() === startPage) doc.rect(M, startY + 7, CW, y - startY - 7);
+    if (doc.getNumberOfPages() === startPage) doc.rect(M, startY + 7, CW, y - startY - 7);
     else doc.line(M, y, W - M, y); // a seção virou a página: só fecha embaixo
     y += 4;
   };
@@ -437,7 +444,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
   if (order.signature_data) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(...MID);
     doc.text("ASSINATURA DO CLIENTE:", M, y); y += 4;
-    try { doc.addImage(order.signature_data, "PNG", M, y, 65, 24); y += 27; } catch (_) {}
+    try { doc.addImage(order.signature_data, "PNG", M, y, 65, 24); y += 27; } catch { /* falha ignorada de propósito */ }
     doc.setDrawColor(...BLACK); doc.setLineWidth(0.5); doc.line(M, y, M + 70, y);
     y += 5;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MID);
@@ -461,7 +468,7 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
   doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...MID);
   doc.text(publicUrl, M + 5, y + 10);
 
-  const pageCount = (doc as any).internal.getNumberOfPages();
+  const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setDrawColor(...BLACK); doc.setLineWidth(0.3); doc.line(M, 286, W - M, 286);
@@ -477,10 +484,10 @@ export const generateOSPdf = async (order: any, store: any, techName: string, pu
 };
 
 // ── Gera Cupom 80mm ───────────────────────────────────────────────────────
-export const generateThermalPdf = async (order: any, store: any, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
+export const generateThermalPdf = async (order: OsPdfOrder, store: OsPdfStore, techName: string, publicUrl: string, items: OsPdfItem[] = []) => {
   const { default: jsPDF } = await import("jspdf");
   // Papel contínuo 80mm: desenha uma vez para medir e de novo no tamanho exato do conteúdo
-  const render = (doc: any) => {
+  const render = (doc: jsPDF) => {
     let y = 10;
     const W = 80;
   
@@ -572,7 +579,7 @@ export const generateThermalPdf = async (order: any, store: any, techName: strin
  * Resolve a incompatibilidade do Chrome/Chromium onde doc.save() sem anexar ao DOM
  * faz o download com nome de UUID sem extensão .pdf, gerando erro ao abrir no Windows.
  */
-export const saveAndOpenPdf = (doc: any, filename: string, openInNewTab = true) => {
+export const saveAndOpenPdf = (doc: jsPDF, filename: string, openInNewTab = true) => {
   const safeName = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
   const blobOutput = doc.output("blob");
   const pdfBlob = new Blob([blobOutput], { type: "application/pdf" });
@@ -581,7 +588,7 @@ export const saveAndOpenPdf = (doc: any, filename: string, openInNewTab = true) 
   if (openInNewTab) {
     try {
       window.open(blobUrl, "_blank");
-    } catch (_) {}
+    } catch { /* falha ignorada de propósito */ }
   }
 
   const link = document.createElement("a");
@@ -594,7 +601,7 @@ export const saveAndOpenPdf = (doc: any, filename: string, openInNewTab = true) 
   setTimeout(() => {
     try {
       document.body.removeChild(link);
-    } catch (_) {}
+    } catch { /* falha ignorada de propósito */ }
     setTimeout(() => {
       URL.revokeObjectURL(blobUrl);
     }, 120000);

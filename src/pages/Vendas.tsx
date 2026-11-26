@@ -41,13 +41,19 @@ import {
   Accessory,
   CartItem,
   formatCurrency,
+  type CustomerForm,
+  type PdvMetadata,
+  type EditSaleForm,
+  type SaleForm,
+  type TradeInDeviceForm,
+  type Transaction,
 } from "@/components/features/vendas/types";
 
 import { createPendingCashEntry, formatDescription } from "@/lib/services/salesService";
 import { readTradeInHandoff, saleTradeBrand } from "@/lib/tradeinHandoff";
 // Note: cash_register_id is now delegated to salesService.ts to keep this component clean.
 
-const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
+const emptyCustomerForm: CustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
 
 const Vendas = () => {
   const navigate = useNavigate();
@@ -87,7 +93,7 @@ const Vendas = () => {
   const [salesSearch, setSalesSearch] = useState("");
   const [selectedViewSale, setSelectedViewSale] = useState<Sale | null>(null);
   const [editSale, setEditSale] = useState<Sale | null>(null);
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<EditSaleForm>({
     sale_price: "",
     discount: "",
     payment_cash: "",
@@ -112,17 +118,17 @@ const Vendas = () => {
   });
   const [editSaleCustomerId, setEditSaleCustomerId] = useState<string>("");
   const [showEditNewCustomerForm, setShowEditNewCustomerForm] = useState(false);
-  const [editNewCustomerForm, setEditNewCustomerForm] = useState(emptyCustomerForm);
+  const [editNewCustomerForm, setEditNewCustomerForm] = useState<CustomerForm>(emptyCustomerForm);
   const searchRef = useRef<HTMLDivElement>(null);
   const isSubmitting = useRef(false);
 
   // Estado para edição de venda PDV (acessórios)
-  const [editPdvSale, setEditPdvSale] = useState<any | null>(null);
+  const [editPdvSale, setEditPdvSale] = useState<Transaction | null>(null);
   const [editPdvForm, setEditPdvForm] = useState({
     description: "", amount: "", payment_cash: "", payment_card: "", payment_pix: "", retro_date: "",
   });
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<SaleForm>({
     product_id: "", sale_price: "", has_trade_in: false,
     trade_in_device_name: "", trade_in_device_brand: "iPhone",
     trade_in_device_model: "", trade_in_device_imei: "",
@@ -131,7 +137,7 @@ const Vendas = () => {
     discount: "0", warranty_days: "90", installments: "1",
     destination_account_id: "",
     retro_date: "",
-    trade_in_devices: [] as any[],
+    trade_in_devices: [],
   });
 
   // Veio do simulador de troca ("Usar na venda"): abre a Nova Venda com o aparelho já na troca
@@ -187,7 +193,7 @@ const Vendas = () => {
       setEditForm(prev => ({ ...prev, customer_name: data.name }));
       setShowEditNewCustomerForm(false);
       setEditNewCustomerForm(emptyCustomerForm);
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao cadastrar cliente: " + err.message);
     } finally {
       setLoading(false);
@@ -222,7 +228,7 @@ const Vendas = () => {
 
     if (!salesSearch.trim()) return true;
     const q = salesSearch.toLowerCase().trim();
-    const product = productMap.get(sale.product_id) as any;
+    const product = productMap.get(sale.product_id);
     return (
       (sale.customer_name && sale.customer_name.toLowerCase().includes(q)) ||
       (product?.name && product.name.toLowerCase().includes(q)) ||
@@ -233,7 +239,7 @@ const Vendas = () => {
   });
 
   const discount = parseFloat(form.discount) || 0;
-  const tradeInVal = form.has_trade_in ? (form.trade_in_devices?.reduce((acc: number, d: any) => acc + (parseFloat(d.value) || 0), 0) || 0) : 0;
+  const tradeInVal = form.has_trade_in ? (form.trade_in_devices?.reduce((acc: number, d) => acc + (parseFloat(d.value) || 0), 0) || 0) : 0;
   const cashVal = parseFloat(form.payment_cash) || 0;
   const cardVal = parseFloat(form.payment_card) || 0;
   const pixVal = parseFloat(form.payment_pix) || 0;
@@ -282,7 +288,7 @@ const Vendas = () => {
       }
 
       let tradeInProductId: string | null = null;
-      let tradeInDevicesList: any[] = [];
+      let tradeInDevicesList: TradeInDeviceForm[] = [];
       if (form.has_trade_in) {
         if (form.trade_in_devices && form.trade_in_devices.length > 0) {
           tradeInDevicesList = form.trade_in_devices;
@@ -326,7 +332,7 @@ const Vendas = () => {
               original_cost_price: deviceVal,
               store_id: selectedProduct.store_id,
               sale_price: null
-            } as any)
+            })
             .eq("id", existingTradeIn.id)
             .select("id")
             .maybeSingle();
@@ -334,7 +340,7 @@ const Vendas = () => {
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = updatedTip?.id || existingTradeIn.id;
           
-          await supabase.from("product_history" as any).insert({
+          await supabase.from("product_history").insert({
             product_id: currentProductId,
             action: "Entrada por Trade-in",
             new_cost: deviceVal,
@@ -351,11 +357,11 @@ const Vendas = () => {
             created_by: user.id, status: "in_stock",
             product_type: "celular",
             condition: "used"
-          } as any).select("id").single();
+          }).select("id").single();
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = tip.id;
 
-          await supabase.from("product_history" as any).insert({
+          await supabase.from("product_history").insert({
             product_id: currentProductId,
             action: "Entrada por Trade-in",
             new_cost: deviceVal,
@@ -435,7 +441,7 @@ const Vendas = () => {
       }
 
       triggerWebhook("sale_completed", selectedProduct.store_id, saleData);
-      logAction("CREATE_SALE", "sales", (saleData as any).id, null, saleData, selectedProduct.store_id);
+      logAction("CREATE_SALE", "sales", saleData.id, null, saleData, selectedProduct.store_id);
 
       const desc = `Venda: ${selectedProduct.name}${selectedCustomer?.name ? ` → ${selectedCustomer.name}` : ""}`;
       
@@ -474,8 +480,8 @@ const Vendas = () => {
         amount: number, description: string, method: string, txId: string | undefined
       ) => {
         try {
-          await createPendingCashEntry(selectedProduct.store_id, user.id, amount, description, method, form.retro_date, (saleData as any).id);
-        } catch (cashErr: any) {
+          await createPendingCashEntry(selectedProduct.store_id, user.id, amount, description, method, form.retro_date, saleData.id);
+        } catch (cashErr) {
           if (txId) {
             await supabase.from("transactions").delete().eq("id", txId);
           }
@@ -489,7 +495,7 @@ const Vendas = () => {
         const { data: tx0, error: txError } = await supabase.from("transactions").insert({
           type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
           description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
-          sale_id: (saleData as any).id,
+          sale_id: saleData.id,
           created_by: user.id, destination_account_id: form.destination_account_id || null,
           expected_settlement_date: expectedDate.toISOString(),
           ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -517,7 +523,7 @@ const Vendas = () => {
           const { data: txMisto, error: txError } = await supabase.from("transactions").insert({
             type: "sale", amount: totalConsolidated, net_amount: totalNet,
             description: descMisto, store_id: selectedProduct.store_id, product_id: form.product_id,
-            sale_id: (saleData as any).id,
+            sale_id: saleData.id,
             created_by: user.id, destination_account_id: form.destination_account_id || null,
             expected_settlement_date: expectedDate.toISOString(),
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -532,7 +538,7 @@ const Vendas = () => {
             const { data: tx1, error: txError1 } = await supabase.from("transactions").insert({
               type: "sale", amount: cashVal, net_amount: cashVal,
               description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-              sale_id: (saleData as any).id,
+              sale_id: saleData.id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -546,7 +552,7 @@ const Vendas = () => {
             const { data: tx2, error: txError2 } = await supabase.from("transactions").insert({
               type: "sale", amount: cardVal, net_amount: net,
               description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-              sale_id: (saleData as any).id,
+              sale_id: saleData.id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -560,7 +566,7 @@ const Vendas = () => {
             const { data: tx3, error: txError3 } = await supabase.from("transactions").insert({
               type: "sale", amount: pixVal, net_amount: net,
               description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-              sale_id: (saleData as any).id,
+              sale_id: saleData.id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -587,7 +593,7 @@ const Vendas = () => {
 
       toast.success("Venda registrada! Confirme o recebimento no caixa.");
       setDialogOpen(false); resetForm(); fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro inesperado ao registrar venda: " + err.message);
     } finally {
       isSubmitting.current = false;
@@ -618,7 +624,7 @@ const Vendas = () => {
 
         // Restaurar estoque dos acessórios via metadata
         const { data: pdvTx } = await supabase.from("transactions").select("metadata").eq("id", item.id).maybeSingle();
-        const meta = pdvTx?.metadata as any;
+        const meta = pdvTx?.metadata as PdvMetadata;
         if (meta && meta.cart && Array.isArray(meta.cart)) {
           for (const cartItem of meta.cart) {
              const { data: acc } = await supabase.from("accessories").select("quantity").eq("id", cartItem.id).maybeSingle();
@@ -671,7 +677,7 @@ const Vendas = () => {
         }
 
         // 1. Executar cancelamento ATÔMICO no PostgreSQL via RPC
-        const { error: cancelError } = await supabase.rpc("cancel_sale" as any, {
+        const { error: cancelError } = await supabase.rpc("cancel_sale", {
           p_sale_id: item.id,
           p_reason: reason,
         });
@@ -698,7 +704,7 @@ const Vendas = () => {
         toast.success("Venda cancelada! Aparelho devolvido ao estoque, financeiro e arquivos revertidos.");
       }
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Erro ao remover venda: " + error.message);
     } finally {
       setLoading(false);
@@ -821,7 +827,7 @@ const Vendas = () => {
             cost_price: tradeInVal,
             original_cost_price: tradeInVal,
             status: "in_stock",
-          } as any).eq("id", editSale.trade_in_product_id);
+          }).eq("id", editSale.trade_in_product_id);
         } else {
           // Create new trade-in product in stock
           const { data: tipData } = await supabase.from("products").insert({
@@ -834,7 +840,7 @@ const Vendas = () => {
             store_id: editSale.store_id,
             created_by: user!.id,
             status: "in_stock",
-          } as any).select("id").single();
+          }).select("id").single();
           // Link the new trade-in product to the sale
           if (tipData) {
             await supabase.from("sales").update({ trade_in_product_id: tipData.id }).eq("id", editSale.id);
@@ -889,7 +895,7 @@ const Vendas = () => {
       toast.success("Venda e dados do aparelho atualizados com sucesso!");
       setEditSale(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao atualizar venda: " + err.message);
     } finally {
       setLoading(false);
@@ -897,7 +903,7 @@ const Vendas = () => {
   };
 
   // ── Editar venda PDV (acessório) ──────────────────────────────────────────
-  const handleOpenPdvEdit = async (tx: any) => {
+  const handleOpenPdvEdit = async (tx: Transaction) => {
     setLoading(true);
     let cash = 0, card = 0, pix = 0;
     try {
@@ -981,7 +987,7 @@ const Vendas = () => {
       toast.success("Venda de acessório e caixa atualizados!");
       setEditPdvSale(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao atualizar: " + err.message);
     } finally {
       setLoading(false);
@@ -992,8 +998,8 @@ const Vendas = () => {
   const handleGerarNota = async (sale: Sale, whatsapp = false) => {
     setNotaLoading(sale.id);
     try {
-      const product = productMap.get(sale.product_id) as any;
-      const store = storeMap.get(sale.store_id) as any;
+      const product = productMap.get(sale.product_id);
+      const store = storeMap.get(sale.store_id);
       const customerMap = new Map(customers.map(c => [c.id, c]));
       const customer = sale.customer_id ? customerMap.get(sale.customer_id) : null;
       const numeroNota = `VND-${sale.id.slice(0, 8).toUpperCase()}`;
@@ -1211,14 +1217,14 @@ const Vendas = () => {
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm truncate">{formatDescription(tx.description)}</p>
                         <Badge className="text-[10px] bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 shrink-0">PDV</Badge>
-                        {Number(tx.metadata?.discount) > 0 && (
+                        {Number((tx.metadata as PdvMetadata)?.discount) > 0 && (
                           <Badge className="text-[10px] text-yellow-500 border border-yellow-500/30 bg-transparent shrink-0">
-                            🏷️ -{formatCurrency(Number(tx.metadata.discount))}
+                            🏷️ -{formatCurrency(Number((tx.metadata as PdvMetadata).discount))}
                           </Badge>
                         )}
                         {activeStoreId === "all" && (
                           <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                            {(storeMap.get(tx.store_id) as any)?.name}
+                            {(storeMap.get(tx.store_id))?.name}
                           </Badge>
                         )}
                       </div>
@@ -1242,8 +1248,8 @@ const Vendas = () => {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-display font-bold text-sm text-primary">{formatCurrency(Number(tx.amount))}</p>
-                      {Number(tx.metadata?.discount) > 0 && (
-                        <p className="text-[10px] text-yellow-500">-{formatCurrency(Number(tx.metadata.discount))}</p>
+                      {Number((tx.metadata as PdvMetadata)?.discount) > 0 && (
+                        <p className="text-[10px] text-yellow-500">-{formatCurrency(Number((tx.metadata as PdvMetadata).discount))}</p>
                       )}
                     </div>
                   </div>
@@ -1252,7 +1258,7 @@ const Vendas = () => {
             );
           } else {
             const sale = item.data;
-            const product = productMap.get(sale.product_id) as any;
+            const product = productMap.get(sale.product_id);
             const isLoading = notaLoading === sale.id;
             return (
               <Card
@@ -1272,7 +1278,7 @@ const Vendas = () => {
                         )}
                         {activeStoreId === "all" && (
                           <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                            {(storeMap.get(sale.store_id) as any)?.name}
+                            {(storeMap.get(sale.store_id))?.name}
                           </Badge>
                         )}
                       </div>

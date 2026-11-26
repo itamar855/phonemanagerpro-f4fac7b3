@@ -187,7 +187,7 @@ async function openSingleComprovante(urlOrPath: string) {
       // Desconecta o opener para máxima segurança agora que a navegação foi disparada
       try {
         newTab.opener = null;
-      } catch {}
+      } catch { /* falha ignorada de propósito */ }
     } else {
       // Se o popup foi impedido pelas políticas rígidas do navegador, oferece feedback imediato e ação com 1 clique
       toast.info("Comprovante pronto para visualização", {

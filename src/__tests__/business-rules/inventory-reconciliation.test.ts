@@ -121,8 +121,8 @@ describe('Inventory & Financial Reconciliation — Business Rules', () => {
 
     it('should ALLOW deleting an unsold, unlinked device from stock', () => {
       const productId = 'available-prod';
-      const sales: any[] = [];
-      const osItems: any[] = [];
+      const sales: { product_id: string }[] = [];
+      const osItems: { product_id: string }[] = [];
 
       const canDelete = !sales.some(s => s.product_id === productId) && !osItems.some(i => i.product_id === productId);
       expect(canDelete).toBe(true);

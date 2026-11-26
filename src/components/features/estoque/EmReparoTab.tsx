@@ -4,13 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Wrench, AlertTriangle } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import type { Product } from "./types";
 
 interface EmReparoTabProps {
   inRepair: Tables<"products">[];
   activeStoreId: string;
   storeMap: Map<string, string>;
   formatCurrency: (value: number) => string;
-  setRepairProduct: (p: any) => void;
+  setRepairProduct: (p: Product) => void;
   setRepairModalOpen: (open: boolean) => void;
   setDefectsProduct: (p: Tables<"products">) => void;
   setDefectsList: (list: string[]) => void;
@@ -103,7 +104,7 @@ export const EmReparoTab: React.FC<EmReparoTabProps> = ({
                   <Button
                     className="h-8 text-[11px] gap-1.5 bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive hover:text-destructive-foreground"
                     onClick={() => {
-                      setRepairProduct(p as any);
+                      setRepairProduct(p);
                       setRepairModalOpen(true);
                     }}
                   >

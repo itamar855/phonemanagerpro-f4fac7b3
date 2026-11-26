@@ -46,7 +46,7 @@ export function ChangePasswordModal({ open, onOpenChange }: ChangePasswordModalP
         setConfirmPassword("");
         onOpenChange(false);
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message || "Erro inesperado ao atualizar a senha");
     } finally {
       setLoading(false);

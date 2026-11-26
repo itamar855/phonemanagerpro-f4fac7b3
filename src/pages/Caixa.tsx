@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { logAction } from "@/utils/auditLogger";
+import type { Product } from "@/types/db";
 import { SuppliersTab } from "@/components/features/caixa/SuppliersTab";
 import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { openComprovante } from "@/lib/storageHelper";
@@ -25,6 +26,10 @@ import {
   CashEntry,
   CashRegister,
   Supplier,
+  type OsItemWithProduct,
+  type SupplierForm,
+  type SupplierPayForm,
+  type ServiceOrder,
   paymentLabels,
   statusConfig,
   formatCurrency,
@@ -57,14 +62,14 @@ const Caixa = () => {
   // Dialog de detalhes de lançamento individual
   const [entryDetailDialog, setEntryDetailDialog] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<CashEntry | null>(null);
-  const [linkedServiceOrder, setLinkedServiceOrder] = useState<any | null>(null);
-  const [linkedOrderItems, setLinkedOrderItems] = useState<any[]>([]);
+  const [linkedServiceOrder, setLinkedServiceOrder] = useState<ServiceOrder | null>(null);
+  const [linkedOrderItems, setLinkedOrderItems] = useState<OsItemWithProduct[]>([]);
   const [loadingLinkedOrder, setLoadingLinkedOrder] = useState(false);
 
   // Dialog de Ordem de Serviço aberta a partir do Caixa
   const [osModalOpen, setOsModalOpen] = useState(false);
-  const [osModalOrder, setOsModalOrder] = useState<any | null>(null);
-  const [osModalItems, setOsModalItems] = useState<any[]>([]);
+  const [osModalOrder, setOsModalOrder] = useState<ServiceOrder | null>(null);
+  const [osModalItems, setOsModalItems] = useState<OsItemWithProduct[]>([]);
   const [loadingOsItems, setLoadingOsItems] = useState(false);
   const [storeList, setStoreList] = useState<{ id: string; name: string }[]>([]);
   
@@ -91,8 +96,8 @@ const Caixa = () => {
   const [supplierDialog, setSupplierDialog] = useState(false);
   const [paySupplierDialog, setPaySupplierDialog] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [supplierForm, setSupplierForm] = useState({ name: "", document: "", phone: "", category: "", notes: "" });
-  const [payForm, setPayForm] = useState({ amount: "", description: "", payment_method: "dinheiro", credit_adjust: "0", receipt: null as File | null });
+  const [supplierForm, setSupplierForm] = useState<SupplierForm>({ name: "", document: "", phone: "", category: "", notes: "" });
+  const [payForm, setPayForm] = useState<SupplierPayForm>({ amount: "", description: "", payment_method: "dinheiro", credit_adjust: "0", receipt: null });
   
   // Media Upload Utilities
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,7 +111,7 @@ const Caixa = () => {
     setLoading(true);
     
     // 1. Busca de Caixas Abertos
-    let openQuery = supabase.from("cash_registers" as any).select("*").eq("status", "open");
+    let openQuery = supabase.from("cash_registers").select("*").eq("status", "open");
     
     // Se NÃO for admin, filtramos pela loja ativa
     if (userRole !== "admin" && storeId !== "all") {
@@ -129,7 +134,7 @@ const Caixa = () => {
     const profileMap = new Map((profilesRes.data || []).map(p => [p.user_id, p.display_name]));
     const storeMap = new Map((storesRes.data || []).map(s => [s.id, s.name]));
 
-    const mappedOpenData = (openData || []).map((reg: any) => ({
+    const mappedOpenData = (openData || []).map((reg) => ({
       ...reg,
       profiles: { display_name: profileMap.get(reg.opened_by) },
       stores: { name: storeMap.get(reg.store_id) }
@@ -162,8 +167,8 @@ const Caixa = () => {
         regToUse = targetReg;
       } else {
         if (storeId !== "all") {
-          const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
-          const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+          const userOwnedReg = mappedOpenData.find((reg) => reg.opened_by === user?.id && reg.store_id === storeId);
+          const activeOne = mappedOpenData.find((reg) => reg.store_id === storeId);
           const defaultReg = userOwnedReg || activeOne || null;
           setCurrentRegister(defaultReg);
           regToUse = defaultReg;
@@ -174,8 +179,8 @@ const Caixa = () => {
       }
     } else {
       // Vendedores/Gerentes sempre veem o próprio caixa da loja selecionada se existir, ou null
-      const userOwnedReg = mappedOpenData.find((reg: any) => reg.opened_by === user?.id && reg.store_id === storeId);
-      const activeOne = mappedOpenData.find((reg: any) => reg.store_id === storeId);
+      const userOwnedReg = mappedOpenData.find((reg) => reg.opened_by === user?.id && reg.store_id === storeId);
+      const activeOne = mappedOpenData.find((reg) => reg.store_id === storeId);
       const defaultReg = userOwnedReg || activeOne || null;
       setCurrentRegister(defaultReg);
       regToUse = defaultReg;
@@ -185,8 +190,8 @@ const Caixa = () => {
     
     if (regToUse) {
        const { data: entriesData, error: entriesError } = await supabase
-         .from("cash_entries" as any).select("*")
-         .eq("cash_register_id", (regToUse as any).id)
+         .from("cash_entries").select("*")
+         .eq("cash_register_id", regToUse.id)
          .order("confirmed", { ascending: true })
          .order("created_at", { ascending: false });
        
@@ -196,7 +201,7 @@ const Caixa = () => {
 
        // Auto-cura para lançamentos com "undefined" na descrição (ex: OS #97 / OS #98)
        if (entriesData && entriesData.length > 0) {
-         entriesData.forEach(async (entry: any) => {
+         entriesData.forEach(async (entry) => {
            if (entry.description && entry.description.includes("undefined")) {
              const match = entry.description.match(/\bOS\s*#?\s*(\d+)\b/i);
              if (match && match[1]) {
@@ -212,7 +217,7 @@ const Caixa = () => {
                  const cName = osData.customer_name || "Cliente";
                  const correctedDesc = `OS #${osData.order_number} — ${sName} (${cName})`;
 
-                 await supabase.from("cash_entries" as any).update({ description: correctedDesc }).eq("id", entry.id);
+                 await supabase.from("cash_entries").update({ description: correctedDesc }).eq("id", entry.id);
                  await supabase.from("transactions").update({ description: `${correctedDesc} [${(entry.payment_method || "dinheiro").toUpperCase()}]` })
                    .like("description", `OS #${osData.order_number} —%undefined%`);
 
@@ -229,7 +234,7 @@ const Caixa = () => {
     // 2. Histórico
     if (userRole === "admin" || activeTab === "history") {
       setHistoryLoading(true);
-      let historyQuery = supabase.from("cash_registers" as any)
+      let historyQuery = supabase.from("cash_registers")
         .select("*")
         .eq("status", "closed")
         .order("opened_at", { ascending: false })
@@ -246,7 +251,7 @@ const Caixa = () => {
       const { data: historyData, error: historyError } = await historyQuery;
       if (historyError) console.error("Error fetching history:", historyError);
       
-      const mappedHistoryData = (historyData || []).map((reg: any) => ({
+      const mappedHistoryData = (historyData || []).map((reg) => ({
         ...reg,
         profiles: { display_name: profileMap.get(reg.opened_by) },
         stores: { name: storeMap.get(reg.store_id) }
@@ -276,22 +281,22 @@ const Caixa = () => {
           const cleanDesc = tx.description.replace(/\[MISTO:.*\]/, '').trim();
           
           // Check if already reconciled
-          const { data: ceCheck } = await supabase.from("cash_entries" as any).select("id").like("description", `${cleanDesc}%`).limit(1);
+          const { data: ceCheck } = await supabase.from("cash_entries").select("id").like("description", `${cleanDesc}%`).limit(1);
           if (ceCheck && ceCheck.length > 0) continue;
           
           // Find open register
-          const { data: regList } = await supabase.from("cash_registers" as any).select("id").eq("store_id", tx.store_id).eq("status", "open").limit(1);
+          const { data: regList } = await supabase.from("cash_registers").select("id").eq("store_id", tx.store_id).eq("status", "open").limit(1);
           if (!regList || regList.length === 0) continue;
-          const regId = (regList[0] as any).id;
+          const regId = regList[0].id;
 
           const payload = {
             cash_register_id: regId, store_id: tx.store_id, type: "entrada",
             confirmed: false, created_by: tx.created_by, created_at: tx.created_at
           };
 
-          if (parsed.dinheiro > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "dinheiro", amount: parsed.dinheiro, description: cleanDesc + " (Parte em Dinheiro)" });
-          if (parsed.pix > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "pix", amount: parsed.pix, description: cleanDesc + " (Parte em PIX)" });
-          if (parsed.cartao_credito > 0) await supabase.from("cash_entries" as any).insert({ ...payload, payment_method: "cartao_credito", amount: parsed.cartao_credito, description: cleanDesc + " (Parte em Cartão)" });
+          if (parsed.dinheiro > 0) await supabase.from("cash_entries").insert({ ...payload, payment_method: "dinheiro", amount: parsed.dinheiro, description: cleanDesc + " (Parte em Dinheiro)" });
+          if (parsed.pix > 0) await supabase.from("cash_entries").insert({ ...payload, payment_method: "pix", amount: parsed.pix, description: cleanDesc + " (Parte em PIX)" });
+          if (parsed.cartao_credito > 0) await supabase.from("cash_entries").insert({ ...payload, payment_method: "cartao_credito", amount: parsed.cartao_credito, description: cleanDesc + " (Parte em Cartão)" });
           
           reconciledAny = true;
         } catch (e) {
@@ -319,16 +324,16 @@ const Caixa = () => {
       if (!deliveredOrders || deliveredOrders.length === 0) return;
 
       const { data: openRegs } = await supabase
-        .from("cash_registers" as any)
+        .from("cash_registers")
         .select("id, store_id")
         .eq("store_id", activeStoreId)
         .eq("status", "open")
         .limit(1);
 
       if (!openRegs || openRegs.length === 0) return;
-      const regId = (openRegs[0] as any).id;
+      const regId = openRegs[0].id;
 
-      const osIds = (deliveredOrders as any[]).map((o) => o.id);
+      const osIds = deliveredOrders.map((o) => o.id);
       const { data: reopenRows } = await supabase
         .from("service_order_history")
         .select("service_order_id, created_at")
@@ -339,7 +344,7 @@ const Caixa = () => {
 
       const lastReopenMap = new Map<string, string>();
       if (reopenRows) {
-        reopenRows.forEach((h: any) => {
+        reopenRows.forEach((h) => {
           if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
             lastReopenMap.set(h.service_order_id, h.created_at);
           }
@@ -347,20 +352,20 @@ const Caixa = () => {
       }
 
       const { data: deletedEntryLogs } = await supabase
-        .from("audit_logs" as any)
+        .from("audit_logs")
         .select("before_state, created_at")
         .eq("action", "DELETE_RECORD")
         .eq("entity_type", "cash_entries")
         .gte("created_at", effectiveSince);
 
       let reconciledAny = false;
-      for (const o of deliveredOrders as any[]) {
+      for (const o of deliveredOrders) {
         const lastReopenAt = lastReopenMap.get(o.id) || null;
 
-        const wasManuallyDeleted = (deletedEntryLogs || []).some((log: any) => {
+        const wasManuallyDeleted = (deletedEntryLogs || []).some((log) => {
           if (lastReopenAt && log.created_at <= lastReopenAt) return false;
-          const before = log.before_state;
-          if (!before || typeof before !== "object") return false;
+          const before = log.before_state as { reference_id?: unknown; description?: unknown } | null;
+          if (!before || typeof before !== "object" || Array.isArray(before)) return false;
           if (before.reference_id && before.reference_id === o.id) return true;
           if (typeof before.description === "string") {
             const match = before.description.match(/\bOS\s*#?\s*(\d+)\b/i);
@@ -371,7 +376,7 @@ const Caixa = () => {
         if (wasManuallyDeleted) continue;
 
         let existingRefQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("reference_id", o.id);
@@ -381,7 +386,7 @@ const Caixa = () => {
         if (existingEntries && existingEntries.length > 0) continue;
 
         let existingDescQ = supabase
-          .from("cash_entries" as any)
+          .from("cash_entries")
           .select("id")
           .eq("type", "entrada")
           .eq("store_id", o.store_id)
@@ -418,7 +423,7 @@ const Caixa = () => {
 
         if (cash === 0 && card === 0 && pix === 0 && other === 0) {
           const method = o.payment_method || "dinheiro";
-          await supabase.from("cash_entries" as any).insert({
+          await supabase.from("cash_entries").insert({
             ...basePayload,
             payment_method: method,
             amount,
@@ -427,7 +432,7 @@ const Caixa = () => {
           });
         } else {
           if (cash > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "dinheiro",
               amount: cash,
@@ -436,7 +441,7 @@ const Caixa = () => {
             });
           }
           if (card > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "cartao_credito",
               amount: card,
@@ -444,7 +449,7 @@ const Caixa = () => {
             });
           }
           if (pix > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "pix",
               amount: pix,
@@ -452,7 +457,7 @@ const Caixa = () => {
             });
           }
           if (other > 0) {
-            await supabase.from("cash_entries" as any).insert({
+            await supabase.from("cash_entries").insert({
               ...basePayload,
               payment_method: "outro",
               amount: other,
@@ -470,7 +475,7 @@ const Caixa = () => {
   // ── Suppliers ────────────────────────────────────────────
   const fetchSuppliers = async () => {
     const { data, error } = await supabase
-      .from("suppliers" as any)
+      .from("suppliers")
       .select("*")
       .order("name");
     if (!error) setSuppliers((data as unknown as Supplier[]) ?? []);
@@ -484,7 +489,7 @@ const Caixa = () => {
       toast.error("Selecione uma loja específica no topo antes de cadastrar um fornecedor.");
       return;
     }
-    const { error } = await supabase.from("suppliers" as any).insert({
+    const { error } = await supabase.from("suppliers").insert({
       store_id: activeStoreId,
       created_by: user?.id,
       name: supplierForm.name,
@@ -493,7 +498,7 @@ const Caixa = () => {
       category: supplierForm.category || null,
       notes: supplierForm.notes || null,
       credit_balance: 0,
-    } as any);
+    });
     if (error) { toast.error("Erro ao salvar fornecedor: " + error.message); return; }
     toast.success("Fornecedor cadastrado!");
     setSupplierDialog(false);
@@ -516,7 +521,7 @@ const Caixa = () => {
     }
 
     // 1. Cash out from register
-    const { error: entryErr } = await supabase.from("cash_entries" as any).insert({
+    const { error: entryErr } = await supabase.from("cash_entries").insert({
       cash_register_id: currentRegister.id,
       store_id: currentRegister.store_id,
       type: "saida",
@@ -526,7 +531,7 @@ const Caixa = () => {
       confirmed: true,
       receipt_url: receiptUrl,
       created_by: user?.id,
-    } as any);
+    });
 
     if (entryErr) { toast.error("Erro ao lançar saída: " + entryErr.message); return; }
 
@@ -545,8 +550,8 @@ const Caixa = () => {
 
     // 2. Update supplier credit balance
     const newBalance = Number(selectedSupplier.credit_balance) + amount + creditAdjust;
-    await supabase.from("suppliers" as any)
-      .update({ credit_balance: newBalance } as any)
+    await supabase.from("suppliers")
+      .update({ credit_balance: newBalance })
       .eq("id", selectedSupplier.id);
 
     toast.success(`Pagamento de ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(amount)} registrado!`);
@@ -558,7 +563,7 @@ const Caixa = () => {
   };
 
   const handleDeleteSupplier = async (id: string) => {
-    const { error } = await supabase.from("suppliers" as any).delete().eq("id", id);
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
     if (error) { toast.error("Erro ao remover fornecedor"); return; }
     toast.success("Fornecedor removido!");
     fetchSuppliers();
@@ -632,7 +637,7 @@ const Caixa = () => {
     // Trava de segurança: impede abrir múltiplos caixas simultâneos para a mesma loja
     if (targetStoreId) {
       const { data: existingOpen } = await supabase
-        .from("cash_registers" as any)
+        .from("cash_registers")
         .select("id, opened_at")
         .eq("store_id", targetStoreId)
         .eq("status", "open")
@@ -648,27 +653,27 @@ const Caixa = () => {
 
     if (openForm.receipt) receiptUrl = await uploadReceipt(openForm.receipt, `${targetStoreId}/abertura/${Date.now()}-${openForm.receipt.name}`);
 
-    const { data: reg, error } = await supabase.from("cash_registers" as any).insert({
+    const { data: reg, error } = await supabase.from("cash_registers").insert({
       store_id: activeStoreId === "all" ? userStoreIds[0] : activeStoreId,
       opened_by: user.id,
       opening_amount: parseFloat(openForm.amount) || 0,
       opening_receipt_url: receiptUrl,
       status: "open",
       opened_at: new Date().toISOString(),
-    } as any).select().single();
+    }).select().single();
 
     if (error) { toast.error(error.message); setLoading(false); return; }
 
-    await supabase.from("cash_entries" as any).insert({
-      cash_register_id: (reg as any).id,
-      store_id: (reg as any).store_id,
+    await supabase.from("cash_entries").insert({
+      cash_register_id: reg.id,
+      store_id: reg.store_id,
       type: "abertura",
       amount: parseFloat(openForm.amount) || 0,
       description: "Abertura de caixa",
       payment_method: "dinheiro",
       confirmed: true,
       created_by: user.id,
-    } as any);
+    });
 
     toast.success("Caixa aberto com sucesso!");
     setOpenDialog(false);
@@ -695,7 +700,7 @@ const Caixa = () => {
     let receiptUrl: string | null = null;
     if (closeForm.receipt) receiptUrl = await uploadReceipt(closeForm.receipt, `${currentRegister.store_id}/fechamento/${currentRegister.id}-${Date.now()}`);
 
-    const { error: updateError } = await supabase.from("cash_registers" as any).update({
+    const { error: updateError } = await supabase.from("cash_registers").update({
       closing_amount: closingAmount, expected_amount: totalTotal, difference,
       difference_reason: closeForm.reason || null,
       closing_note: closeForm.note || null,
@@ -710,7 +715,7 @@ const Caixa = () => {
     }
 
     toast.success("Caixa fechado!");
-    logAction("UPDATE_RECORD" as any, "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
+    logAction("UPDATE_RECORD", "cash_registers", currentRegister.id, { status: "open" }, { status: "closed", difference });
     setCloseDialog(false);
     selectedRegisterIdRef.current = null;
     setCurrentRegister(null);
@@ -720,7 +725,7 @@ const Caixa = () => {
   const handleEntry = async () => {
     if (!currentRegister || !user) return;
     setLoading(true);
-    await supabase.from("cash_entries" as any).insert({
+    await supabase.from("cash_entries").insert({
       cash_register_id: currentRegister.id, store_id: currentRegister.store_id,
       type: entryForm.type, amount: parseFloat(entryForm.amount) || 0,
       description: entryForm.description, payment_method: entryForm.payment_method,
@@ -746,12 +751,12 @@ const Caixa = () => {
   const handleSangria = async () => {
     if (!currentRegister || !user) return;
     setLoading(true);
-    const { error } = await supabase.from("cash_entries" as any).insert({
+    const { error } = await supabase.from("cash_entries").insert({
       cash_register_id: currentRegister.id, store_id: currentRegister.store_id,
       type: "sangria", amount: parseFloat(sangriaForm.amount) || 0,
       description: "Sangria: " + sangriaForm.description, payment_method: "dinheiro",
       confirmed: true, created_by: user.id,
-    } as any);
+    });
 
     if (!error) {
       await supabase.from("transactions").insert({
@@ -793,11 +798,11 @@ const Caixa = () => {
 
       if (isSaleOrRegisterOp) {
         // Se for venda de PDV que foi contaminada por auto-vinculação anterior, restaura reference_id
-        if (desc.startsWith("PDV:") && (entry as any).reference_id) {
+        if (desc.startsWith("PDV:") && entry.reference_id) {
           const { data: isOs } = await supabase
             .from("service_orders")
             .select("id")
-            .eq("id", (entry as any).reference_id)
+            .eq("id", entry.reference_id)
             .maybeSingle();
 
           if (isOs) {
@@ -810,11 +815,11 @@ const Caixa = () => {
               .maybeSingle();
 
             await supabase
-              .from("cash_entries" as any)
+              .from("cash_entries")
               .update({ reference_id: tx?.id || null })
               .eq("id", entry.id);
 
-            (entry as any).reference_id = tx?.id || null;
+            entry.reference_id = tx?.id || null;
           }
         }
 
@@ -823,14 +828,14 @@ const Caixa = () => {
         return;
       }
 
-      let foundOrder: any = null;
+      let foundOrder: ServiceOrder | null = null;
 
       // 1. Diretamente por reference_id
-      if ((entry as any).reference_id) {
+      if (entry.reference_id) {
         const { data } = await supabase
           .from("service_orders")
           .select("*")
-          .eq("id", (entry as any).reference_id)
+          .eq("id", entry.reference_id)
           .maybeSingle();
         if (data) foundOrder = data;
       }
@@ -846,8 +851,8 @@ const Caixa = () => {
             .select("*")
             .eq("order_number", orderNum);
 
-          if ((entry as any).store_id && (entry as any).store_id !== "all") {
-            osQuery = osQuery.eq("store_id", (entry as any).store_id);
+          if (entry.store_id && entry.store_id !== "all") {
+            osQuery = osQuery.eq("store_id", entry.store_id);
           }
 
           const { data } = await osQuery.maybeSingle();
@@ -855,7 +860,7 @@ const Caixa = () => {
             foundOrder = data;
             // Só auto-vincula se a descrição for comprovadamente formato de OS
             if (entry.description.startsWith("OS #") || entry.description.includes("(OS #")) {
-              supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+              supabase.from("cash_entries").update({ reference_id: data.id }).eq("id", entry.id).then();
             }
           }
         }
@@ -863,7 +868,7 @@ const Caixa = () => {
 
       // 3. Fallback inteligente para peças avulsas já cadastradas ("Compra de Peça Avulsa (OS): ...")
       if (!foundOrder && entry.description && entry.description.includes("Compra de Peça Avulsa")) {
-        const matchPart = entry.description.match(/Compra de Peça Avulsa(?:\s*\(.*?\))?:\s*([^\[]+)/i);
+        const matchPart = entry.description.match(/Compra de Peça Avulsa(?:\s*\(.*?\))?:\s*([^[]+)/i);
         const partName = matchPart ? matchPart[1].trim() : "";
 
         // Estratégia A: Busca o produto pelo nome correspondente
@@ -883,10 +888,10 @@ const Caixa = () => {
         let matchedOrderId: string | null = null;
         if (matchingProductIds.length > 0) {
           const { data: itemsByProd } = await (supabase
-            .from("service_order_items" as any)
+            .from("service_order_items")
             .select("service_order_id")
             .in("product_id", matchingProductIds)
-            .limit(10) as any);
+            .limit(10));
           if (itemsByProd && itemsByProd.length > 0) {
             matchedOrderId = itemsByProd[0].service_order_id;
           }
@@ -895,10 +900,10 @@ const Caixa = () => {
         // Fallback por custo unitário caso não encontre por nome
         if (!matchedOrderId) {
           const { data: itemsByCost } = await (supabase
-            .from("service_order_items" as any)
+            .from("service_order_items")
             .select("service_order_id")
             .eq("unit_cost", entry.amount)
-            .limit(10) as any);
+            .limit(10));
           if (itemsByCost && itemsByCost.length > 0) {
             matchedOrderId = itemsByCost[0].service_order_id;
           }
@@ -912,14 +917,14 @@ const Caixa = () => {
             .maybeSingle();
           if (data) {
             foundOrder = data;
-            supabase.from("cash_entries" as any).update({ reference_id: data.id }).eq("id", entry.id).then();
+            supabase.from("cash_entries").update({ reference_id: data.id }).eq("id", entry.id).then();
           }
         }
       }
 
       // 4. Fallback pelo prefixo de OS no comprovante anexado (ex: "os-3b2d1844/...")
       if (!foundOrder && entry.receipt_url) {
-        const matchOs = entry.receipt_url.match(/os-([a-f0-9\-]{8})/i);
+        const matchOs = entry.receipt_url.match(/os-([a-f0-9-]{8})/i);
         if (matchOs && matchOs[1]) {
           const { data: osList } = await supabase
             .from("service_orders")
@@ -928,7 +933,7 @@ const Caixa = () => {
             .limit(1);
           if (osList && osList.length > 0) {
             foundOrder = osList[0];
-            supabase.from("cash_entries" as any).update({ reference_id: foundOrder.id }).eq("id", entry.id).then();
+            supabase.from("cash_entries").update({ reference_id: foundOrder.id }).eq("id", entry.id).then();
           }
         }
       }
@@ -936,7 +941,7 @@ const Caixa = () => {
       setLinkedServiceOrder(foundOrder);
       if (foundOrder) {
         const { data: items } = await supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select(`*, products (name, brand, model, parts_payment_voucher)`)
           .eq("service_order_id", foundOrder.id);
         setLinkedOrderItems(items || []);
@@ -951,27 +956,27 @@ const Caixa = () => {
     }
   };
 
-  const handleOpenFullOs = async (order: any) => {
+  const handleOpenFullOs = async (order: ServiceOrder) => {
     setOsModalOrder(order);
     setOsModalOpen(true);
     setLoadingOsItems(true);
     try {
       const { data: items } = await (supabase
-        .from("service_order_items" as any)
+        .from("service_order_items")
         .select("*")
-        .eq("service_order_id", order.id) as any);
+        .eq("service_order_id", order.id));
 
       if (items && items.length > 0) {
-        const productIds = Array.from(new Set(items.map((it: any) => it.product_id).filter(Boolean))) as string[];
-        const prodMap = new Map<string, any>();
+        const productIds = Array.from(new Set(items.map((it) => it.product_id).filter(Boolean))) as string[];
+        const prodMap = new Map<string, Pick<Product, "id" | "name" | "brand" | "model">>();
         if (productIds.length > 0) {
           const { data: prods } = await supabase
             .from("products")
             .select("id, name, brand, model")
             .in("id", productIds);
-          (prods || []).forEach((p: any) => prodMap.set(p.id, p));
+          (prods || []).forEach((p) => prodMap.set(p.id, p));
         }
-        const enrichedItems = items.map((it: any) => ({
+        const enrichedItems = items.map((it) => ({
           ...it,
           products: prodMap.get(it.product_id) || null
         }));
@@ -1020,7 +1025,7 @@ const Caixa = () => {
     }
 
     setLoading(true);
-    const confirmStoreId = (confirmEntry as any).store_id || activeStoreId;
+    const confirmStoreId = confirmEntry.store_id || activeStoreId;
 
     let finalReceiptUrl: string | null = null;
     if (filesToUpload.length > 0) {
@@ -1042,7 +1047,7 @@ const Caixa = () => {
       orderUrl = await uploadReceipt(confirmOrderFile, `${confirmStoreId}/pedido-confirmacao/${confirmEntry.id}-${Date.now()}`);
     }
 
-    const { error: updateErr } = await supabase.from("cash_entries" as any).update({
+    const { error: updateErr } = await supabase.from("cash_entries").update({
       confirmed: true,
       ...(finalReceiptUrl ? { receipt_url: finalReceiptUrl } : {}),
       ...(orderUrl ? { supplier_order_receipt_url: orderUrl } : {}),
@@ -1066,14 +1071,14 @@ const Caixa = () => {
   const handleDeleteEntry = async (id: string, reason: string) => {
     setLoading(true);
     const deletedEntry = entries.find((e) => e.id === id) || null;
-    await supabase.from("cash_entries" as any).delete().eq("id", id);
+    await supabase.from("cash_entries").delete().eq("id", id);
     await logAction(
-      "DELETE_RECORD" as any,
+      "DELETE_RECORD",
       "cash_entries",
       id,
       deletedEntry
         ? {
-            reference_id: (deletedEntry as any).reference_id || null,
+            reference_id: deletedEntry.reference_id || null,
             description: deletedEntry.description || null,
             amount: deletedEntry.amount,
             payment_method: deletedEntry.payment_method,
@@ -1081,7 +1086,7 @@ const Caixa = () => {
           }
         : null,
       { reason },
-      (deletedEntry as any)?.store_id || activeStoreId
+      deletedEntry?.store_id || activeStoreId
     );
     toast.success("Lançamento apagado!");
     fetchRegister(activeStoreId);
@@ -1090,8 +1095,8 @@ const Caixa = () => {
 
   const handleUnconfirmEntry = async (id: string, reason: string) => {
     setLoading(true);
-    await supabase.from("cash_entries" as any).update({ confirmed: false, receipt_url: null }).eq("id", id);
-    logAction("UPDATE_RECORD" as any, "cash_entries", id, { status: "confirmed" }, { status: "unconfirmed", reason });
+    await supabase.from("cash_entries").update({ confirmed: false, receipt_url: null }).eq("id", id);
+    logAction("UPDATE_RECORD", "cash_entries", id, { status: "confirmed" }, { status: "unconfirmed", reason });
     toast.success("Lançamento desconfirmado!");
     fetchRegister(activeStoreId);
     setLoading(false);
@@ -1103,7 +1108,7 @@ const Caixa = () => {
     setLoadingHistoryEntries(true);
     
     const { data: entriesData, error } = await supabase
-      .from("cash_entries" as any)
+      .from("cash_entries")
       .select("*")
       .eq("cash_register_id", reg.id)
       .order("created_at", { ascending: false });
@@ -1118,8 +1123,8 @@ const Caixa = () => {
 
   const handleReopenRegister = async (id: string, reason: string) => {
     setLoading(true);
-    await supabase.from("cash_registers" as any).update({ status: "open", closed_at: null }).eq("id", id);
-    logAction("UPDATE_RECORD" as any, "cash_registers", id, { status: "closed" }, { status: "open", reason });
+    await supabase.from("cash_registers").update({ status: "open", closed_at: null }).eq("id", id);
+    logAction("UPDATE_RECORD", "cash_registers", id, { status: "closed" }, { status: "open", reason });
     toast.success("Caixa reaberto!");
     setActiveTab("current");
     fetchRegister(activeStoreId);
@@ -1163,7 +1168,7 @@ const Caixa = () => {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)}>
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="current" className="flex-1 sm:flex-none">Caixa Atual</TabsTrigger>
           {userRole === "admin" && (

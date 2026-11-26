@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Plus, Package, ArrowRightLeft, AlertTriangle, Wrench, Pencil, Trash2 } from "lucide-react";
 import { DeviceScreenScanner, ScannedDeviceData } from "@/components/features/ai/DeviceScreenScanner";
+import type { Product, ProductForm } from "./types";
+import type { Store } from "@/types/db";
 
 const REPAIR_OPTIONS = [
   "Troca de Tela", "Troca de Bateria", "Conector de Carga",
@@ -31,27 +33,27 @@ const statusColors: Record<string, string> = {
 };
 
 interface AparelhosTableProps {
-  inStock: any[];
-  form: any;
-  setForm: (form: any) => void;
+  inStock: Product[];
+  form: ProductForm;
+  setForm: React.Dispatch<React.SetStateAction<ProductForm>>;
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   handleSubmit: (e: React.FormEvent) => void;
   loading: boolean;
   activeStoreId: string | null;
   storeMap: Map<string, string>;
-  stores: any[];
+  stores: Store[];
   formatCurrency: (v: number) => string;
-  loadHistory: (p: any) => void;
-  setTransferProduct: (p: any) => void;
+  loadHistory: (p: Product) => void;
+  setTransferProduct: (p: Product) => void;
   setTransferDialogOpen: (open: boolean) => void;
-  setRepairProduct: (p: any) => void;
+  setRepairProduct: (p: Product) => void;
   setRepairModalOpen: (open: boolean) => void;
-  setDefectsProduct: (p: any) => void;
+  setDefectsProduct: (p: Product) => void;
   setDefectsList: (d: string[]) => void;
   setCustomDefect: (d: string) => void;
   setDefectsDialogOpen: (open: boolean) => void;
-  openEditProduct: (p: any) => void;
+  openEditProduct: (p: Product) => void;
   setDeleteId: (id: string) => void;
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;
@@ -272,7 +274,7 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {p.brand} · {p.model} {p.capacity && `· ${p.capacity}`} {p.color && `· ${p.color}`}{" "}
-                        {(p as any).battery_percentage && `· 🔋 ${(p as any).battery_percentage}%`} · {conditionLabel}
+                        {p.battery_percentage && `· 🔋 ${p.battery_percentage}%`} · {conditionLabel}
                         {p.imei && ` · IMEI: ${p.imei}`}
                       </p>
                       {p.notes && (
@@ -340,7 +342,7 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                     </Button>
                     {(p.status === "in_stock" || p.status === "repair") && (
                       <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-primary/20 text-primary hover:bg-primary/5 bg-primary/5 shadow-none"
-                        onClick={() => { setRepairProduct(p as any); setRepairModalOpen(true); }}>
+                        onClick={() => { setRepairProduct(p); setRepairModalOpen(true); }}>
                         <Wrench className="h-3 w-3" /> Reparo
                       </Button>
                     )}

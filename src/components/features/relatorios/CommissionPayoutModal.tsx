@@ -34,6 +34,8 @@ import {
 import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
 import { isOSCommissionWaived } from "@/utils/osCalculations";
 import { Ban } from "lucide-react";
+import { errorMessage, type CashRegister, type Profile, type SaleWithProduct, type ServiceOrder, type Store, type StoreBankAccount, type UserRole } from "@/types/db";
+import type { OsItemCost, SellerStat } from "./reportTypes";
 
 interface PendingCommissionItem {
   id: string;
@@ -55,13 +57,13 @@ interface CommissionPayoutModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   storeId: string;
-  stores: any[];
-  profiles: any[];
-  collaborators: any[]; // Colaboradores com dados de ranking/comissões
-  allSales: any[];
-  allServiceOrders: any[];
-  osItems: any[];
-  userRolesMap: Map<string, any>;
+  stores: Store[];
+  profiles: Profile[];
+  collaborators: SellerStat[]; // Colaboradores com dados de ranking/comissões
+  allSales: SaleWithProduct[];
+  allServiceOrders: ServiceOrder[];
+  osItems: OsItemCost[];
+  userRolesMap: Map<string, UserRole>;
   settledSaleIds: Set<string>;
   settledOsIds: Set<string>;
   currentUserName: string;
@@ -92,17 +94,17 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-  const [openRegisters, setOpenRegisters] = useState<any[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<StoreBankAccount[]>([]);
+  const [openRegisters, setOpenRegisters] = useState<CashRegister[]>([]);
   const [selectedCashRegisterId, setSelectedCashRegisterId] = useState<string>("");
   const [loadingOpenRegister, setLoadingOpenRegister] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [directOsParts, setDirectOsParts] = useState<any[]>([]);
+  const [directOsParts, setDirectOsParts] = useState<OsItemCost[]>([]);
   const [loadingParts, setLoadingParts] = useState(false);
   const [pendingFinancialOsIds, setPendingFinancialOsIds] = useState<Set<string>>(new Set());
-  const [periodSales, setPeriodSales] = useState<any[]>([]);
-  const [periodServiceOrders, setPeriodServiceOrders] = useState<any[]>([]);
+  const [periodSales, setPeriodSales] = useState<SaleWithProduct[]>([]);
+  const [periodServiceOrders, setPeriodServiceOrders] = useState<ServiceOrder[]>([]);
   const [loadingPeriodItems, setLoadingPeriodItems] = useState(false);
   const [localWaivedOsIds, setLocalWaivedOsIds] = useState<Set<string>>(new Set());
 
@@ -112,7 +114,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     try {
       const { data: os } = await supabase.from('service_orders').select('internal_notes, store_id, status').eq('id', osId).maybeSingle();
       if (!os) return;
-      const currentNotes = (os as any).internal_notes || '';
+      const currentNotes = os.internal_notes || '';
       const tag = '[COMISSAO_ANULADA: ' + reason.trim() + ']';
       const newNotes = currentNotes ? currentNotes + '\n' + tag : tag;
       await supabase.from('service_orders').update({ internal_notes: newNotes, updated_at: new Date().toISOString() }).eq('id', osId);
@@ -122,8 +124,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       );
       toast.success(`Comissão da OS ${orderNumber ? `#${orderNumber}` : ""} anulada com sucesso!`);
       onSuccess();
-    } catch (err: any) {
-      toast.error('Erro ao anular comissao: ' + err.message);
+    } catch (err) {
+      toast.error('Erro ao anular comissao: ' + errorMessage(err));
     }
   };
   const [failedOsInfo, setFailedOsInfo] = useState<{
@@ -214,7 +216,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     Promise.all([
       supabase
         .from("sales")
-        .select("*, products(*)")
+        .select("*, products!sales_product_id_fkey(*)")
         .eq("store_id", selectedStoreId)
         .eq("created_by", selectedUserId)
         .gte("created_at", startBuf)
@@ -230,8 +232,8 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     ])
       .then(([sRes, oRes]) => {
         if (cancelled) return;
-        setPeriodSales((sRes.data as any[]) ?? []);
-        setPeriodServiceOrders((oRes.data as any[]) ?? []);
+        setPeriodSales(sRes.data ?? []);
+        setPeriodServiceOrders(oRes.data ?? []);
       })
       .catch((err) => {
         console.error("Erro ao sincronizar itens do período para liquidação:", err);
@@ -246,7 +248,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   }, [open, selectedUserId, selectedStoreId, startDate, endDate]);
 
   const effectiveSales = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, SaleWithProduct>();
     (allSales || []).forEach((s) => {
       if (s?.id) map.set(s.id, s);
     });
@@ -257,7 +259,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   }, [allSales, periodSales]);
 
   const effectiveServiceOrders = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, ServiceOrder>();
     (allServiceOrders || []).forEach((o) => {
       if (o?.id) map.set(o.id, o);
     });
@@ -280,11 +282,11 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
   useEffect(() => {
     if (!selectedStoreId) return;
     supabase
-      .from("store_bank_accounts" as any)
+      .from("store_bank_accounts")
       .select("*")
       .eq("store_id", selectedStoreId)
       .then(({ data }) => {
-        const list = (data as any[]) ?? [];
+        const list = data ?? [];
         setBankAccounts(list);
         if (list.length > 0 && !selectedAccountId) {
           setSelectedAccountId(list[0].id);
@@ -297,13 +299,13 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     if (!selectedStoreId) return;
     setLoadingOpenRegister(true);
     supabase
-      .from("cash_registers" as any)
+      .from("cash_registers")
       .select("*")
       .eq("store_id", selectedStoreId)
       .eq("status", "open")
-      .order("created_at", { ascending: false })
+      .order("opened_at", { ascending: false })
       .then(({ data }) => {
-        const list = (data as any[]) ?? [];
+        const list = data ?? [];
         setOpenRegisters(list);
         if (list.length > 0) {
           setSelectedCashRegisterId(list[0].id);
@@ -343,13 +345,13 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     Promise.all(
       chunks.map((chunk) =>
         supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, unit_cost, quantity")
           .in("service_order_id", chunk)
       )
     )
       .then((results) => {
-        const allParts: any[] = [];
+        const allParts: OsItemCost[] = [];
         results.forEach((res) => {
           if (res.data) allParts.push(...res.data);
         });
@@ -365,7 +367,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
     // Sincroniza status financeiro (Caixa): comissão só é liberada com entrada ("entrada") ativa e confirmada
     Promise.all([
       supabase
-        .from("cash_entries" as any)
+        .from("cash_entries")
         .select("reference_id, description, confirmed, created_at, store_id")
         .eq("type", "entrada")
         .or(`store_id.eq.${selectedStoreId},store_id.is.null`),
@@ -377,10 +379,10 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         .neq("new_status", "delivered")
         .order("created_at", { ascending: false }),
     ]).then(([entriesRes, reopenRes]) => {
-      const entries = (entriesRes.data as any[]) || [];
+      const entries = entriesRes.data || [];
       const lastReopenMap = new Map<string, string>();
       if (reopenRes.data) {
-        (reopenRes.data as any[]).forEach((h: any) => {
+        reopenRes.data.forEach((h) => {
           if (h.service_order_id && !lastReopenMap.has(h.service_order_id)) {
             lastReopenMap.set(h.service_order_id, h.created_at);
           }
@@ -388,14 +390,14 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       }
 
       const pendingFin = new Set<string>();
-      targetOrders.forEach((o: any) => {
+      targetOrders.forEach((o) => {
         const expectedVal = Number(o.final_price || o.estimated_price || 0);
         if (expectedVal <= 0) return;
 
         const lastReopenAt = lastReopenMap.get(o.id) || null;
         const orderNum = Number(o.order_number);
 
-        const matching = entries.filter((e: any) => {
+        const matching = entries.filter((e) => {
           const desc = e.description || "";
           if (desc.startsWith("PDV:") || desc.startsWith("Venda:")) return false;
           if (lastReopenAt && e.created_at && e.created_at <= lastReopenAt) return false;
@@ -409,7 +411,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
         const refDate = o.delivered_at || o.created_at || "";
         const isPostIntegration = refDate >= "2026-11-01";
 
-        if (matching.some((e: any) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
+        if (matching.some((e) => !e.confirmed) || (matching.length === 0 && isPostIntegration)) {
           pendingFin.add(o.id);
         }
       });
@@ -705,7 +707,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       setSelectedItemIds(new Set());
       setNotes("");
       setReceiptFile(null);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erro ao liquidar comissões:", err);
       const rawMsg = err?.message || String(err) || "Erro desconhecido";
 
@@ -733,7 +735,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
       const isWaivedError = rawMsg.includes("OS_COMMISSION_WAIVED") || rawMsg.includes("anulada pela gestão");
       const isFinPendingError = rawMsg.includes("OS_FINANCIAL_PENDING") || rawMsg.includes("confirmado no Caixa");
 
-      const profitMatch = rawMsg.match(/R\$\s*(-?[\d\.,]+)/i);
+      const profitMatch = rawMsg.match(/R\$\s*(-?[\d.,]+)/i);
       const profitText = profitMatch ? profitMatch[1] : "";
 
       let errorTitle = "Divergência na Ordem de Serviço";
@@ -1165,7 +1167,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                 <Label className="text-xs font-semibold">Forma de Pagamento</Label>
                 <Select
                   value={paymentMethod}
-                  onValueChange={(v: any) => setPaymentMethod(v)}
+                  onValueChange={(v) => setPaymentMethod(v as "dinheiro" | "pix" | "transferencia")}
                 >
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue />
@@ -1217,7 +1219,7 @@ export const CommissionPayoutModal: React.FC<CommissionPayoutModalProps> = ({
                       <SelectContent>
                         {openRegisters.map((reg) => (
                           <SelectItem key={reg.id} value={reg.id} className="text-xs">
-                            Caixa #{reg.id.slice(0, 8)} ({new Date(reg.opened_at || reg.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})
+                            Caixa #{reg.id.slice(0, 8)} ({new Date(reg.opened_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})
                           </SelectItem>
                         ))}
                       </SelectContent>

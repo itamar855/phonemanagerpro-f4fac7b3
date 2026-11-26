@@ -156,20 +156,14 @@ describe('Schema Validation — cash_entries column names', () => {
 });
 
 describe('Schema Validation — types.ts discrepancy detection', () => {
-  it('should document that types.ts uses register_id (known wrong)', () => {
+  it('types.ts (regenerado do banco) usa cash_register_id, não o antigo register_id', () => {
     const typesFile = path.join(SRC_DIR, 'integrations', 'supabase', 'types.ts');
     const content = fs.readFileSync(typesFile, 'utf-8');
-    
-    // This test documents the known discrepancy
-    const hasWrongName = content.includes('register_id') && 
-                          content.includes('cash_entries_register_id_fkey');
-    
-    // If this assertion fails, it means types.ts was regenerated/fixed — update this test
-    expect(hasWrongName).toBe(true);
-    // Log warning for visibility
-    console.warn(
-      '⚠️  types.ts declares "register_id" but the real DB column is "cash_register_id". ' +
-      'This is a known discrepancy. The code correctly uses "cash_register_id" via "as any" casts.'
-    );
+
+    // Antes o types.ts estava desatualizado e declarava "register_id". Depois de
+    // regenerado, o nome bate com a coluna real; este teste impede a volta do nome errado.
+    expect(content).toContain('cash_register_id');
+    expect(content).not.toMatch(/\bregister_id\b/);
+    expect(content).not.toContain('cash_entries_register_id_fkey');
   });
 });

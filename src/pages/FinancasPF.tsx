@@ -121,7 +121,7 @@ const FinancasPF = () => {
     setTransactions(txRes.data ?? []);
     const rawAccounts = accRes.data ?? [];
     const seenPfNames = new Set<string>();
-    const dedupedAccounts = rawAccounts.filter((a: any) => {
+    const dedupedAccounts = rawAccounts.filter((a) => {
       const key = (a.bank_name || "").toLowerCase().trim();
       if (seenPfNames.has(key)) return false;
       seenPfNames.add(key);
@@ -208,7 +208,7 @@ const FinancasPF = () => {
       description: form.description || null,
       category: form.category || null,
       source_account_id: form.source_account_id || null,
-      destination_account_id: null,
+      destination_account_id: null as string | null,
       store_id: form.type === "expense_pf" ? null : activeStoreId,
       net_amount: parseFloat(form.amount) || 0,
       receipt_url: existingReceiptUrl
@@ -233,7 +233,7 @@ const FinancasPF = () => {
         created_by: user.id,
         expected_settlement_date: new Date().toISOString(),
         reconciled: false,
-      } as any);
+      });
       if (error) toast.error(error.message);
       else {
         toast.success("Lançamento registrado!");
@@ -295,7 +295,7 @@ const FinancasPF = () => {
         if (url) finalUrL = url;
       }
       
-      const { error } = await supabase.from("transactions").update({ reconciled: true, receipt_url: finalUrL } as any).eq("id", reconcilingTx.id);
+      const { error } = await supabase.from("transactions").update({ reconciled: true, receipt_url: finalUrL }).eq("id", reconcilingTx.id);
       
       if (error) {
         toast.error(error.message);
@@ -307,7 +307,7 @@ const FinancasPF = () => {
         setReceiptFile(null);
         fetchData();
       }
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Erro ao conciliar: " + err.message);
     } finally {
       setLoading(false);
@@ -383,7 +383,7 @@ const FinancasPF = () => {
         net_amount: e.amount
       }));
 
-    const { error } = await supabase.from("transactions").insert(transactionsToInsert as any);
+    const { error } = await supabase.from("transactions").insert(transactionsToInsert);
 
     if (error) toast.error("Erro ao lançar: " + error.message);
     else {

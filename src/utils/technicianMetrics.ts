@@ -61,6 +61,7 @@ export const PROJECTED_COMMISSION_STATUSES = ["repairing", "ready", "waiting_app
  */
 export function calculateProjectedCommission(
   activeOrders: Array<{
+    id?: string;
     status?: string | null;
     final_price?: number | string | null;
     estimated_price?: number | string | null;
@@ -85,7 +86,7 @@ export function calculateProjectedCommission(
     const price = Number(o.final_price || o.estimated_price || 0);
     if (price <= 0) return;
 
-    const osParts = parts.filter((p) => (p as any).service_order_id === (o as any).id);
+    const osParts = parts.filter((p) => p.service_order_id === o.id);
     const custoPecas = osParts.reduce(
       (acc, p) => acc + (Number(p.unit_cost || 0) * Number(p.quantity || 1)),
       0

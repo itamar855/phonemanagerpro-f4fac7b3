@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Zap, Plus, Pencil, Trash2 } from "lucide-react";
+import type { Accessory as EstoqueAccessory } from "./types";
 
 const categoryLabels: Record<string, string> = {
   carregador: "Carregador", cabo: "Cabo", capa: "Capa", pelicula: "Película",
@@ -10,11 +11,11 @@ const categoryLabels: Record<string, string> = {
 };
 
 interface AcessoriosTableProps {
-  filteredAccessories: any[];
+  filteredAccessories: EstoqueAccessory[];
   activeStoreId: string | null;
   storeMap: Map<string, string>;
   formatCurrency: (v: number) => string;
-  openAccDialog: (a?: any) => void;
+  openAccDialog: (a?: EstoqueAccessory) => void;
   setDeleteId: (id: string) => void;
   setDeleteType: (t: "product" | "accessory") => void;
   setJustification: (j: string) => void;

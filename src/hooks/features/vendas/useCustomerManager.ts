@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Tables } from "@/integrations/supabase/types";
+import type { User } from "@supabase/supabase-js";
+import type { Sale } from "@/types/db";
 
 type Customer = Tables<"customers">;
-type Sale = any;
 
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
 
-export const useCustomerManager = (customers: Customer[], activeStoreId: string | null, user: any, setLoading: (loading: boolean) => void, onCustomerCreated?: (customer: Customer) => void) => {
+export const useCustomerManager = (customers: Customer[], activeStoreId: string | null, user: User | null, setLoading: (loading: boolean) => void, onCustomerCreated?: (customer: Customer) => void) => {
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);

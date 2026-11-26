@@ -99,7 +99,7 @@ describe("Módulo do Técnico e Relatórios — Regras de Negócio e Salvaguarda
       const osSemTecnico = {
         status: "delivered",
         final_price: 500,
-        technician_id: null,
+        technician_id: null as string | null,
       };
 
       const metrics = calculateOSItemMetrics(osSemTecnico, parts, roleTecnico);
@@ -201,7 +201,7 @@ describe("Módulo do Técnico e Relatórios — Regras de Negócio e Salvaguarda
         order_number: 102,
         status: "repairing",
         created_at: "2026-10-01T09:00:00.000Z", // Entrada em Outubro
-        delivered_at: null, // Ainda em bancada
+        delivered_at: null as string | null, // Ainda em bancada
         estimated_price: 300,
       },
       {
@@ -425,7 +425,7 @@ describe("Módulo do Técnico e Relatórios — Regras de Negócio e Salvaguarda
       const osSemTecnico = {
         status: "delivered",
         final_price: 350,
-        technician_id: null,
+        technician_id: null as string | null,
       };
 
       const metrics = calculateOSItemMetrics(osSemTecnico, parts, roleTecnico);

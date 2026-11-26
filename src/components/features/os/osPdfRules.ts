@@ -61,7 +61,7 @@ export type PerformedService = { description: string; price: number | null };
 export function performedServices(order: { services_performed?: unknown; service_performed?: string | null }): PerformedService[] {
   const raw = Array.isArray(order.services_performed) ? order.services_performed : [];
   const list = raw
-    .map((x: any) => ({
+    .map((x) => ({
       description: String(x?.description ?? "").trim(),
       price: x?.price === null || x?.price === undefined || x?.price === "" || Number.isNaN(Number(x.price)) ? null : round2(Number(x.price)),
     }))
@@ -69,7 +69,7 @@ export function performedServices(order: { services_performed?: unknown; service
   if (list.length) return list;
   return String(order.service_performed ?? "")
     .split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-    .map((description) => ({ description, price: null }));
+    .map((description): PerformedService => ({ description, price: null }));
 }
 
 /** Linha do formulário (valores como texto dos inputs). */

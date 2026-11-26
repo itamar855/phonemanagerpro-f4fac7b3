@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 
 export interface CommissionSettlement {
   id: string;
@@ -125,7 +126,7 @@ const pdfSafe = (text?: string | null): string => {
     .replace(/[\u2013\u2014]/g, "-")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "")
+    .replace(/[^\t\n\r\x20-\xFF]/g, "")
     .trim();
 };
 
@@ -138,14 +139,14 @@ export async function fetchSettledItemIds(): Promise<{
   settledOsIds: Set<string>;
 }> {
   const { data, error } = await (supabase
-    .from("commission_settlement_items" as any)
-    .select("sale_id, service_order_id") as any);
+    .from("commission_settlement_items")
+    .select("sale_id, service_order_id"));
 
   const settledSaleIds = new Set<string>();
   const settledOsIds = new Set<string>();
 
   if (!error && data) {
-    data.forEach((item: any) => {
+    data.forEach((item) => {
       if (item.sale_id) settledSaleIds.add(item.sale_id);
       if (item.service_order_id) settledOsIds.add(item.service_order_id);
     });
@@ -160,15 +161,15 @@ export async function fetchSettledItemIds(): Promise<{
 export async function settleCommissionsRPC(
   payload: SettleCommissionsPayload
 ): Promise<SettleCommissionsResponse> {
-  const { data, error } = await (supabase.rpc("settle_commissions" as any, {
-    p_payload: payload,
-  }) as any);
+  const { data, error } = await (supabase.rpc("settle_commissions", {
+    p_payload: payload as unknown as Json,
+  }));
 
   if (error) {
     throw new Error(error.message || "Falha ao liquidar comissões.");
   }
 
-  return data as SettleCommissionsResponse;
+  return data as unknown as SettleCommissionsResponse;
 }
 
 /**
@@ -180,17 +181,17 @@ export async function cancelCommissionSettlementRPC(
   reason: string,
   refundToOpenRegister = false
 ): Promise<CancelCommissionSettlementResponse> {
-  const { data, error } = await (supabase.rpc("cancel_commission_settlement" as any, {
+  const { data, error } = await (supabase.rpc("cancel_commission_settlement", {
     p_settlement_id: settlementId,
     p_reason: reason,
     p_refund_to_open_register: refundToOpenRegister,
-  }) as any);
+  }));
 
   if (error) {
     throw new Error(error.message || "Falha ao anular liquidação de comissão.");
   }
 
-  return data as CancelCommissionSettlementResponse;
+  return data as unknown as CancelCommissionSettlementResponse;
 }
 
 /**
@@ -204,7 +205,7 @@ export async function fetchSettlementsHistory(
   includeCancelled = false
 ): Promise<CommissionSettlement[]> {
   let query = supabase
-    .from("commission_settlements" as any)
+    .from("commission_settlements")
     .select("*")
     .order("paid_at", { ascending: false });
 
@@ -220,13 +221,13 @@ export async function fetchSettlementsHistory(
     query = query.eq("user_id", userId);
   }
 
-  const { data, error } = await (query as any);
+  const { data, error } = await query;
   if (error) {
     console.error("Erro ao carregar histórico de liquidações:", error);
     return [];
   }
 
-  return (data as CommissionSettlement[]) || [];
+  return (data as unknown as CommissionSettlement[]) || [];
 }
 
 /**
@@ -238,10 +239,10 @@ export async function fetchSettlementItems(
   settlementId: string
 ): Promise<CommissionSettlementItem[]> {
   const { data, error } = await (supabase
-    .from("commission_settlement_items" as any)
+    .from("commission_settlement_items")
     .select("*")
     .eq("settlement_id", settlementId)
-    .order("created_at", { ascending: true }) as any);
+    .order("created_at", { ascending: true }));
 
   if (error) {
     console.error("Erro ao carregar itens da liquidação:", error);
@@ -252,13 +253,13 @@ export async function fetchSettlementItems(
 
   if (rawItems.length === 0) {
     const { data: settlementRow } = await (supabase
-      .from("commission_settlements" as any)
+      .from("commission_settlements")
       .select("cancelled_items_snapshot")
       .eq("id", settlementId)
-      .maybeSingle() as any);
+      .maybeSingle());
 
     if (Array.isArray(settlementRow?.cancelled_items_snapshot)) {
-      return settlementRow.cancelled_items_snapshot as CommissionSettlementItem[];
+      return settlementRow.cancelled_items_snapshot as unknown as CommissionSettlementItem[];
     }
     return [];
   }
@@ -276,26 +277,26 @@ export async function fetchSettlementItems(
           .from("service_orders")
           .select("id, order_number, customer_name, device_brand, device_model, requested_service, delivered_at, created_at")
           .in("id", osIds)
-      : Promise.resolve({ data: [] as any[] }),
+      : Promise.resolve({ data: [] as never[] }),
     osIds.length > 0
       ? (supabase
-          .from("service_order_items" as any)
+          .from("service_order_items")
           .select("service_order_id, quantity, unit_cost, products(name)")
-          .in("service_order_id", osIds) as any)
-      : Promise.resolve({ data: [] as any[] }),
+          .in("service_order_id", osIds))
+      : Promise.resolve({ data: [] as never[] }),
     saleIds.length > 0
       ? supabase
           .from("sales")
-          .select("id, customer_name, created_at, products(name, brand, model)")
+          .select("id, customer_name, created_at, products!sales_product_id_fkey(name, brand, model)")
           .in("id", saleIds)
-      : Promise.resolve({ data: [] as any[] }),
+      : Promise.resolve({ data: [] as never[] }),
   ]);
 
-  const osMap = new Map<string, any>((osRes.data || []).map((o: any) => [o.id, o]));
-  const saleMap = new Map<string, any>((salesRes.data || []).map((s: any) => [s.id, s]));
+  const osMap = new Map((osRes.data || []).map((o) => [o.id, o]));
+  const saleMap = new Map((salesRes.data || []).map((s) => [s.id, s]));
 
   const partsListMap = new Map<string, string[]>();
-  (osPartsRes.data || []).forEach((pt: any) => {
+  (osPartsRes.data || []).forEach((pt) => {
     if (!pt.service_order_id) return;
     const pName = pt.products?.name || "Peça";
     const qty = Number(pt.quantity || 1);

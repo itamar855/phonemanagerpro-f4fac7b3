@@ -15,20 +15,21 @@ import {
   Smartphone, Store, Tag, Trash2, Banknote, CreditCard, QrCode, Landmark,
   Shield, Percent, CalendarDays
 } from "lucide-react";
-import { Customer } from "./types";
+import type { User } from "@supabase/supabase-js";
+import type { Customer, CustomerForm, Product, Profile, Sale, SaleForm, Store as StoreRow, StoreBankAccount } from "./types";
 
 interface NovaVendaModalProps {
   dialogOpen: boolean;
   setDialogOpen: (open: boolean) => void;
   resetForm: () => void;
   handleSubmit: (e: React.FormEvent) => Promise<void>;
-  form: any;
-  setForm: React.Dispatch<React.SetStateAction<any>>;
-  products: any[];
-  availableProducts: any[];
-  selectedProduct: any | null;
-  storeMap: Map<string, any>;
-  bankAccounts: any[];
+  form: SaleForm;
+  setForm: React.Dispatch<React.SetStateAction<SaleForm>>;
+  products: Product[];
+  availableProducts: Product[];
+  selectedProduct: Product | null;
+  storeMap: Map<string, StoreRow>;
+  bankAccounts: StoreBankAccount[];
   salePrice: number;
   discount: number;
   salePriceAfterDiscount: number;
@@ -45,22 +46,22 @@ interface NovaVendaModalProps {
   formatCurrency: (v: number) => string;
 
   // Customer Manager Props
-  currentProfile: any;
-  user: any;
-  selectedCustomer: any;
+  currentProfile: Profile | undefined;
+  user: User | null;
+  selectedCustomer: Customer | null;
   clearCustomer: () => void;
-  customerSalesHistory: any[];
+  customerSalesHistory: Sale[];
   showCustomerHistory: boolean;
   setShowCustomerHistory: React.Dispatch<React.SetStateAction<boolean>>;
-  productMap: Map<string, any>;
+  productMap: Map<string, Product>;
   customerSearch: string;
   setCustomerSearch: (v: string) => void;
-  customerResults: any[];
-  selectCustomer: (c: any) => void;
+  customerResults: Customer[];
+  selectCustomer: (c: Customer) => void;
   showNewCustomerForm: boolean;
   setShowNewCustomerForm: React.Dispatch<React.SetStateAction<boolean>>;
-  newCustomerForm: any;
-  setNewCustomerForm: React.Dispatch<React.SetStateAction<any>>;
+  newCustomerForm: CustomerForm;
+  setNewCustomerForm: React.Dispatch<React.SetStateAction<CustomerForm>>;
   handleCreateCustomer: () => Promise<void>;
 }
 
@@ -172,7 +173,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                     {showCustomerHistory && (
                       <div className="mt-2 space-y-1">
                         {customerSalesHistory.map((s) => {
-                          const p = productMap.get(s.product_id) as any;
+                          const p = productMap.get(s.product_id);
                           return (
                             <div key={s.id} className="flex justify-between rounded bg-muted/50 px-2 py-1 text-[10px]">
                               <span className="truncate">{p?.name ?? "Produto"}</span>
@@ -230,7 +231,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <Label className="text-xs">Nome *</Label>
                       <Input
                         value={newCustomerForm.name}
-                        onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, name: e.target.value }))}
+                        onChange={(e) => setNewCustomerForm((f) => ({ ...f, name: e.target.value }))}
                         placeholder="Nome completo"
                         className="h-9"
                       />
@@ -240,7 +241,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Label className="text-xs">Telefone</Label>
                         <Input
                           value={newCustomerForm.phone}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, phone: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, phone: e.target.value }))}
                           placeholder="(87) 99999-9999"
                           className="h-9"
                         />
@@ -249,7 +250,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Label className="text-xs">CPF</Label>
                         <Input
                           value={newCustomerForm.cpf}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, cpf: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, cpf: e.target.value }))}
                           placeholder="000.000.000-00"
                           className="h-9"
                         />
@@ -259,7 +260,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <Label className="text-xs">Endereço</Label>
                       <Input
                         value={newCustomerForm.address}
-                        onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, address: e.target.value }))}
+                        onChange={(e) => setNewCustomerForm((f) => ({ ...f, address: e.target.value }))}
                         placeholder="Rua, número, bairro..."
                         className="h-9"
                       />
@@ -270,7 +271,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Input
                           type="email"
                           value={newCustomerForm.email}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, email: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, email: e.target.value }))}
                           placeholder="email@exemplo.com"
                           className="h-9"
                         />
@@ -280,7 +281,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                         <Input
                           type="date"
                           value={newCustomerForm.birth}
-                          onChange={(e) => setNewCustomerForm((f: any) => ({ ...f, birth: e.target.value }))}
+                          onChange={(e) => setNewCustomerForm((f) => ({ ...f, birth: e.target.value }))}
                           className="h-9"
                         />
                       </div>
@@ -314,7 +315,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
               </SelectTrigger>
               <SelectContent>
                 {availableProducts.map((p) => {
-                  const storeName = (storeMap.get(p.store_id) as any)?.name || "?";
+                  const storeName = (storeMap.get(p.store_id))?.name || "?";
                   return (
                     <SelectItem key={p.id} value={p.id} className="py-2.5 focus:bg-accent">
                       <div className="flex flex-col gap-1 w-full text-left">
@@ -365,12 +366,12 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <span className="font-medium">{selectedProduct.model}</span>
                     </div>
                   )}
-                  {(selectedProduct as any).color && (
+                  {selectedProduct.color && (
                     <div className="flex flex-col gap-0.5">
                       <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Cor</span>
                       <span className="font-medium flex items-center gap-1">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full border border-border" style={{ background: (selectedProduct as any).color }} />
-                        {(selectedProduct as any).color}
+                        <span className="inline-block h-2.5 w-2.5 rounded-full border border-border" style={{ background: selectedProduct.color }} />
+                        {selectedProduct.color}
                       </span>
                     </div>
                   )}
@@ -403,7 +404,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Loja</span>
                       <span className="font-medium flex items-center gap-1">
                         <Store className="h-3 w-3 text-muted-foreground" />
-                        {(storeMap.get(selectedProduct.store_id) as any)?.name ?? "—"}
+                        {(storeMap.get(selectedProduct.store_id))?.name ?? "—"}
                       </span>
                     </div>
                   )}
@@ -504,7 +505,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                 </Button>
               </div>
 
-              {(form.trade_in_devices || []).map((device: any, index: number) => (
+              {(form.trade_in_devices || []).map((device, index: number) => (
                 <div key={index} className="space-y-3 p-2.5 rounded-md border border-border/50 bg-background/50 relative">
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] font-bold text-muted-foreground uppercase">Aparelho #{index + 1}</p>

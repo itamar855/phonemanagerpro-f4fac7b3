@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 import { toast } from "sonner";
 import { Camera, Upload, CheckCircle } from "lucide-react";
 import { convertToWebP } from "@/utils/imageOptimizer";
@@ -57,8 +58,8 @@ export default function Avaliacao() {
       }
 
       // Insert record
-      const { error } = await supabase
-        .from('device_evaluations' as any)
+      const { error } = await untypedDb
+        .from('device_evaluations')
         .insert({
           client_name: name,
           client_phone: phone,
@@ -75,7 +76,7 @@ export default function Avaliacao() {
       
       setSuccess(true);
       toast.success("Avaliação enviada com sucesso! Em breve entraremos em contato.");
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
       toast.error(error.message || "Erro ao enviar a avaliação. Tente novamente.");
     } finally {

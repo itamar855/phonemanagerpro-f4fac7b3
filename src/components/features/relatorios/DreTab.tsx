@@ -4,15 +4,16 @@ import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Ba
 import { FileText, TrendingUp, TrendingDown } from "lucide-react";
 import { formatCurrency, formatPct, exportDREPDF, exportCSV, COLORS } from "./relatorioPdf";
 import { Filters, ExportBtns } from "./types";
+import type { DreData, DreLine, FilterProps, MonthlyRow, StoreBreakdownRow } from "./reportTypes";
 
 export interface DreTabProps {
-  filterProps: any;
-  dreLines: any[];
-  dre: any;
+  filterProps: FilterProps;
+  dreLines: DreLine[];
+  dre: DreData;
   currentPeriodLabel: string;
   currentStoreName: string;
-  monthlyData: any[];
-  storeBreakdown: any[];
+  monthlyData: MonthlyRow[];
+  storeBreakdown: StoreBreakdownRow[];
 }
 
 export const DreTab: React.FC<DreTabProps> = ({
@@ -58,8 +59,8 @@ export const DreTab: React.FC<DreTabProps> = ({
               >
                 <div>
                   <span className={line.bold ? "" : "text-muted-foreground"}>{line.label}</span>
-                  {(line as any).sub && (
-                    <span className="text-[10px] text-muted-foreground ml-2">({(line as any).sub})</span>
+                  {line.sub && (
+                    <span className="text-[10px] text-muted-foreground ml-2">({line.sub})</span>
                   )}
                 </div>
                 <span

@@ -44,9 +44,9 @@ const reply = (over: Partial<AgentDecision> = {}): AgentDecision => ({
 
 describe("agente de IA — instruções", () => {
   const base = {
-    storeName: "Restaura Phone", knowledge: "Endereço: Rua A, 10. Película 3D: R$ 30.", persona: null, contactName: "Ana Souza",
+    storeName: "Restaura Phone", knowledge: "Endereço: Rua A, 10. Película 3D: R$ 30.", persona: null as string | null, contactName: "Ana Souza",
     isCustomer: true, now: new Date("2026-11-16T13:00:00Z"), openNow: true, hoursText: "seg a sáb das 08:00 às 18:00",
-    serviceOrders: [{ number: 106, device: "Motorola G22", status: "ready" }], handoffMessage: null,
+    serviceOrders: [{ number: 106, device: "Motorola G22", status: "ready" }], handoffMessage: null as string | null,
   };
 
   it("leva o conhecimento, as OS e a proibição de inventar preço", () => {
@@ -263,7 +263,7 @@ describe("trava de contexto: a IA só responde sozinha quando entende a conversa
 });
 
 describe("jeito de gente: a pessoa não percebe que é a IA", () => {
-  const base = { storeName: "Loja X", knowledge: "", persona: null, contactName: null, isCustomer: false, now: new Date(), openNow: true, hoursText: null, serviceOrders: [], handoffMessage: null };
+  const base = { storeName: "Loja X", knowledge: "", persona: null as string | null, contactName: null as string | null, isCustomer: false, now: new Date(), openNow: true, hoursText: null as string | null, serviceOrders: [] as { number: number; device: string; status: string }[], handoffMessage: null as string | null };
 
   it("instruções pedem conversa informal, sem lista numerada nem frases de robô", () => {
     const p = buildSystemPrompt(base);

@@ -13,7 +13,7 @@ describe("versão nova publicada com o sistema aberto", () => {
 
   it("recarrega uma vez e não entra em loop", () => {
     const store = new Map<string, string>();
-    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string): void => void store.set(k, v) };
     const reload = vi.fn();
     expect(reloadForNewVersion({ storage, now: 1_000_000, reload })).toBe(true);
     expect(reloadForNewVersion({ storage, now: 1_010_000, reload })).toBe(false); // 10 s depois: não repete

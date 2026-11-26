@@ -19,7 +19,7 @@ export const createPendingCashEntry = async (
   if (!storeId || amount <= 0) return { success: false, error: "Loja ou valor inválido para lançamento no caixa." };
 
   let query = supabase
-    .from("cash_registers" as any)
+    .from("cash_registers")
     .select("id, store_id")
     .eq("status", "open")
     .eq("opened_by", userId);
@@ -28,7 +28,9 @@ export const createPendingCashEntry = async (
     query = query.eq("store_id", storeId);
   }
 
-  let { data: register, error: regError } = await query.maybeSingle();
+  const registerRes = await query.maybeSingle();
+  let register = registerRes.data;
+  const regError = registerRes.error;
 
   if (regError) {
     console.error("Erro ao buscar caixa do usuário (OS):", regError);
@@ -36,7 +38,7 @@ export const createPendingCashEntry = async (
 
   if (!register) {
     let fallbackQuery = supabase
-      .from("cash_registers" as any)
+      .from("cash_registers")
       .select("id, store_id")
       .eq("status", "open");
       
@@ -52,14 +54,14 @@ export const createPendingCashEntry = async (
     register = fallbackRegister;
   }
   
-  const registerId = register ? (register as any).id : null;
+  const registerId = register ? register.id : null;
 
   if (registerId) {
-    const actualStoreId = (register as any)?.store_id || (storeId !== "all" ? storeId : null);
+    const actualStoreId = register?.store_id || (storeId !== "all" ? storeId : null);
     const isCash = paymentMethod === "dinheiro";
     const isConfirmed = Boolean(confirmed) || isCash;
 
-    const { error: insertError } = await supabase.from("cash_entries" as any).insert({
+    const { error: insertError } = await supabase.from("cash_entries").insert({
       cash_register_id: registerId,
       store_id: actualStoreId,
       type: "entrada",
@@ -70,7 +72,7 @@ export const createPendingCashEntry = async (
       confirmed: isConfirmed,
       created_by: userId,
       reference_id: referenceId || null,
-    } as any);
+    });
     
     if (insertError) {
       console.error("Erro ao inserir cash_entry (OS):", insertError);
