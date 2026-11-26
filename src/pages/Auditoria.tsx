@@ -138,9 +138,9 @@ const Auditoria = () => {
                             {log.entity_type ? `${log.entity_type.replace('_', ' ')}` : "Sistema"}
                           </span>
                         </div>
-                        {((log.new_data as any)?.justification || (log.new_data as any)?.reason) && (
+                        {(log.new_data?.justification || log.new_data?.reason) && (
                           <p className="text-[11px] bg-muted/40 p-1.5 rounded border border-border/50 text-foreground/80 italic font-medium max-w-md">
-                            "{(log.new_data as any)?.justification || (log.new_data as any)?.reason}"
+                            "{log.new_data?.justification || log.new_data?.reason}"
                           </p>
                         )}
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">

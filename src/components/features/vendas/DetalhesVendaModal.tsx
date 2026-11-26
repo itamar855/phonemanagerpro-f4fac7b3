@@ -70,8 +70,8 @@ export const DetalhesVendaModal: React.FC<DetalhesVendaModalProps> = ({
     <Dialog open={!!selectedViewSale} onOpenChange={open => { if (!open) setSelectedViewSale(null); }}>
       <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         {selectedViewSale && (() => {
-          const product = productMap.get(selectedViewSale.product_id) as any;
-          const store = storeMap.get(selectedViewSale.store_id) as any;
+          const product = productMap.get(selectedViewSale.product_id);
+          const store = storeMap.get(selectedViewSale.store_id);
           const sellerName = selectedViewSale.seller_id ? profileMap.get(selectedViewSale.seller_id) : null;
           const totalPaid = Number(selectedViewSale.payment_cash) + Number(selectedViewSale.payment_card) + Number(selectedViewSale.payment_pix) + (selectedViewSale.has_trade_in ? Number(selectedViewSale.trade_in_value) : 0);
           return (

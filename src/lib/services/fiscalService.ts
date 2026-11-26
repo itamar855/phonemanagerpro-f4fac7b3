@@ -4,7 +4,7 @@
  * Gerencia configurações tributárias, certificados A1, cálculos de impostos,
  * geração de chaves de acesso de 44 dígitos da SEFAZ e emissão em homologação e produção.
  */
-import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 
 export type RegimeTributario = "simples_nacional" | "simples_excesso" | "lucro_presumido" | "lucro_real";
 export type FiscalEnvironment = "homologacao" | "producao";
@@ -183,7 +183,7 @@ const INVOICES_STORAGE_KEY_PREFIX = "cellmanager_invoices_";
  */
 export async function getFiscalSettings(storeId: string): Promise<FiscalSettings> {
   try {
-    const { data, error } = await (supabase.from("fiscal_settings" as any).select("*").eq("store_id", storeId).maybeSingle() as any);
+    const { data, error } = await (untypedDb.from("fiscal_settings").select("*").eq("store_id", storeId).maybeSingle());
     if (!error && data) {
       return data as FiscalSettings;
     }
@@ -214,12 +214,12 @@ export async function saveFiscalSettings(settings: FiscalSettings): Promise<Fisc
   };
 
   try {
-    const { data: existing } = await (supabase.from("fiscal_settings" as any).select("id").eq("store_id", settings.store_id).maybeSingle() as any);
+    const { data: existing } = await (untypedDb.from("fiscal_settings").select("id").eq("store_id", settings.store_id).maybeSingle());
     
     if (existing?.id) {
-      await (supabase.from("fiscal_settings" as any).update(updatedSettings).eq("id", existing.id) as any);
+      await (untypedDb.from("fiscal_settings").update(updatedSettings).eq("id", existing.id));
     } else {
-      await (supabase.from("fiscal_settings" as any).insert(updatedSettings) as any);
+      await (untypedDb.from("fiscal_settings").insert(updatedSettings));
     }
   } catch (err) {
     console.warn("Erro ao persistir fiscal_settings no banco, usando fallback local:", err);
@@ -234,11 +234,11 @@ export async function saveFiscalSettings(settings: FiscalSettings): Promise<Fisc
  */
 export async function getInvoices(storeId: string): Promise<Invoice[]> {
   try {
-    let query = supabase.from("invoices" as any).select("*");
+    let query = untypedDb.from("invoices").select("*");
     if (storeId !== "all") {
       query = query.eq("store_id", storeId);
     }
-    const { data, error } = await (query.order("created_at", { ascending: false }) as any);
+    const { data, error } = await (query.order("created_at", { ascending: false }));
     if (!error && data && data.length > 0) {
       return data as Invoice[];
     }
@@ -262,7 +262,7 @@ export async function getInvoices(storeId: string): Promise<Invoice[]> {
  */
 export async function saveInvoice(invoice: Invoice): Promise<void> {
   try {
-    await (supabase.from("invoices" as any).insert(invoice) as any);
+    await (untypedDb.from("invoices").insert(invoice));
   } catch (err) {
     console.warn("Erro ao salvar invoice no Supabase, usando fallback local:", err);
   }

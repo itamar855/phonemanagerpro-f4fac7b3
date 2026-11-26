@@ -112,7 +112,7 @@ const Equipe = () => {
     const roles = rolesRes.data ?? [];
     const ms = memberStoresRes.data ?? [];
     
-    const roleMap = new Map((roles as any[]).map((r) => [r.user_id, { 
+    const roleMap = new Map(roles.map((r) => [r.user_id, { 
       role: r.role, 
       permissions: r.permissions,
       commission_sales_percent: r.commission_sales_percent,
@@ -121,7 +121,7 @@ const Equipe = () => {
       commission_on_services: r.commission_on_services
     }]));
     const storeMapGroup = new Map<string, string[]>();
-    (ms as any[]).forEach(item => {
+    ms.forEach(item => {
       if (!storeMapGroup.has(item.user_id)) storeMapGroup.set(item.user_id, []);
       storeMapGroup.get(item.user_id)?.push(item.store_id);
     });
@@ -131,13 +131,13 @@ const Equipe = () => {
         const roleData = roleMap.get(p.user_id);
         return {
           ...p,
-          role: (roleData as any)?.role ?? null,
-          permissions: ((roleData as any)?.permissions as Permissions) ?? null,
+          role: roleData?.role ?? null,
+          permissions: (roleData?.permissions as Permissions) ?? null,
           assignedStoreIds: storeMapGroup.get(p.user_id) || [],
-          commission_sales_percent: (roleData as any)?.commission_sales_percent ?? 0,
-          commission_services_percent: (roleData as any)?.commission_services_percent ?? 0,
-          commission_on_sales: (roleData as any)?.commission_on_sales ?? true,
-          commission_on_services: (roleData as any)?.commission_on_services ?? true,
+          commission_sales_percent: roleData?.commission_sales_percent ?? 0,
+          commission_services_percent: roleData?.commission_services_percent ?? 0,
+          commission_on_sales: roleData?.commission_on_sales ?? true,
+          commission_on_services: roleData?.commission_on_services ?? true,
         };
       })
     );
@@ -161,7 +161,7 @@ const Equipe = () => {
     }
     setSelectedMember(member);
     setNewRole(member.role || "vendedor");
-    setEditPhone((member as any).phone || "");
+    setEditPhone(member.phone || "");
     setEditStoreIds(member.assignedStoreIds || []);
     setPermissions(member.permissions || defaultPermissions(member.role || "vendedor"));
     setEditSalesCommission(String(member.commission_sales_percent ?? 10));
@@ -348,9 +348,9 @@ const Equipe = () => {
                     <div className="min-w-0">
                       <p className="font-medium text-sm truncate">{member.display_name || "Sem nome"}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        {(member as any).phone && (
+                        {member.phone && (
                           <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                            <Phone className="h-2.5 w-2.5" /> {(member as any).phone}
+                            <Phone className="h-2.5 w-2.5" /> {member.phone}
                           </span>
                         )}
                         {member.assignedStoreIds && member.assignedStoreIds.length > 0 && (

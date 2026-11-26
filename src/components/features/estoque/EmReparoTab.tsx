@@ -103,7 +103,7 @@ export const EmReparoTab: React.FC<EmReparoTabProps> = ({
                   <Button
                     className="h-8 text-[11px] gap-1.5 bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive hover:text-destructive-foreground"
                     onClick={() => {
-                      setRepairProduct(p as any);
+                      setRepairProduct(p);
                       setRepairModalOpen(true);
                     }}
                   >

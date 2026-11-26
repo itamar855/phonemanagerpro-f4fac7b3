@@ -101,10 +101,7 @@ const Lojas = () => {
       supabase.from("fixed_expenses").select("*").eq("is_pf", false).order("due_day"),
     ]);
     setStores(storesRes.data ?? []);
-    setBankAccounts((bankRes.data as any[])?.map(acc => ({
-      ...acc,
-      holder_cpf_cnpj: acc.holder_document || acc.holder_cpf_cnpj
-    })) ?? []);
+    setBankAccounts(bankRes.data ?? []);
     setFixedExpenses(fixedRes.data ?? []);
   };
 
@@ -150,7 +147,7 @@ const Lojas = () => {
       debit_settlement_days: parseInt(bankForm.debit_settlement_days) || 1,
       pix_fee_percent: parseFloat(bankForm.pix_fee_percent) || 0,
       pix_settlement_days: parseInt(bankForm.pix_settlement_days) || 0,
-    } as any);
+    });
     if (error) toast.error(error.message);
     else {
       toast.success("Conta cadastrada!");
@@ -214,7 +211,7 @@ const Lojas = () => {
       website:    detailsForm.website    || null,
       logo_url:   detailsForm.logo_url   || null,
       pdf_footer: detailsForm.pdf_footer || null,
-    } as any).eq("id", selectedStoreId);
+    }).eq("id", selectedStoreId);
 
     if (error) toast.error(error.message);
     else {
@@ -300,7 +297,7 @@ const Lojas = () => {
       net_amount: e.amount
     }));
 
-    const { error } = await supabase.from("transactions").insert(transactionsToInsert as any);
+    const { error } = await supabase.from("transactions").insert(transactionsToInsert);
 
     if (error) toast.error("Erro ao lançar: " + error.message);
     else { toast.success("Gastos fixos lançados com sucesso!"); fetchData(); }

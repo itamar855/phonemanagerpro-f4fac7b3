@@ -221,7 +221,7 @@ describe('C3.7 — Suíte de Testes da Extensão Autenticada e Isolamento Multi-
       };
 
       const handleFailedRefresh = () => {
-        storage = {} as any;
+        storage = {} as typeof storage;
       };
 
       const refreshApi = async () => {
@@ -258,7 +258,7 @@ describe('C3.7 — Suíte de Testes da Extensão Autenticada e Isolamento Multi-
           // Ignorado exatamente como no background.js para garantir limpeza local
         } finally {
           // Limpeza local garantida no finally
-          storage = {} as any;
+          storage = {} as typeof storage;
         }
       };
 

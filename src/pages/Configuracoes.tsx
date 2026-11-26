@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Webhook, Trash2, Plus, Send, ExternalLink, Info, MessageSquare, ShieldCheck, Globe, Camera, Brain, Activity, AlertCircle, CheckCircle2, Clock, QrCode } from "lucide-react";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { format } from "date-fns";
 
 const eventLabels: Record<string, string> = {
@@ -30,7 +31,7 @@ export default function Configuracoes() {
     api_url: "", api_key: "", instance_name: "", is_active: true
   });
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
-  const [instagramConfig, setInstagramConfig] = useState<any>({
+  const [instagramConfig, setInstagramConfig] = useState<Partial<Tables<"instagram_config">> & { ai_active?: boolean }>({
     page_id: "", instagram_business_account_id: "", page_access_token: "", is_active: true, ai_active: false
   });
   const [loading, setLoading] = useState(false);
@@ -80,7 +81,7 @@ export default function Configuracoes() {
       // Mock module status, in real scenario we could check specific endpoints or recent DB writes
       const checkModule = async (table: string) => {
         try {
-          const { error } = await supabase.from(table as any).select("id").limit(1);
+          const { error } = await untypedDb.from(table).select("id").limit(1);
           return error ? "error" : "operational";
         } catch {
           return "error";
@@ -92,7 +93,7 @@ export default function Configuracoes() {
         checkModule("products"),
         checkModule("service_orders"),
         checkModule("cash_entries"),
-        supabase.from("error_logs" as any).select("*").eq("store_id", activeStoreId).order("created_at", { ascending: false }).limit(20)
+        untypedDb.from("error_logs").select("*").eq("store_id", activeStoreId).order("created_at", { ascending: false }).limit(20)
       ]);
 
       setModuleStatus({ vendas, estoque, os, caixa });
@@ -184,17 +185,20 @@ export default function Configuracoes() {
       toast.warning("Atenção: Tokens que começam com 'IGAA' geralmente são da API Basic Display...");
     }
     setLoading(true);
+    // ATENÇÃO: a coluna ai_active não existe em instagram_config no banco de produção,
+    // então este salvamento volta com erro hoje. Mantido igual até o dono decidir
+    // (o canal do Instagram é configurado de verdade pelo CRM).
     const payload = {
       page_id: instagramConfig.page_id,
       page_access_token: instagramConfig.page_access_token,
       instagram_business_account_id: instagramConfig.instagram_business_account_id,
       is_active: instagramConfig.is_active,
       ai_active: instagramConfig.ai_active,
-      store_id: activeStoreId || (stores.length > 0 ? stores[0].id : null)
-    };
+      store_id: activeStoreId || (stores.length > 0 ? stores[0].id : null),
+    } as unknown as TablesInsert<"instagram_config">;
     const { error } = instagramConfig.id
-      ? await supabase.from("instagram_config").update(payload as any).eq("id", instagramConfig.id)
-      : await supabase.from("instagram_config").insert(payload as any);
+      ? await supabase.from("instagram_config").update(payload).eq("id", instagramConfig.id)
+      : await supabase.from("instagram_config").insert(payload);
     if (error) toast.error("Erro Instagram: " + error.message);
     else { toast.success("Configuração do Instagram salva!"); fetchData(); }
     setLoading(false);
@@ -215,8 +219,8 @@ export default function Configuracoes() {
         const txDesc = tx.description || "";
         const cleanDesc = txDesc.replace(/\[.*?\]/g, '').trim();
         const match = cashEntries.find(ce => {
-          const ceDesc = (ce as any).description || "";
-          return ceDesc.includes(cleanDesc) && Math.abs((ce as any).amount - tx.amount) < 1;
+          const ceDesc = ce.description || "";
+          return ceDesc.includes(cleanDesc) && Math.abs(ce.amount - tx.amount) < 1;
         });
         if (!match) missing.push(tx);
       }
@@ -228,12 +232,12 @@ export default function Configuracoes() {
 
       let inserted = 0;
       for (const m of missing) {
-        let register = registers.find(r => (r as any).store_id === m.store_id && (r as any).opened_by === m.created_by);
-        if (!register) register = registers.find(r => (r as any).store_id === m.store_id);
+        let register = registers.find(r => r.store_id === m.store_id && r.opened_by === m.created_by);
+        if (!register) register = registers.find(r => r.store_id === m.store_id);
 
         if (register) {
           const payload: any = {
-            cash_register_id: (register as any).id, store_id: m.store_id, type: 'entrada',
+            cash_register_id: register.id, store_id: m.store_id, type: 'entrada',
             amount: m.amount, description: m.description, payment_method: 'dinheiro',
             confirmed: false, created_by: m.created_by, created_at: m.created_at
           };
@@ -282,7 +286,7 @@ export default function Configuracoes() {
   const clearLogs = async () => {
     if (!activeStoreId) return;
     try {
-      const { error } = await supabase.from("error_logs" as any).delete().eq("store_id", activeStoreId);
+      const { error } = await untypedDb.from("error_logs").delete().eq("store_id", activeStoreId);
       if (error) throw error;
       toast.success("Logs de erro limpos com sucesso!");
       setErrorLogs([]);

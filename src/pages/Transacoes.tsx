@@ -214,11 +214,11 @@ const Transacoes = () => {
         created_by: user.id,
         expected_settlement_date: new Date().toISOString(),
         reconciled: false,
-      } as any).select().single();
+      }).select().single();
       
       if (error) { toast.error(error.message); }
       else {
-        logAction("CREATE_RECORD", "transactions", (newTxRes as any).id, null, payload, activeStoreId);
+        logAction("CREATE_RECORD", "transactions", newTxRes.id, null, payload, activeStoreId);
         toast.success("Transação registrada!");
         setDialogOpen(false);
         setReceiptFile(null);
@@ -299,7 +299,7 @@ const Transacoes = () => {
 
       const { error } = await supabase
         .from("transactions")
-        .update({ reconciled: true, receipt_url: finalUrL } as any)
+        .update({ reconciled: true, receipt_url: finalUrL })
         .eq("id", reconcilingTx.id);
 
       if (error) { toast.error(error.message); }

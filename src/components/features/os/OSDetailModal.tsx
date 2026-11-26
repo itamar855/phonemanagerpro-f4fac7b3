@@ -669,7 +669,7 @@ export const OSDetailModal: React.FC<OSDetailModalProps> = ({
                                       type="button"
                                       onClick={() => {
                                         const updated = allAttached.filter((_, i) => i !== idx);
-                                        if (setReceiptFiles) (setReceiptFiles as any)(updated);
+                                        if (setReceiptFiles) setReceiptFiles(updated);
                                         if (setReceiptFile) setReceiptFile(updated[0] || null);
                                       }}
                                       className="text-destructive text-[10px] px-1 hover:font-bold"

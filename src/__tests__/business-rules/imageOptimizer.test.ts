@@ -69,7 +69,7 @@ describe('Image Optimizer — Defensive WebP Conversion', () => {
           }, 0);
         }
       }
-      global.Image = MockImage as any;
+      global.Image = MockImage as unknown as typeof Image;
 
       const mockCanvas = {
         width: 0,
@@ -87,7 +87,7 @@ describe('Image Optimizer — Defensive WebP Conversion', () => {
           if (tag === 'canvas') return mockCanvas;
           return {};
         }),
-      } as any;
+      } as unknown as Document;
 
       const pngBlob = new Blob(['fake-large-png-content'], { type: 'image/png' });
       const pngFile = new File([pngBlob], 'comprovante_pix.png', { type: 'image/png' });
@@ -116,8 +116,8 @@ async function withFakeCanvas<T>(w: number, h: number, outBytes: number, run: (c
   try {
     global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock');
     global.URL.revokeObjectURL = vi.fn();
-    global.Image = class { width = w; height = h; onload: (() => void) | null = null; set src(_: string) { setTimeout(() => this.onload?.(), 0); } } as any;
-    global.document = { createElement: vi.fn(() => canvas) } as any;
+    global.Image = class { width = w; height = h; onload: (() => void) | null = null; set src(_: string) { setTimeout(() => this.onload?.(), 0); } } as unknown as typeof Image;
+    global.document = { createElement: vi.fn(() => canvas) } as unknown as Document;
     return await run(canvas);
   } finally {
     global.document = saved.doc; global.Image = saved.img;

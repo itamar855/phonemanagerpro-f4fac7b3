@@ -33,7 +33,7 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       expect(getProjectRefFromUrl('not-a-valid-url')).toBeNull();
       expect(getProjectRefFromUrl('')).toBeNull();
       expect(getProjectRefFromUrl(undefined)).toBeNull();
-      expect(getProjectRefFromUrl(null as any)).toBeNull();
+      expect(getProjectRefFromUrl(null as unknown as string)).toBeNull();
     });
   });
 
@@ -53,7 +53,7 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       expect(isValidPublishableKeyFormat('')).toBe(false);
       expect(isValidPublishableKeyFormat('   ')).toBe(false);
       expect(isValidPublishableKeyFormat(undefined)).toBe(false);
-      expect(isValidPublishableKeyFormat(null as any)).toBe(false);
+      expect(isValidPublishableKeyFormat(null as unknown as string)).toBe(false);
       expect(isValidPublishableKeyFormat('invalid_random_string')).toBe(false);
       expect(isValidPublishableKeyFormat('random_token_1234567890')).toBe(false);
     });
@@ -82,8 +82,8 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       });
 
       expect(client).toBeDefined();
-      expect((client as any).supabaseUrl).toBe(VALID_SUPABASE_URL);
-      expect((client as any).supabaseKey).toBe(FAKE_MODERN_KEY);
+      expect((client as unknown as { supabaseUrl: string; supabaseKey: string }).supabaseUrl).toBe(VALID_SUPABASE_URL);
+      expect((client as unknown as { supabaseUrl: string; supabaseKey: string }).supabaseKey).toBe(FAKE_MODERN_KEY);
     });
 
     it('deve inicializar o Supabase client com chave legacy JWT durante o período de transição', () => {
@@ -95,8 +95,8 @@ describe('Supabase Client Configuration & Modern Key Support', () => {
       });
 
       expect(client).toBeDefined();
-      expect((client as any).supabaseUrl).toBe(VALID_SUPABASE_URL);
-      expect((client as any).supabaseKey).toBe(FAKE_LEGACY_JWT);
+      expect((client as unknown as { supabaseUrl: string; supabaseKey: string }).supabaseUrl).toBe(VALID_SUPABASE_URL);
+      expect((client as unknown as { supabaseUrl: string; supabaseKey: string }).supabaseKey).toBe(FAKE_LEGACY_JWT);
     });
 
     it('não deve executar nenhuma chamada atob() ao validar ou utilizar chave sb_publishable ou legacy anon', () => {

@@ -71,19 +71,19 @@ export default function OSPublica() {
       try {
         // Tenta buscar dados completos (RPC nova)
         let orderData: PublicOrder | null = null;
-        const { data: fullData, error: fullErr } = await supabase.rpc("get_public_os_full_data" as any, {
+        const { data: fullData, error: fullErr } = await supabase.rpc("get_public_os_full_data", {
           p_order_id: id,
         });
 
-        if (!fullErr && fullData && (fullData as any[]).length > 0) {
-          orderData = (fullData as any[])[0] as PublicOrder;
+        if (!fullErr && fullData && fullData.length > 0) {
+          orderData = fullData[0] as PublicOrder;
         } else {
           // Fallback para RPC padrão
-          const { data: standardData, error: stdErr } = await supabase.rpc("get_public_service_order" as any, {
+          const { data: standardData, error: stdErr } = await supabase.rpc("get_public_service_order", {
             p_order_id: id,
           });
-          if (!stdErr && standardData && (standardData as any[]).length > 0) {
-            orderData = (standardData as any[])[0] as PublicOrder;
+          if (!stdErr && standardData && standardData.length > 0) {
+            orderData = standardData[0] as PublicOrder;
           }
         }
 
@@ -97,12 +97,12 @@ export default function OSPublica() {
 
         // Busca fotos anexadas à OS via RPC segura ou query
         try {
-          const { data: photosRpcData, error: photosRpcErr } = await supabase.rpc("get_public_service_order_photos" as any, {
+          const { data: photosRpcData, error: photosRpcErr } = await supabase.rpc("get_public_service_order_photos", {
             p_order_id: id,
           });
 
           if (!photosRpcErr && photosRpcData) {
-            setPhotos((photosRpcData as any[]) as OrderPhoto[]);
+            setPhotos(photosRpcData as OrderPhoto[]);
           } else {
             // Tentativa via tabela direta caso autenticado ou policy ativa
             const { data: directPhotos } = await supabase
@@ -156,7 +156,7 @@ export default function OSPublica() {
       };
 
       // Checklists, condição física, serviço executado e peças com o valor cobrado
-      const { data: extras } = await supabase.rpc("get_public_os_extras" as any, { p_order_id: order.id ?? id });
+      const { data: extras } = await supabase.rpc("get_public_os_extras", { p_order_id: order.id ?? id });
       const ex = (extras ?? {}) as { items?: OsPdfItem[] } & Record<string, unknown>;
       const { items = [], ...extraFields } = ex;
 

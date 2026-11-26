@@ -52,10 +52,10 @@ export const createPendingCashEntry = async (
     register = fallbackRegister;
   }
   
-  const registerId = register ? (register as any).id : null;
+  const registerId = register ? register.id : null;
 
   if (registerId) {
-    const actualStoreId = (register as any)?.store_id || (storeId !== "all" ? storeId : null);
+    const actualStoreId = register?.store_id || (storeId !== "all" ? storeId : null);
     const isCash = paymentMethod === "dinheiro";
     const isConfirmed = Boolean(confirmed) || isCash;
 
@@ -70,7 +70,7 @@ export const createPendingCashEntry = async (
       confirmed: isConfirmed,
       created_by: userId,
       reference_id: referenceId || null,
-    } as any);
+    });
     
     if (insertError) {
       console.error("Erro ao inserir cash_entry (OS):", insertError);

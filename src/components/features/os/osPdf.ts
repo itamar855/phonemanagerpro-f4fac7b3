@@ -12,7 +12,7 @@ export const loadOsPdfItems = async (orderId: string): Promise<OsPdfItem[]> => {
     .eq("service_order_id", orderId)
     .order("created_at");
   if (error || !data) return [];
-  return (data as any[]).map((i) => ({
+  return data.map((i) => ({
     name: i.products?.name ?? "Peça",
     brand: i.products?.brand ?? null,
     model: i.products?.model ?? null,
@@ -143,7 +143,7 @@ export const generateOSPdf = async (order, store, techName: string, publicUrl: s
   const sectionBox = (title: string, contentFn: () => void) => {
     ensureSpace(35);
     const startY = y;
-    const startPage = (doc as any).internal.getNumberOfPages();
+    const startPage = doc.getNumberOfPages();
     doc.setFillColor(...BLACK);
     doc.rect(M, y, CW, 7, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...WHITE);
@@ -152,7 +152,7 @@ export const generateOSPdf = async (order, store, techName: string, publicUrl: s
     contentFn();
     doc.setDrawColor(...LIGHT);
     doc.setLineWidth(0.35);
-    if ((doc as any).internal.getNumberOfPages() === startPage) doc.rect(M, startY + 7, CW, y - startY - 7);
+    if (doc.getNumberOfPages() === startPage) doc.rect(M, startY + 7, CW, y - startY - 7);
     else doc.line(M, y, W - M, y); // a seção virou a página: só fecha embaixo
     y += 4;
   };
@@ -461,7 +461,7 @@ export const generateOSPdf = async (order, store, techName: string, publicUrl: s
   doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...MID);
   doc.text(publicUrl, M + 5, y + 10);
 
-  const pageCount = (doc as any).internal.getNumberOfPages();
+  const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setDrawColor(...BLACK); doc.setLineWidth(0.3); doc.line(M, 286, W - M, 286);

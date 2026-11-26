@@ -167,7 +167,7 @@ export default function Contas() {
       debit_settlement_days: parseInt(bankForm.debit_settlement_days) || 1,
       pix_fee_percent: parseFloat(bankForm.pix_fee_percent) || 0,
       pix_settlement_days: parseInt(bankForm.pix_settlement_days) || 0,
-    } as any);
+    });
 
     if (error) {
       toast.error(error.message);

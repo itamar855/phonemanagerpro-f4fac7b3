@@ -68,7 +68,7 @@ export const useCartManager = (
           .from("accessories")
           .select("quantity, name")
           .eq("id", item.acc.id)
-          .single() as any;
+          .single();
 
         if (fetchErr || !currentAcc) {
           throw new Error(`Acessório ${item.acc.name} não encontrado no estoque.`);
@@ -163,7 +163,7 @@ export const useCartManager = (
       if (gerarNotinha && txIdForNote) {
         try {
           const storeMap = new Map(stores.map(s => [s.id, s]));
-          const store = storeMap.get(storeToUse) as any;
+          const store = storeMap.get(storeToUse);
           const numeroNota = `PDV-${txIdForNote.slice(0, 8).toUpperCase()}`;
           const data: NotaFiscalData = {
             numeroNota,

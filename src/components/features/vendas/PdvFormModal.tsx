@@ -217,7 +217,7 @@ export const PdvFormModal: React.FC<PdvFormModalProps> = ({
                   {[["cash","Dinheiro"], ["card","Cartão"], ["pix","PIX"]].map(([k, l]) => (
                     <div key={k} className="space-y-1">
                       <Label className="text-[10px]">{l}</Label>
-                      <Input type="number" step="0.01" value={(pdvPayment as any)[k]} onChange={e => setPdvPayment({ ...pdvPayment, [k]: e.target.value })} placeholder="0.00" className="h-9 text-xs" />
+                      <Input type="number" step="0.01" value={pdvPayment[k]} onChange={e => setPdvPayment({ ...pdvPayment, [k]: e.target.value })} placeholder="0.00" className="h-9 text-xs" />
                     </div>
                   ))}
                 </div>

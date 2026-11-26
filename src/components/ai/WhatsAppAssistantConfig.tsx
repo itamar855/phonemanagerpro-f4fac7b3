@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -113,8 +114,8 @@ const WhatsAppAssistantConfig = () => {
       localStorage.setItem("whatsapp_assistant_config", JSON.stringify(config));
       
       // Attempt to save in Supabase db table as well
-      await supabase
-        .from("app_settings" as any)
+      await untypedDb
+        .from("app_settings")
         .upsert({
           key: "whatsapp_assistant_config",
           value: JSON.stringify(config),

@@ -593,7 +593,7 @@ export function aggregateAccessoryRanking(params: {
   }> = {};
 
   for (const tx of txList) {
-    const metadata = tx.metadata as any;
+    const metadata = tx.metadata;
     const sellerUid = metadata?.seller_id || tx.created_by;
     if (!sellerUid) continue;
 

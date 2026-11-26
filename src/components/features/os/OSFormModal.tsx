@@ -103,7 +103,7 @@ export const OSFormModal: React.FC<OSFormModalProps> = ({
         .or(`name.ilike.%${term}%,phone.ilike.%${term}%,cpf.ilike.%${term}%`)
         .limit(6);
 
-      setCustomerResults((data as any[]) ?? []);
+      setCustomerResults(data ?? []);
       setIsSearchingCustomer(false);
     }, 250);
 

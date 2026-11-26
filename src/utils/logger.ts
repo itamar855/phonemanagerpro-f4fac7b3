@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 
 type ErrorSeverity = "info" | "warning" | "error";
 
@@ -51,7 +52,7 @@ class StructuredLogger {
          return;
       }
 
-      await supabase.from("error_logs" as any).insert({
+      await untypedDb.from("error_logs").insert({
         store_id,
         module,
         message,

@@ -169,14 +169,14 @@ const Dashboard = () => {
       fetchSettledItemIds().catch(() => ({ settledSaleIds: new Set<string>(), settledOsIds: new Set<string>() })),
     ]);
 
-    if (storesRes.data && (storesRes.data as any[]).length > 0) {
-      setStores(storesRes.data as any[]);
+    if (storesRes.data && storesRes.data.length > 0) {
+      setStores(storesRes.data);
     }
 
-    const allMyOrders = (ordersRes.data ?? []) as any[];
+    const allMyOrders = (ordersRes.data ?? []);
     const roleData = roleRes.data;
-    const shopDelivered = (shopOrdersRes.data ?? []) as any[];
-    const profiles = (profilesRes.data ?? []) as any[];
+    const shopDelivered = (shopOrdersRes.data ?? []);
+    const profiles = (profilesRes.data ?? []);
 
     const profileMap = new Map<string, string>();
     profiles.forEach((p) => {
@@ -282,7 +282,7 @@ const Dashboard = () => {
     const transactions = transactionsRes.data ?? [];
     const sales = salesRes.data ?? [];
     const serviceOrders = osRes.data ?? [];
-    const accessories = (accRes.data ?? []) as any[];
+    const accessories = (accRes.data ?? []);
     const leads = leadsRes.data ?? [];
 
     // Fetch service order items for the service orders in the period
@@ -400,7 +400,7 @@ const Dashboard = () => {
       const allProductsRes = await supabase.from("products").select("*").eq("status", "in_stock");
       const allAccRes = await supabase.from("accessories").select("*");
       const allProducts = (allProductsRes.data ?? []).filter((p) => p.status === "in_stock");
-      const allAcc = (allAccRes.data ?? []) as any[];
+      const allAcc = (allAccRes.data ?? []);
       const storeProducts: Record<string, { aparelhos: number; acessorios: number; investido: number }> = {};
       allProducts.forEach((p) => {
         const name = storeMap.get(p.store_id) || "Sem loja";

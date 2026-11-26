@@ -32,7 +32,7 @@ export function isOSCommissionWaived(order?: {
   commission_waived?: boolean | null;
 } | null): boolean {
   if (!order) return false;
-  if ((order as any).commission_waived === true) return true;
+  if (order.commission_waived === true) return true;
   if (order.internal_notes && order.internal_notes.includes("[COMISSAO_ANULADA")) return true;
   return false;
 }

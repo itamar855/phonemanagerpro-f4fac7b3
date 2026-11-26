@@ -166,8 +166,8 @@ const Estoque = () => {
         ? supabase.from("products").select("*").eq("store_id", activeStoreId).in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
         : supabase.from("products").select("*").in("product_type", ["peca", "acessorio"]).eq("status", "in_stock")
       ).order("created_at", { ascending: false }),
-      (supabase.from("suppliers").select("id, name, credit_balance").order("name") as any),
-      (supabase.from("product_repairs").select("id, product_id, status, product_repair_items(unit_cost, quantity)").eq("status", "completed") as any),
+      (supabase.from("suppliers").select("id, name, credit_balance").order("name")),
+      (supabase.from("product_repairs").select("id, product_id, status, product_repair_items(unit_cost, quantity)").eq("status", "completed")),
     ]);
 
     const pErr = productsRes.error;
@@ -219,7 +219,7 @@ const Estoque = () => {
       battery_percentage: form.battery_percentage ? parseInt(form.battery_percentage) : null,
       status: initialStatus,
       notes: form.notes || null
-    } as any).select().single();
+    }).select().single();
     
     if (error) {
       toast.error(error.message.includes("imei") ? "IMEI já cadastrado!" : error.message);
@@ -327,7 +327,7 @@ const Estoque = () => {
     if (!transferProduct || !transferStoreId || !user) return;
     if (!justification) { toast.error("Informe o motivo da transferência!"); return; }
     setLoading(true);
-    const { error } = await supabase.from("products").update({ store_id: transferStoreId } as any).eq("id", transferProduct.id);
+    const { error } = await supabase.from("products").update({ store_id: transferStoreId }).eq("id", transferProduct.id);
     if (error) {
       toast.error("Erro na transferência: " + error.message);
     } else {
@@ -394,7 +394,7 @@ const Estoque = () => {
         for (const lp of legacyNullProds) {
           await supabase
             .from("products")
-            .update({ original_cost_price: lp.cost_price } as any)
+            .update({ original_cost_price: lp.cost_price })
             .eq("id", lp.id)
             .is("original_cost_price", null);
         }
@@ -443,7 +443,7 @@ const Estoque = () => {
 
       let registerId = null;
       if (partForm.launch_cash_out) {
-        const { data: register } = (await supabase.from("cash_registers").select("id").eq("store_id", activeStoreId).eq("status", "open").eq("opened_by", user?.id).maybeSingle()) as any;
+        const { data: register } = (await supabase.from("cash_registers").select("id").eq("store_id", activeStoreId).eq("status", "open").eq("opened_by", user?.id).maybeSingle());
         if (!register) {
           toast.error("Não há caixa aberto para esta loja! Abra o caixa antes de registrar a compra com saída.");
           setLoading(false);
@@ -465,7 +465,7 @@ const Estoque = () => {
 
           const { error: supUpdateErr } = await supabase
             .from("suppliers")
-            .update({ credit_balance: Number(selectedSup.credit_balance) - creditToUse } as any)
+            .update({ credit_balance: Number(selectedSup.credit_balance) - creditToUse })
             .eq("id", partForm.supplier_id);
 
           if (supUpdateErr) throw supUpdateErr;
@@ -486,7 +486,7 @@ const Estoque = () => {
         supplier_id: partForm.supplier_id || null,
         supplier_name: supplierName || null,
         parts_payment_voucher: voucherUrl || null,
-      } as any).select().single();
+      }).select().single();
 
       if (error) {
         toast.error(error.message);
@@ -504,7 +504,7 @@ const Estoque = () => {
             confirmed: true,
             receipt_url: voucherUrl || null,
             created_by: user.id,
-          } as any);
+          });
         }
 
         // Sempre lança a transação financeira
@@ -542,7 +542,7 @@ const Estoque = () => {
     try {
       const { error: prodErr } = await supabase
         .from("products")
-        .update({ status: "returned" } as any)
+        .update({ status: "returned" })
         .eq("id", p.id);
 
       if (prodErr) throw prodErr;
@@ -551,7 +551,7 @@ const Estoque = () => {
         .from("suppliers")
         .select("credit_balance")
         .eq("id", p.supplier_id)
-        .single() as any;
+        .single();
 
       if (suppErr) throw suppErr;
 
@@ -559,7 +559,7 @@ const Estoque = () => {
 
       const { error: supUpdateErr } = await supabase
         .from("suppliers")
-        .update({ credit_balance: newBalance } as any)
+        .update({ credit_balance: newBalance })
         .eq("id", p.supplier_id);
 
       if (supUpdateErr) throw supUpdateErr;
@@ -596,7 +596,7 @@ const Estoque = () => {
       const { data: urlData } = supabase.storage.from("comprovantes").getPublicUrl(uploadData.path);
       const publicUrl = urlData.publicUrl;
 
-      const { error: dbError } = await supabase.from("products").update({ parts_payment_voucher: publicUrl } as any).eq("id", productId);
+      const { error: dbError } = await supabase.from("products").update({ parts_payment_voucher: publicUrl }).eq("id", productId);
       if (dbError) throw dbError;
 
       clearInterval(progressInterval);
@@ -646,7 +646,7 @@ const Estoque = () => {
       condition: p.condition || "used",
       color: p.color || "",
       capacity: p.capacity || "",
-      battery_percentage: (p as any).battery_percentage ? String((p as any).battery_percentage) : "",
+      battery_percentage: p.battery_percentage ? String(p.battery_percentage) : "",
       justification: "",
       status: p.status,
     });
@@ -675,7 +675,7 @@ const Estoque = () => {
       battery_percentage: editForm.battery_percentage ? parseInt(editForm.battery_percentage) : null,
       status: editForm.status,
     };
-    const { error } = await supabase.from("products").update(updatePayload as any).eq("id", editProduct.id);
+    const { error } = await supabase.from("products").update(updatePayload).eq("id", editProduct.id);
 
     if (error) {
       toast.error(error.message);
@@ -708,7 +708,7 @@ const Estoque = () => {
 
     const { error } = await supabase
       .from("products")
-      .update({ defects: newDefects } as any)
+      .update({ defects: newDefects })
       .eq("id", defectsProduct.id);
 
     if (error) {
@@ -772,7 +772,7 @@ const Estoque = () => {
       }
 
       // 3. Set trade_in_product_id references in sales to null
-      await supabase.from("sales").update({ trade_in_product_id: null } as any).eq("trade_in_product_id", id);
+      await supabase.from("sales").update({ trade_in_product_id: null }).eq("trade_in_product_id", id);
 
       // 4. Delete references in product_history
       await supabase.from("product_history").delete().eq("product_id", id);
@@ -781,7 +781,7 @@ const Estoque = () => {
       await supabase.from("product_repair_items").delete().eq("part_product_id", id);
 
       // 6. For repairs of this product, delete repair items first, then the repair
-      const { data: repairs } = await (supabase.from("product_repairs").select("id").eq("product_id", id) as any);
+      const { data: repairs } = await (supabase.from("product_repairs").select("id").eq("product_id", id));
       if (repairs && repairs.length > 0) {
         const repairIds = repairs.map(r => r.id);
         await supabase.from("product_repair_items").delete().in("repair_id", repairIds);

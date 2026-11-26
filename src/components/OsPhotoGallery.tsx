@@ -66,7 +66,7 @@ export function OsPhotoGallery({ orderId, readonly = false }: OsPhotoGalleryProp
         .select("store_id")
         .eq("id", orderId)
         .maybeSingle();
-      const storePrefix = (orderData as any)?.store_id || "geral";
+      const storePrefix = orderData?.store_id || "geral";
       const filePath = `${storePrefix}/os-photos/${fileName}`;
 
       // Upload image

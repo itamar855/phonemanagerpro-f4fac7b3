@@ -267,8 +267,8 @@ export const PecasTab: React.FC<PecasTabProps> = ({
         <div className="space-y-2">
           {filteredParts.map((p) => {
             const supplierName =
-              (p as any).supplier_name || (p as any).supplier_id
-                ? supplierMap.get((p as any).supplier_id)
+              p.supplier_name || p.supplier_id
+                ? supplierMap.get(p.supplier_id)
                 : null;
             const margin = p.sale_price ? Number(p.sale_price) - Number(p.cost_price) : null;
             return (

@@ -53,7 +53,7 @@ const Ranking = () => {
 
   const currentStoreName =
     storeId !== "all"
-      ? ((storeMap.get(storeId) as any)?.name ?? "Todas as Lojas")
+      ? ((storeMap.get(storeId))?.name ?? "Todas as Lojas")
       : "Todas as Lojas";
   const currentRankPeriodLabel = getPeriodLabel(
     rankPeriod,
@@ -96,11 +96,11 @@ const Ranking = () => {
       supabase.from("stores").select("*"),
     ]);
 
-    const allSales = (salesRes.data ?? []) as any[];
-    const products = (productsRes.data ?? []) as any[];
+    const allSales = (salesRes.data ?? []);
+    const products = (productsRes.data ?? []);
     const productMap = new Map(products.map((p) => [p.id, p]));
-    const roles = (rolesRes.data ?? []) as any[];
-    const allAccTx = (accTxRes.data ?? []) as any[];
+    const roles = (rolesRes.data ?? []);
+    const allAccTx = (accTxRes.data ?? []);
     const activeProfiles = (profsRes.data && profsRes.data.length > 0) ? profsRes.data : profiles;
     const activeStores = (storesRes.data && storesRes.data.length > 0) ? storesRes.data : stores;
     if (profsRes.data && profsRes.data.length > 0) setProfiles(profsRes.data);
@@ -130,8 +130,8 @@ const Ranking = () => {
 
     // 3. Trilha Técnica de Bancada (Volume de OSs + Top 1 Extra)
     const { ranking: techRanking } = aggregateTechRanking({
-      serviceOrders: (osRes.data ?? []) as any[],
-      parts: (partsRes.data ?? []) as any[],
+      serviceOrders: (osRes.data ?? []),
+      parts: (partsRes.data ?? []),
       profiles: activeProfiles,
       stores: activeStores,
       userRoles: roles,

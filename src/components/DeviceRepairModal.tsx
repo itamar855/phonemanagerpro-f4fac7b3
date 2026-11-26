@@ -105,7 +105,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       // 1. Fetch active repair if any
       const { data: repairData, error: repairError } = await (supabase
         .from("product_repairs")
-        .select("*") as any)
+        .select("*"))
         .eq("product_id", product.id)
         .eq("status", "pending")
         .maybeSingle();
@@ -117,7 +117,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
         // 2. Fetch parts used in this repair
         const { data: itemsData, error: itemsError } = await (supabase
           .from("product_repair_items")
-          .select(`*`) as any)
+          .select(`*`))
           .eq("repair_id", repairData.id);
 
         if (itemsError) throw itemsError;
@@ -139,7 +139,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       const { data: suppData } = await (supabase
         .from("suppliers")
         .select("id, name")
-        .order("name") as any);
+        .order("name"));
       setSuppliers(suppData || []);
     } catch (err) {
       console.error("Error fetching repair details:", err);
@@ -189,7 +189,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       if (prodError) throw prodError;
 
       // Log audit
-      await logAction("CREATE_RECORD", "product_repairs", (repair as any).id, null, { repair_types: selectedRepairs }, product.store_id);
+      await logAction("CREATE_RECORD", "product_repairs", repair.id, null, { repair_types: selectedRepairs }, product.store_id);
 
       toast.success("Reparo iniciado com sucesso!");
       fetchRepairData();
@@ -295,7 +295,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
           supplier_id: resolvedSupplierId,
           supplier_name: supplierName,
           parts_payment_voucher: receiptUrl || null,
-        } as any)
+        })
         .select()
         .single();
 
@@ -308,7 +308,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
         .from("product_repair_items")
         .insert({
           repair_id: activeRepair.id,
-          part_product_id: (prodData as any).id,
+          part_product_id: prodData.id,
           part_name: manualPartName.trim(),
           quantity: 1,
           unit_cost: cost,
@@ -340,7 +340,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
         .from("product_repair_items")
         .select("unit_cost")
         .eq("id", itemId)
-        .single() as any);
+        .single());
       if (getItemError) throw getItemError;
 
       const itemCost = Number(itemData?.unit_cost || 0);
@@ -728,8 +728,8 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
                           <div>
                             <p className="font-semibold text-foreground">{item.part_name}</p>
                             <p className="text-[10px] text-muted-foreground">Custo da Peça: {formatCurrency(item.unit_cost)}</p>
-                            {(item as any).supplier_name && (
-                              <p className="text-[10px] text-blue-500 font-medium">🏭 {(item as any).supplier_name}</p>
+                            {item.supplier_name && (
+                              <p className="text-[10px] text-blue-500 font-medium">🏭 {item.supplier_name}</p>
                             )}
                           </div>
                           <Button 

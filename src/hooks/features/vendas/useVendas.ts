@@ -60,7 +60,7 @@ export const useVendas = () => {
 
     let userCommPercent = "10";
     if (currentRoleRes?.data) {
-      const data = currentRoleRes.data as any;
+      const data = currentRoleRes.data;
       if (data.commission_on_sales === false) {
         userCommPercent = "0";
       } else {

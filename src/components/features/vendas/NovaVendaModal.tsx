@@ -172,7 +172,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                     {showCustomerHistory && (
                       <div className="mt-2 space-y-1">
                         {customerSalesHistory.map((s) => {
-                          const p = productMap.get(s.product_id) as any;
+                          const p = productMap.get(s.product_id);
                           return (
                             <div key={s.id} className="flex justify-between rounded bg-muted/50 px-2 py-1 text-[10px]">
                               <span className="truncate">{p?.name ?? "Produto"}</span>
@@ -314,7 +314,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
               </SelectTrigger>
               <SelectContent>
                 {availableProducts.map((p) => {
-                  const storeName = (storeMap.get(p.store_id) as any)?.name || "?";
+                  const storeName = (storeMap.get(p.store_id))?.name || "?";
                   return (
                     <SelectItem key={p.id} value={p.id} className="py-2.5 focus:bg-accent">
                       <div className="flex flex-col gap-1 w-full text-left">
@@ -365,12 +365,12 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <span className="font-medium">{selectedProduct.model}</span>
                     </div>
                   )}
-                  {(selectedProduct as any).color && (
+                  {selectedProduct.color && (
                     <div className="flex flex-col gap-0.5">
                       <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Cor</span>
                       <span className="font-medium flex items-center gap-1">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full border border-border" style={{ background: (selectedProduct as any).color }} />
-                        {(selectedProduct as any).color}
+                        <span className="inline-block h-2.5 w-2.5 rounded-full border border-border" style={{ background: selectedProduct.color }} />
+                        {selectedProduct.color}
                       </span>
                     </div>
                   )}
@@ -403,7 +403,7 @@ export const NovaVendaModal: React.FC<NovaVendaModalProps> = ({
                       <span className="text-muted-foreground text-[10px] uppercase tracking-wide">Loja</span>
                       <span className="font-medium flex items-center gap-1">
                         <Store className="h-3 w-3 text-muted-foreground" />
-                        {(storeMap.get(selectedProduct.store_id) as any)?.name ?? "—"}
+                        {(storeMap.get(selectedProduct.store_id))?.name ?? "—"}
                       </span>
                     </div>
                   )}

@@ -272,7 +272,7 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {p.brand} · {p.model} {p.capacity && `· ${p.capacity}`} {p.color && `· ${p.color}`}{" "}
-                        {(p as any).battery_percentage && `· 🔋 ${(p as any).battery_percentage}%`} · {conditionLabel}
+                        {p.battery_percentage && `· 🔋 ${p.battery_percentage}%`} · {conditionLabel}
                         {p.imei && ` · IMEI: ${p.imei}`}
                       </p>
                       {p.notes && (
@@ -340,7 +340,7 @@ export const AparelhosTable: React.FC<AparelhosTableProps> = ({
                     </Button>
                     {(p.status === "in_stock" || p.status === "repair") && (
                       <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-primary/20 text-primary hover:bg-primary/5 bg-primary/5 shadow-none"
-                        onClick={() => { setRepairProduct(p as any); setRepairModalOpen(true); }}>
+                        onClick={() => { setRepairProduct(p); setRepairModalOpen(true); }}>
                         <Wrench className="h-3 w-3" /> Reparo
                       </Button>
                     )}

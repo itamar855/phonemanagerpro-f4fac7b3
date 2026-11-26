@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { untypedDb } from "@/integrations/supabase/untyped";
 import { useAuth } from "@/contexts/AuthContext";
 import debugLogger, { type LogEntry, type LogLevel } from "@/utils/debugLogger";
 
@@ -59,7 +60,7 @@ const DebugPanel = () => {
     for (const table of tables) {
       const start = performance.now();
       try {
-        const { count, error } = await supabase.from(table as any).select("*", { count: "exact", head: true });
+        const { count, error } = await untypedDb.from(table).select("*", { count: "exact", head: true });
         const ms = Math.round(performance.now() - start);
         if (error) {
           results.push({ name: table, status: "error", error: error.message, ms });

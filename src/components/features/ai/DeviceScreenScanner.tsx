@@ -105,8 +105,8 @@ export function DeviceScreenScanner({
       if (error) {
         let msg = error.message;
         try {
-          if ((error as any).context && typeof (error as any).context.json === "function") {
-            const errJson = await (error as any).context.json();
+          if (error.context && typeof error.context.json === "function") {
+            const errJson = await error.context.json();
             if (errJson?.error) msg = errJson.error;
           }
         } catch {}

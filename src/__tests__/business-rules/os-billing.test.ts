@@ -76,7 +76,7 @@ describe('OS Billing — Business Rules', () => {
 
     it('should warn user when no open register found', () => {
       const register = null;
-      const registerId = register ? (register as any).id : null;
+      const registerId = register ? register.id : null;
 
       expect(registerId).toBeNull();
       // In the real code, this triggers toast.error("Nenhum caixa aberto na loja atual...")

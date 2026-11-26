@@ -131,7 +131,7 @@ const Vendas = () => {
     discount: "0", warranty_days: "90", installments: "1",
     destination_account_id: "",
     retro_date: "",
-    trade_in_devices: [] as any[],
+    trade_in_devices: [],
   });
 
   // Veio do simulador de troca ("Usar na venda"): abre a Nova Venda com o aparelho já na troca
@@ -222,7 +222,7 @@ const Vendas = () => {
 
     if (!salesSearch.trim()) return true;
     const q = salesSearch.toLowerCase().trim();
-    const product = productMap.get(sale.product_id) as any;
+    const product = productMap.get(sale.product_id);
     return (
       (sale.customer_name && sale.customer_name.toLowerCase().includes(q)) ||
       (product?.name && product.name.toLowerCase().includes(q)) ||
@@ -326,7 +326,7 @@ const Vendas = () => {
               original_cost_price: deviceVal,
               store_id: selectedProduct.store_id,
               sale_price: null
-            } as any)
+            })
             .eq("id", existingTradeIn.id)
             .select("id")
             .maybeSingle();
@@ -351,7 +351,7 @@ const Vendas = () => {
             created_by: user.id, status: "in_stock",
             product_type: "celular",
             condition: "used"
-          } as any).select("id").single();
+          }).select("id").single();
           if (tiErr) { toast.error(tiErr.message); isSubmitting.current = false; setLoading(false); return; }
           currentProductId = tip.id;
 
@@ -435,7 +435,7 @@ const Vendas = () => {
       }
 
       triggerWebhook("sale_completed", selectedProduct.store_id, saleData);
-      logAction("CREATE_SALE", "sales", (saleData as any).id, null, saleData, selectedProduct.store_id);
+      logAction("CREATE_SALE", "sales", saleData.id, null, saleData, selectedProduct.store_id);
 
       const desc = `Venda: ${selectedProduct.name}${selectedCustomer?.name ? ` → ${selectedCustomer.name}` : ""}`;
       
@@ -474,7 +474,7 @@ const Vendas = () => {
         amount: number, description: string, method: string, txId: string | undefined
       ) => {
         try {
-          await createPendingCashEntry(selectedProduct.store_id, user.id, amount, description, method, form.retro_date, (saleData as any).id);
+          await createPendingCashEntry(selectedProduct.store_id, user.id, amount, description, method, form.retro_date, saleData.id);
         } catch (cashErr) {
           if (txId) {
             await supabase.from("transactions").delete().eq("id", txId);
@@ -489,7 +489,7 @@ const Vendas = () => {
         const { data: tx0, error: txError } = await supabase.from("transactions").insert({
           type: "sale", amount: salePriceAfterDiscount, net_amount: netAmount,
           description: desc, store_id: selectedProduct.store_id, product_id: form.product_id,
-          sale_id: (saleData as any).id,
+          sale_id: saleData.id,
           created_by: user.id, destination_account_id: form.destination_account_id || null,
           expected_settlement_date: expectedDate.toISOString(),
           ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -517,7 +517,7 @@ const Vendas = () => {
           const { data: txMisto, error: txError } = await supabase.from("transactions").insert({
             type: "sale", amount: totalConsolidated, net_amount: totalNet,
             description: descMisto, store_id: selectedProduct.store_id, product_id: form.product_id,
-            sale_id: (saleData as any).id,
+            sale_id: saleData.id,
             created_by: user.id, destination_account_id: form.destination_account_id || null,
             expected_settlement_date: expectedDate.toISOString(),
             ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -532,7 +532,7 @@ const Vendas = () => {
             const { data: tx1, error: txError1 } = await supabase.from("transactions").insert({
               type: "sale", amount: cashVal, net_amount: cashVal,
               description: `${desc} [Dinheiro]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-              sale_id: (saleData as any).id,
+              sale_id: saleData.id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -546,7 +546,7 @@ const Vendas = () => {
             const { data: tx2, error: txError2 } = await supabase.from("transactions").insert({
               type: "sale", amount: cardVal, net_amount: net,
               description: `${desc} [Cartão]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-              sale_id: (saleData as any).id,
+              sale_id: saleData.id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -560,7 +560,7 @@ const Vendas = () => {
             const { data: tx3, error: txError3 } = await supabase.from("transactions").insert({
               type: "sale", amount: pixVal, net_amount: net,
               description: `${desc} [PIX]`, store_id: selectedProduct.store_id, product_id: form.product_id,
-              sale_id: (saleData as any).id,
+              sale_id: saleData.id,
               created_by: user.id, destination_account_id: form.destination_account_id || null,
               expected_settlement_date: expectedDate.toISOString(),
               ...(form.retro_date ? { created_at: new Date(form.retro_date + "T12:00:00").toISOString() } : {}),
@@ -618,7 +618,7 @@ const Vendas = () => {
 
         // Restaurar estoque dos acessórios via metadata
         const { data: pdvTx } = await supabase.from("transactions").select("metadata").eq("id", item.id).maybeSingle();
-        const meta = pdvTx?.metadata as any;
+        const meta = pdvTx?.metadata as { cart?: { id: string; qty: number }[] } | null;
         if (meta && meta.cart && Array.isArray(meta.cart)) {
           for (const cartItem of meta.cart) {
              const { data: acc } = await supabase.from("accessories").select("quantity").eq("id", cartItem.id).maybeSingle();
@@ -671,7 +671,7 @@ const Vendas = () => {
         }
 
         // 1. Executar cancelamento ATÔMICO no PostgreSQL via RPC
-        const { error: cancelError } = await supabase.rpc("cancel_sale" as any, {
+        const { error: cancelError } = await supabase.rpc("cancel_sale", {
           p_sale_id: item.id,
           p_reason: reason,
         });
@@ -821,7 +821,7 @@ const Vendas = () => {
             cost_price: tradeInVal,
             original_cost_price: tradeInVal,
             status: "in_stock",
-          } as any).eq("id", editSale.trade_in_product_id);
+          }).eq("id", editSale.trade_in_product_id);
         } else {
           // Create new trade-in product in stock
           const { data: tipData } = await supabase.from("products").insert({
@@ -834,7 +834,7 @@ const Vendas = () => {
             store_id: editSale.store_id,
             created_by: user!.id,
             status: "in_stock",
-          } as any).select("id").single();
+          }).select("id").single();
           // Link the new trade-in product to the sale
           if (tipData) {
             await supabase.from("sales").update({ trade_in_product_id: tipData.id }).eq("id", editSale.id);
@@ -992,8 +992,8 @@ const Vendas = () => {
   const handleGerarNota = async (sale: Sale, whatsapp = false) => {
     setNotaLoading(sale.id);
     try {
-      const product = productMap.get(sale.product_id) as any;
-      const store = storeMap.get(sale.store_id) as any;
+      const product = productMap.get(sale.product_id);
+      const store = storeMap.get(sale.store_id);
       const customerMap = new Map(customers.map(c => [c.id, c]));
       const customer = sale.customer_id ? customerMap.get(sale.customer_id) : null;
       const numeroNota = `VND-${sale.id.slice(0, 8).toUpperCase()}`;
@@ -1218,7 +1218,7 @@ const Vendas = () => {
                         )}
                         {activeStoreId === "all" && (
                           <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                            {(storeMap.get(tx.store_id) as any)?.name}
+                            {(storeMap.get(tx.store_id))?.name}
                           </Badge>
                         )}
                       </div>
@@ -1252,7 +1252,7 @@ const Vendas = () => {
             );
           } else {
             const sale = item.data;
-            const product = productMap.get(sale.product_id) as any;
+            const product = productMap.get(sale.product_id);
             const isLoading = notaLoading === sale.id;
             return (
               <Card
@@ -1272,7 +1272,7 @@ const Vendas = () => {
                         )}
                         {activeStoreId === "all" && (
                           <Badge variant="outline" className="text-[9px] bg-muted/50 border-primary/20 text-primary">
-                            {(storeMap.get(sale.store_id) as any)?.name}
+                            {(storeMap.get(sale.store_id))?.name}
                           </Badge>
                         )}
                       </div>

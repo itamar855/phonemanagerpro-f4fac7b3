@@ -233,7 +233,7 @@ const FinancasPF = () => {
         created_by: user.id,
         expected_settlement_date: new Date().toISOString(),
         reconciled: false,
-      } as any);
+      });
       if (error) toast.error(error.message);
       else {
         toast.success("Lançamento registrado!");
@@ -295,7 +295,7 @@ const FinancasPF = () => {
         if (url) finalUrL = url;
       }
       
-      const { error } = await supabase.from("transactions").update({ reconciled: true, receipt_url: finalUrL } as any).eq("id", reconcilingTx.id);
+      const { error } = await supabase.from("transactions").update({ reconciled: true, receipt_url: finalUrL }).eq("id", reconcilingTx.id);
       
       if (error) {
         toast.error(error.message);
@@ -383,7 +383,7 @@ const FinancasPF = () => {
         net_amount: e.amount
       }));
 
-    const { error } = await supabase.from("transactions").insert(transactionsToInsert as any);
+    const { error } = await supabase.from("transactions").insert(transactionsToInsert);
 
     if (error) toast.error("Erro ao lançar: " + error.message);
     else {
