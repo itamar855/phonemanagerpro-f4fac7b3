@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Search, Users, Phone, Mail, MapPin, ShoppingBag, Wrench, Plus, Pencil, Trash2, History } from "lucide-react";
 import CustomerForm from "@/components/CustomerForm";
 import type { Tables } from "@/integrations/supabase/types";
+import type { Product, Sale, ServiceOrder, TablesInsert } from "@/types/db";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -21,16 +22,16 @@ const emptyForm = { name: "", phone: "", email: "", cpf: "", address: "", notes:
 const Clientes = () => {
   const { user, activeStoreId } = useAuth();
   const [customers, setCustomers] = useState<Tables<"customers">[]>([]);
-  const [sales, setSales] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [orders, setOrders] = useState<ServiceOrder[]>([]);
+  const [products, setProducts] = useState<Pick<Product, "id" | "name">[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Tables<"customers"> | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState<Tables<"customers"> | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedSale, setSelectedSale] = useState<any | null>(null);
-  const [selectedOS, setSelectedOS] = useState<any | null>(null);
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [selectedOS, setSelectedOS] = useState<ServiceOrder | null>(null);
 
   const fetchData = async () => {
     if (!activeStoreId) return;
@@ -99,7 +100,7 @@ const Clientes = () => {
     if (!user) return;
     setLoading(true);
 
-    const payload: any = {
+    const payload: TablesInsert<"customers"> = {
       name: formData.name,
       phone: formData.phone || null,
       email: formData.email || null,

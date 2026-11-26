@@ -36,6 +36,7 @@ import {
   type TechGoalConfig,
   type TechRankingItem,
 } from "@/utils/technicianMetrics";
+import type { ProductRepairItem, ServiceOrder, ServiceOrderItem, Store as StoreRow } from "@/types/db";
 
 const COLORS = ["hsl(152, 60%, 45%)", "hsl(38, 92%, 50%)", "hsl(0, 62%, 50%)", "hsl(220, 25%, 50%)", "hsl(280, 50%, 50%)"];
 
@@ -97,7 +98,8 @@ const Dashboard = () => {
   const [categoryBreakdown, setCategoryBreakdown] = useState<{ name: string; value: number }[]>([]);
   const [lowStockStores, setLowStockStores] = useState<{ name: string; count: number }[]>([]);
   const [lowStockAcc, setLowStockAcc] = useState<{ name: string; qty: number; min: number }[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
+  // o painel às vezes busca só id e nome das lojas
+  const [stores, setStores] = useState<(Pick<StoreRow, "id" | "name"> & Partial<StoreRow>)[]>([]);
 
   const navigate = useNavigate();
   const [techProductivity, setTechProductivity] = useState<TechProductivityResult>({
@@ -125,7 +127,7 @@ const Dashboard = () => {
     myRank: number;
     totalTechs: number;
   }>({ items: [], myRank: 1, totalTechs: 1 });
-  const [techQueue, setTechQueue] = useState<any[]>([]);
+  const [techQueue, setTechQueue] = useState<ServiceOrder[]>([]);
 
   const handleUpdateTechGoals = (newGoals: TechGoalConfig) => {
     setTechGoals(newGoals);
@@ -190,7 +192,7 @@ const Dashboard = () => {
       ...shopDelivered.map((o) => o.id),
     ]));
 
-    let parts: any[] = [];
+    let parts: Pick<ServiceOrderItem, "service_order_id" | "unit_cost" | "quantity">[] = [];
     if (relevantIds.length > 0) {
       try {
         const { data: partsData } = await supabase
@@ -286,7 +288,7 @@ const Dashboard = () => {
     const leads = leadsRes.data ?? [];
 
     // Fetch service order items for the service orders in the period
-    let serviceOrderItems: any[] = [];
+    let serviceOrderItems: Pick<ServiceOrderItem, "service_order_id" | "unit_cost" | "quantity">[] = [];
     if (can("os") && serviceOrders.length > 0) {
       const osIds = serviceOrders.map((o) => o.id);
       const { data: itemsData } = await supabase
@@ -297,7 +299,7 @@ const Dashboard = () => {
     }
 
     // Fetch product repairs and repair items for internal store devices during the period
-    let productRepairItems: any[] = [];
+    let productRepairItems: Pick<ProductRepairItem, "repair_id" | "unit_cost" | "quantity">[] = [];
     if (can("estoque")) {
       const repairQuery = supabase
         .from("product_repairs")

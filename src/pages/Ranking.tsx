@@ -13,13 +13,15 @@ import {
   type StoreAccessoryMetrics,
 } from "@/utils/rankingGamification";
 import { Trophy, Sparkles } from "lucide-react";
+import type { Profile, Store } from "@/types/db";
+import type { SellerStat } from "@/components/features/relatorios/reportTypes";
 
 const Ranking = () => {
   const { user, userRole, activeStoreId } = useAuth();
   const isAdmin = userRole === "admin";
 
-  const [stores, setStores] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [storeId, setStoreId] = useState<string>("all");
   const [rankPeriod, setRankPeriod] = useState<string>("month");
   const [rankSpecificDay, setRankSpecificDay] = useState<string>(
@@ -28,7 +30,7 @@ const Ranking = () => {
   const [rankCustomStart] = useState<string>("");
   const [rankCustomEnd] = useState<string>("");
 
-  const [ranking, setRanking] = useState<any[]>([]);
+  const [ranking, setRanking] = useState<SellerStat[]>([]);
   const [rankingPhones, setRankingPhones] = useState<RankSellerPhone[]>([]);
   const [rankingAccessories, setRankingAccessories] = useState<RankSellerAccessory[]>([]);
   const [rankingTechs, setRankingTechs] = useState<RankTechnician[]>([]);
@@ -140,7 +142,7 @@ const Ranking = () => {
     setRankingTechs(techRanking);
 
     // 3. Formato compatível com o gráfico
-    const legacyStats: any[] = phoneRanking.map((p) => ({
+    const legacyStats: SellerStat[] = phoneRanking.map((p) => ({
       uid: p.uid,
       nome: p.nome,
       role: p.role,
@@ -148,7 +150,12 @@ const Ranking = () => {
       qtdVendas: p.qtdCelulares,
       lucro: p.totalLucro,
       comissoes: p.comissoesVendas,
+      comissoesPendentes: 0,
+      comissoesLiquidadas: 0,
+      comissoesVendas: p.comissoesVendas,
+      comissoesOS: 0,
       osEntregues: 0,
+      totalServicos: 0,
     }));
     setRanking(legacyStats);
   }, [

@@ -277,23 +277,23 @@ export async function fetchSettlementItems(
           .from("service_orders")
           .select("id, order_number, customer_name, device_brand, device_model, requested_service, delivered_at, created_at")
           .in("id", osIds)
-      : Promise.resolve({ data: [] as any[] }),
+      : Promise.resolve({ data: [] as never[] }),
     osIds.length > 0
       ? (supabase
           .from("service_order_items")
           .select("service_order_id, quantity, unit_cost, products(name)")
           .in("service_order_id", osIds))
-      : Promise.resolve({ data: [] as any[] }),
+      : Promise.resolve({ data: [] as never[] }),
     saleIds.length > 0
       ? supabase
           .from("sales")
-          .select("id, customer_name, created_at, products(name, brand, model)")
+          .select("id, customer_name, created_at, products!sales_product_id_fkey(name, brand, model)")
           .in("id", saleIds)
-      : Promise.resolve({ data: [] as any[] }),
+      : Promise.resolve({ data: [] as never[] }),
   ]);
 
-  const osMap = new Map<string, any>((osRes.data || []).map((o) => [o.id, o]));
-  const saleMap = new Map<string, any>((salesRes.data || []).map((s) => [s.id, s]));
+  const osMap = new Map((osRes.data || []).map((o) => [o.id, o]));
+  const saleMap = new Map((salesRes.data || []).map((s) => [s.id, s]));
 
   const partsListMap = new Map<string, string[]>();
   (osPartsRes.data || []).forEach((pt) => {

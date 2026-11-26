@@ -16,6 +16,9 @@ import { Webhook, Trash2, Plus, Send, ExternalLink, Info, MessageSquare, ShieldC
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { format } from "date-fns";
 
+/** Linha de error_logs (tabela ainda não criada no banco de produção; ver untyped.ts). */
+type ErrorLogRow = { id: string; created_at: string; module: string; message: string; severity: string; details?: unknown };
+
 const eventLabels: Record<string, string> = {
   os_status_changed: "Mudança de Status na OS (WhatsApp / N8N)",
   sale_completed: "Nova Venda Finalizada",
@@ -39,10 +42,10 @@ export default function Configuracoes() {
 
   // States for System Health
   const [dbLatency, setDbLatency] = useState<number | null>(null);
-  const [moduleStatus, setModuleStatus] = useState<any>({
+  const [moduleStatus, setModuleStatus] = useState<Record<string, string>>({
     vendas: "loading", estoque: "loading", os: "loading", caixa: "loading"
   });
-  const [errorLogs, setErrorLogs] = useState<any[]>([]);
+  const [errorLogs, setErrorLogs] = useState<ErrorLogRow[]>([]);
   const [testingHealth, setTestingHealth] = useState(false);
 
   const fetchData = async () => {
@@ -236,7 +239,7 @@ export default function Configuracoes() {
         if (!register) register = registers.find(r => r.store_id === m.store_id);
 
         if (register) {
-          const payload: any = {
+          const payload: TablesInsert<"cash_entries"> = {
             cash_register_id: register.id, store_id: m.store_id, type: 'entrada',
             amount: m.amount, description: m.description, payment_method: 'dinheiro',
             confirmed: false, created_by: m.created_by, created_at: m.created_at

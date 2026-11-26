@@ -22,7 +22,7 @@ class StructuredLogger {
     module: string,
     message: string,
     severity: ErrorSeverity = "error",
-    details?: Record<string, any>
+    details?: Record<string, unknown>
   ) {
     const payload = {
       ...details,
@@ -64,15 +64,15 @@ class StructuredLogger {
     }
   }
 
-  public info(module: string, message: string, details?: Record<string, any>) {
+  public info(module: string, message: string, details?: Record<string, unknown>) {
     return this.logSystemError(module, message, "info", details);
   }
 
-  public warn(module: string, message: string, details?: Record<string, any>) {
+  public warn(module: string, message: string, details?: Record<string, unknown>) {
     return this.logSystemError(module, message, "warning", details);
   }
 
-  public error(module: string, message: string, details?: Record<string, any>) {
+  public error(module: string, message: string, details?: Record<string, unknown>) {
     return this.logSystemError(module, message, "error", details);
   }
 }

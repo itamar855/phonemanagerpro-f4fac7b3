@@ -115,7 +115,7 @@ describe("PDF da OS: gera o documento com as seções novas", () => {
     payment_pix: 700,
   };
   const textOf = (doc: jsPDF) => {
-    const pages: string[] = doc.internal.pages.slice(1).map((p: string[]) => p.join("\n"));
+    const pages: string[] = (doc.internal as unknown as { pages: string[][] }).pages.slice(1).map((p) => p.join("\n"));
     return pages.join("\n");
   };
 

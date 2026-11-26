@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Wrench, Plus, Trash2, Loader2, Camera, Upload, Receipt, CheckCircle, Cpu, FileText, Smartphone, Image as LucideImage, X } from "lucide-react";
 import { logAction } from "@/utils/auditLogger";
 import { convertToWebP, RECEIPT_IMAGE } from "@/utils/imageOptimizer";
+import type { ProductRepair, ProductRepairItem, TablesUpdate } from "@/types/db";
 
 interface Supplier {
   id: string;
@@ -39,6 +40,8 @@ interface Product {
   cost_price: number;
   status: string;
   store_id: string;
+  device_payment_voucher?: string | null;
+  parts_payment_voucher?: string | null;
 }
 
 interface DeviceRepairModalProps {
@@ -51,8 +54,8 @@ interface DeviceRepairModalProps {
 export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess }: DeviceRepairModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [activeRepair, setActiveRepair] = useState<any>(null);
-  const [repairItems, setRepairItems] = useState<any[]>([]);
+  const [activeRepair, setActiveRepair] = useState<ProductRepair | null>(null);
+  const [repairItems, setRepairItems] = useState<ProductRepairItem[]>([]);
   const [availableParts, setAvailableParts] = useState<any[]>([]);
   
   // Form states for creating repair
@@ -75,7 +78,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const fileInputManualPartRef = useRef<HTMLInputElement>(null);
   const [uploadingVoucher, setUploadingVoucher] = useState<'device' | 'parts' | null>(null);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number | null>>({});
-  const [localProduct, setLocalProduct] = useState<any>(null);
+  const [localProduct, setLocalProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     if (isOpen && product) {
@@ -394,7 +397,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
       const publicUrl = urlData.publicUrl;
 
       // Update database
-      const updatePayload: any = {};
+      const updatePayload: TablesUpdate<"products"> = {};
       if (type === 'device') {
         updatePayload.device_payment_voucher = publicUrl;
       } else {
