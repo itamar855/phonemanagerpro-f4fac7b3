@@ -581,7 +581,7 @@ const WhatsAppAssistantConfig = () => {
                     ? "border-primary/50 bg-primary/5"
                     : "border-border/50 hover:border-primary/20"
                 }`}
-                onClick={() => setConfig({ ...config, defaultStoreMode: opt.id as any })}
+                onClick={() => setConfig({ ...config, defaultStoreMode: opt.id as WhatsAppConfig["defaultStoreMode"] })}
               >
                 <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${config.defaultStoreMode === opt.id ? "border-primary" : "border-muted-foreground"}`}>
                   {config.defaultStoreMode === opt.id && <div className="h-2 w-2 rounded-full bg-primary" />}

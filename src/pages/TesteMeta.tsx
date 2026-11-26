@@ -7,10 +7,13 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Camera, User, Globe, Search, ShieldCheck, Smartphone, Info } from "lucide-react";
 
+/** Resposta da função sync-profile (perfil do Instagram ou erro). */
+type MetaProfileResult = { error?: string; id?: string; name?: string; profile_pic?: string };
+
 const TesteMeta = () => {
   const [userId, setUserId] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<MetaProfileResult | null>(null);
 
   const handleTestCapture = async () => {
     if (!userId) {

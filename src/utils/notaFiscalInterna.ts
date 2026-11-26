@@ -43,7 +43,7 @@ export interface NotaFiscalData {
   garantiaDays?: number;
 }
 
-export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<any> => {
+export const gerarNotaFiscalInterna = async (data: NotaFiscalData): Promise<jsPDF> => {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
   const M = 15; // Elegant wide margins

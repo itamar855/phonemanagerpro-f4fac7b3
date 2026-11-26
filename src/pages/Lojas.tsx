@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import type { Tables } from "@/integrations/supabase/types";
+import type { Store as StoreRow } from "@/types/db";
 
 const statusLabels: Record<string, string> = {
   active: "Ativa", inactive: "Inativa", renovation: "Em reforma", development: "Em desenvolvimento",
@@ -54,7 +55,7 @@ const emptyDetails: StoreDetails = {
 
 const Lojas = () => {
   const { userRole, userPermissions, activeStoreId } = useAuth();
-  const [stores, setStores] = useState<any[]>([]);
+  const [stores, setStores] = useState<StoreRow[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [fixedExpenses, setFixedExpenses] = useState<Tables<"fixed_expenses">[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);

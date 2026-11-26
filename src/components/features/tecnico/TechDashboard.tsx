@@ -59,6 +59,7 @@ import type {
   TechGoalConfig,
   TechRankingItem,
 } from "@/utils/technicianMetrics";
+import type { ServiceOrder } from "@/types/db";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -71,7 +72,7 @@ export interface TechDashboardProps {
   goalsConfig: TechGoalConfig;
   onUpdateGoals: (newGoals: TechGoalConfig) => void;
   shopRanking: { items: TechRankingItem[]; myRank: number; totalTechs: number };
-  activeQueue: any[];
+  activeQueue: ServiceOrder[];
   onNavigateToOS: (osId?: string) => void;
   periodLabel: string;
 }

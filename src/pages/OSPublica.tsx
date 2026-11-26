@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { generateOSPdf, saveAndOpenPdf, type OsPdfItem } from "@/components/features/os/osPdf";
+import type { LucideIcon } from "lucide-react";
 
 interface PublicOrder {
   id?: string;
@@ -42,7 +43,7 @@ interface OrderPhoto {
   created_at: string;
 }
 
-const statusConfig: Record<string, { label: string; color: string; icon: any; iconColor: string; desc: string }> = {
+const statusConfig: Record<string, { label: string; color: string; icon: LucideIcon; iconColor: string; desc: string }> = {
   open:             { label: "Recebida pela loja", color: "bg-blue-500/10 border-blue-500/20 text-blue-500", iconColor: "text-blue-500 bg-blue-500/20", icon: Clock,        desc: "Aparelho deu entrada. Aguardando avaliação." },
   analyzing:        { label: "Em Análise",         color: "bg-yellow-500/10 border-yellow-500/20 text-yellow-500", iconColor: "text-yellow-500 bg-yellow-500/20", icon: AlertCircle,  desc: "Nossa equipe técnica está diagnosticando o problema." },
   waiting_part:     { label: "Aguardando Peça",    color: "bg-orange-500/10 border-orange-500/20 text-orange-500", iconColor: "text-orange-500 bg-orange-500/20", icon: Package,      desc: "Fornecedor acionado. Aguardando chegada da peça." },

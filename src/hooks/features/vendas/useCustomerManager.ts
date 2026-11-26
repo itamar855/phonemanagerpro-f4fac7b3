@@ -3,9 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Tables } from "@/integrations/supabase/types";
 import type { User } from "@supabase/supabase-js";
+import type { Sale } from "@/types/db";
 
 type Customer = Tables<"customers">;
-type Sale = any;
 
 const emptyCustomerForm = { name: "", phone: "", cpf: "", address: "", email: "", birth: "" };
 

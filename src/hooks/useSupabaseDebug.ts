@@ -64,11 +64,11 @@ export function useSupabaseDebug() {
  * );
  * ```
  */
-export async function trackedQuery<T>(
+export async function trackedQuery<T, E extends { message?: string; code?: string } | null = { message?: string; code?: string } | null>(
   table: string,
   operation: SupabaseOperation,
-  queryFn: () => PromiseLike<{ data: T; error: any }>
-): Promise<{ data: T; error: any }> {
+  queryFn: () => PromiseLike<{ data: T; error: E }>
+): Promise<{ data: T; error: E }> {
   const start = performance.now();
 
   try {

@@ -36,7 +36,7 @@ describe("Suíte Geral de Conciliação — Ranking, Metas & Relatórios Oficiai
     { id: "prod-samsung-s23", name: "Galaxy S23", cost_price: 2400 },
   ];
 
-  const productMap = new Map<string, any>(mockProducts.map((p) => [p.id, p]));
+  const productMap = new Map(mockProducts.map((p) => [p.id, p]));
 
   beforeEach(() => {
     resetPatentSettings();

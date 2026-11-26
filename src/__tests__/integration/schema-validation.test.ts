@@ -169,7 +169,7 @@ describe('Schema Validation — types.ts discrepancy detection', () => {
     // Log warning for visibility
     console.warn(
       '⚠️  types.ts declares "register_id" but the real DB column is "cash_register_id". ' +
-      'This is a known discrepancy. The code correctly uses "cash_register_id" via "as any" casts.'
+      'This is a known discrepancy. The code correctly uses "cash_register_id" via casts.'
     );
   });
 });

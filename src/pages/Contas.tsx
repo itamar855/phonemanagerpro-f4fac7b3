@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import type { Store, Transaction } from "@/types/db";
 const fmt = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 type AccountBalance = {
@@ -40,9 +41,9 @@ type AccountBalance = {
 export default function Contas() {
   const { user, activeStoreId, userRole } = useAuth();
   const [balances, setBalances] = useState<AccountBalance[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stores, setStores] = useState<Map<string, string>>(new Map());
-  const [rawStores, setRawStores] = useState<any[]>([]);
+  const [rawStores, setRawStores] = useState<Pick<Store, "id" | "name">[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("pj");
   const [periodFilter, setPeriodFilter] = useState<"day" | "week" | "month" | "year" | "all">("all");

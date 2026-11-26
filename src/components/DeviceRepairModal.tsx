@@ -56,7 +56,7 @@ export default function DeviceRepairModal({ product, isOpen, onClose, onSuccess 
   const [loading, setLoading] = useState(false);
   const [activeRepair, setActiveRepair] = useState<ProductRepair | null>(null);
   const [repairItems, setRepairItems] = useState<ProductRepairItem[]>([]);
-  const [availableParts, setAvailableParts] = useState<any[]>([]);
+  const [availableParts, setAvailableParts] = useState<(Pick<Product, "id" | "name" | "brand" | "model" | "cost_price"> & { supplier_id?: string | null; supplier_name?: string | null })[]>([]);
   
   // Form states for creating repair
   const [selectedRepairs, setSelectedRepairs] = useState<string[]>([]);
