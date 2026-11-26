@@ -95,7 +95,14 @@ export function planUpsert(rows: PriceRow[], existing: TradeModel[]) {
 }
 
 // Modelos de iPhone mais comuns na troca, com as capacidades de cada um (o gerente só preenche o valor).
-const IPHONES: [string, string[]][] = [
+/** iPhones que a loja costuma pegar na troca (do 8 ao 17), com as capacidades de cada um. */
+export const IPHONES: [string, string[]][] = [
+  ["iPhone 8", ["64", "128", "256"]],
+  ["iPhone 8 Plus", ["64", "128", "256"]],
+  ["iPhone X", ["64", "256"]],
+  ["iPhone XR", ["64", "128", "256"]],
+  ["iPhone XS", ["64", "256", "512"]],
+  ["iPhone XS Max", ["64", "256", "512"]],
   ["iPhone 11", ["64", "128", "256"]],
   ["iPhone 11 Pro", ["64", "256", "512"]],
   ["iPhone 11 Pro Max", ["64", "256", "512"]],

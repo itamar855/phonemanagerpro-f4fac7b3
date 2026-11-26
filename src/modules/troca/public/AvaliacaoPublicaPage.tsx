@@ -27,7 +27,7 @@ const ASK: Record<QuestionKey, { title: string; hint?: string }> = {
   tela: { title: "Como está a tela?", hint: "Olhe com a tela acesa num fundo branco e teste o toque nos cantos." },
   bateria: { title: "Qual a saúde da bateria?", hint: "iPhone: Ajustes › Bateria › Saúde da Bateria." },
   carcaca: { title: "E a carcaça (laterais e traseira)?", hint: "Amassados nas quinas e trincas no vidro de trás contam aqui." },
-  biometria: { title: "Face ID ou digital funciona?" },
+  biometria: { title: "A biometria funciona (Face ID ou digital)?", hint: "iPhone: desbloquear com o rosto. Android: digital ou reconhecimento facial." },
   pecas: { title: "Alguma peça já foi trocada?", hint: "iPhone: Ajustes › Geral › Sobre mostra \"peça desconhecida\" se houver." },
   acessorios: { title: "Vem com caixa e cabo?", hint: "Marque o que está faltando." },
 };

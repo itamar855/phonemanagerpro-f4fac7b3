@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchEvaluations, fetchModels, fetchNames, fetchRules, fetchSettings, fetchStores } from "../api/db";
+import { fetchEvaluations, fetchModelRules, fetchModels, fetchNames, fetchRules, fetchSettings, fetchStores } from "../api/db";
 
 /** "Restaura Phone Brasil (Santa Luzia)" → "Santa Luzia" */
 export function storeLabel(name: string): string {
@@ -68,6 +68,16 @@ export function useRules(storeId: string | null) {
   });
 }
 
+/** Valores próprios de cada aparelho (modelo + capacidade). */
+export function useModelRules(storeId: string | null) {
+  return useQuery({
+    queryKey: ["troca", "modelRules", storeId],
+    queryFn: () => fetchModelRules(storeId!),
+    enabled: !!storeId,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useEvaluations(storeId: string | null) {
   return useQuery({
     queryKey: ["troca", "evaluations", storeId],
@@ -82,5 +92,5 @@ export function useEvaluations(storeId: string | null) {
 
 export function useInvalidateTroca() {
   const qc = useQueryClient();
-  return (what: "settings" | "models" | "rules" | "evaluations") => qc.invalidateQueries({ queryKey: ["troca", what] });
+  return (what: "settings" | "models" | "rules" | "modelRules" | "evaluations") => qc.invalidateQueries({ queryKey: ["troca", what] });
 }
