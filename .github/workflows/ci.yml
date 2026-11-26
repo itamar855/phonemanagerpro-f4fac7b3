@@ -20,7 +20,18 @@ jobs:
         run: npm ci
       - name: Type Check
         run: npm run typecheck
+      # Erros antigos de lint (~1.265, quase todos `any`) ficam congelados em
+      # eslint-suppressions.json: só falha se aparecer erro novo. Quem limpar um
+      # arquivo roda `npm run lint:prune` para baixar a contagem.
       - name: Lint
+        if: ${{ !cancelled() }}
         run: npm run lint
+      # Roda mesmo se o typecheck ou o lint falharem, para os testes sempre aparecerem.
       - name: Run Tests
-        run: npm run test
+        if: ${{ !cancelled() }}
+        run: npm run test -- --run
+        env:
+          # Os testes não falam com o Supabase; o cliente só precisa de uma URL
+          # e chave para carregar (127.0.0.1:9 recusa na hora).
+          VITE_SUPABASE_URL: http://127.0.0.1:9
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder

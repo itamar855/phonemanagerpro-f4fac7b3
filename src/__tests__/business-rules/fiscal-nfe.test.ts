@@ -1,5 +1,17 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Sem banco no teste: toda consulta ao Supabase volta com erro, e o serviço fiscal
+// usa o fallback do localStorage (que é o que estes testes conferem). Antes o
+// teste dependia da rede de verdade e estourava o tempo no CI.
+vi.mock("@/integrations/supabase/client", () => {
+  const offline = { data: null, error: { message: "sem banco no teste" } };
+  const query: object = new Proxy({}, {
+    get: (_target, prop) =>
+      prop === "then" ? (resolve: (value: typeof offline) => void) => resolve(offline) : () => query,
+  });
+  return { supabase: { from: () => query } };
+});
 import {
   isValidCnpj,
   formatCnpj,
